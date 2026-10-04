@@ -33,6 +33,7 @@ import rsv.squitv.core.ui.theme.*
 import rsv.squitv.core.ui.components.common.DigitalClock
 import rsv.squitv.ui.viewmodel.MainViewModel
 import rsv.squitv.ui.viewmodel.library.LibraryViewModel
+import rsv.squitv.data.model.UserInfo
 import rsv.squitv.data.model.XtreamCredentials
 import rsv.squitv.domain.model.ContentType
 import rsv.squitv.domain.model.IptvItem
@@ -64,6 +65,7 @@ fun DashboardScreen(
     val sessionStatus by viewModel.sessionStatus.collectAsStateWithLifecycle()
     val activeProfile by viewModel.activeProfile.collectAsStateWithLifecycle()
     val progress by viewModel.syncProgress.collectAsStateWithLifecycle()
+    val isContentReady by viewModel.isContentReady.collectAsStateWithLifecycle()
     val newlyAdded by viewModel.newlyAdded.collectAsStateWithLifecycle()
     val watchProgress by libraryViewModel.watchProgress.collectAsStateWithLifecycle()
     val credentials = viewModel.credentials
@@ -97,9 +99,11 @@ fun DashboardScreen(
             windowInfo = windowInfo,
             sessionStatus = sessionStatus,
             syncProgress = progress,
+            isContentReady = isContentReady,
             newlyAdded = newlyAdded,
             watchProgress = watchProgress,
             activeProfile = activeProfile,
+            accountInfo = accountInfo,
             credentials = credentials,
             expDate = expDateFormatted,
             actions = dashboardActions
@@ -124,9 +128,11 @@ fun DashboardContent(
     windowInfo: WindowInfo,
     sessionStatus: SessionStatus,
     syncProgress: AppSyncProgress,
+    isContentReady: Boolean,
     newlyAdded: Map<ContentType, List<IptvItem>>,
     watchProgress: Map<Int, Float>,
     activeProfile: UserProfile?,
+    accountInfo: UserInfo?,
     credentials: XtreamCredentials?,
     expDate: String,
     actions: DashboardActions
@@ -167,8 +173,10 @@ fun DashboardContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
-                // Left Side: User Profile
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // Left Side: User Profile (Informational only)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Surface(
                         modifier = Modifier.size(responsive.dp(if (isNarrow) 48.dp else 64.dp)),
                         shape = CircleShape,
@@ -187,7 +195,7 @@ fun DashboardContent(
                     Spacer(Modifier.width(responsive.dp(tokens.spacing.large)))
                     Column {
                         Text(
-                            text = "OLÁ, ${activeProfile?.name?.uppercase() ?: "USUÁRIO"}",
+                            text = "OLÁ, ${accountInfo?.username?.uppercase() ?: credentials?.username?.uppercase() ?: activeProfile?.name?.uppercase() ?: "USUÁRIO"}",
                             style = tokens.typography.display.copy(fontSize = titleSize),
                             fontWeight = FontWeight.Black,
                             color = tokens.colors.textPrimary
@@ -206,7 +214,7 @@ fun DashboardContent(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(responsive.dp(tokens.spacing.large))
                 ) {
-                    if (!syncProgress.isComplete && !isNarrow) {
+                    if (!syncProgress.isComplete && !isNarrow && !isContentReady) {
                         SyncIndicator()
                     }
                     

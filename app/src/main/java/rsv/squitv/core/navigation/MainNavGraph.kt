@@ -144,18 +144,13 @@ fun MainNavigation(
     val windowInfo = rememberWindowInfo()
     val isTv = windowInfo.deviceType == DeviceType.TV
 
-    // Hardening: Handle immersive mode
-    LaunchedEffect(currentRoute, isTv) {
+    // Global Immersive Fullscreen Hardening
+    LaunchedEffect(currentRoute) {
         val activity = context as? Activity ?: return@LaunchedEffect
         val window = activity.window
         val controller = WindowCompat.getInsetsController(window, window.decorView)
-        
-        if (isTv || currentRoute?.contains("Player") == true) {
-            controller.hide(WindowInsetsCompat.Type.systemBars())
-            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        } else {
-            controller.show(WindowInsetsCompat.Type.systemBars())
-        }
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
     }
 
     Scaffold(

@@ -6,7 +6,6 @@
 [![Android](https://img.shields.io/badge/Platform-Android%20TV-3DDC84?style=flat-square&logo=android&logoColor=white)](https://developer.android.com/tv)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.x-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=flat-square&logo=jetpack-compose&logoColor=white)](https://developer.android.com/compose)
-[![Version](https://img.shields.io/badge/Version-1.7%20(Code%208)-0284C7?style=flat-square)](https://github.com/rafasqui/MeusCanais)
 
 </div>
 
@@ -15,15 +14,6 @@
 ## ✨ Sobre o Squi TV
 
 **Squi TV** é um aplicativo moderno desenvolvido exclusivamente para **Android TV**, oferecendo uma experiência de streaming imersiva, limpa e de alta performance. Projetado desde a raiz para navegação por controle remoto (D-pad), o Squi TV combina o poder do Jetpack Compose para TV com arquitetura moderna baseada em Clean Architecture / MVVM.
-
----
-
-## 🚀 Novidades da Versão 1.7
-
-* **Correção Definitiva de Foco e Teclado (Android TV):** A tela de login foi aprimorada para abrir pronta para navegação via D-pad sem disparar o teclado virtual (IME) automaticamente. O teclado só é aberto mediante escolha explícita do usuário.
-* **Padronização da Porta 1234 no Pairing:** O servidor HTTP local para pareamento por rede Wi-Fi/LAN agora utiliza de forma determinística a porta **1234**, facilitando a digitação manual de endereços (`http://<IP>:1234`).
-* **Polimento Visual do Site de Pairing (Dark Premium):** A interface web servida pela TV para configuração de credenciais recebeu um redesign completo com identidade visual *Squi TV Dark Premium*, design responsivo e botão de cópia rápida de URL.
-* **Resiliência e Concorrência:** Eliminação de *race conditions* na inicialização do servidor local e tratamento robusto de conflitos de porta.
 
 ---
 
@@ -58,15 +48,6 @@
 * **Persistência:** Room Database & DataStore Preferences
 * **Rede:** Retrofit, OkHttp & Kotlinx Serialization
 * **Background Workers:** WorkManager
-
----
-
-## 📋 Changelog v1.7
-
-* Implementação de servidor HTTP local suspensivo com ligação determinística na porta **1234**.
-* Correção de foco inicial na tela de Login para evitar abertura indesejada do IME no Android TV.
-* Redesign da página HTML de pairing com tema *Squi TV Dark Premium*.
-* Aprimoramento dos testes unitários de rede e sessões de pareamento.
 
 ---
 

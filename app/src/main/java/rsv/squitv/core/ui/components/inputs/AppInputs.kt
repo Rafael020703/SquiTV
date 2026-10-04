@@ -7,6 +7,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -46,9 +48,28 @@ fun AppTextField(
 
     var isFocused by remember { mutableStateOf(false) }
     var isEditing by remember { mutableStateOf(false) }
+    var passwordVisible by remember { mutableStateOf(false) }
     val keyboardController = LocalSoftwareKeyboardController.current
 
     val isReadOnly = requireClickToEdit && !isEditing
+
+    val effectiveTrailingIcon: @Composable (() -> Unit)? = if (isPassword) {
+        {
+            IconButton(
+                onClick = { passwordVisible = !passwordVisible },
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    imageVector = if (passwordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                    contentDescription = if (passwordVisible) "Ocultar senha" else "Mostrar senha",
+                    tint = if (isFocused) tokens.colors.primary else tokens.colors.textSecondary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    } else {
+        trailingIcon
+    }
 
     val animatedBorderColor by animateColorAsState(
         targetValue = if (isFocused) tokens.colors.primary else tokens.colors.textPrimary.copy(alpha = 0.12f),
@@ -112,8 +133,8 @@ fun AppTextField(
             ) 
         },
         leadingIcon = leadingIcon,
-        trailingIcon = trailingIcon,
-        visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
+        trailingIcon = effectiveTrailingIcon,
+        visualTransformation = if (isPassword && !passwordVisible) PasswordVisualTransformation() else VisualTransformation.None,
         shape = tokens.shapes.large,
         singleLine = true,
         keyboardOptions = KeyboardOptions(

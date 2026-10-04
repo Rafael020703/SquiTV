@@ -74,7 +74,7 @@ class ReminderWorker(
         )
 
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(applicationContext.getString(R.string.reminder_prefix, programTitle))
             .setContentText(applicationContext.getString(R.string.reminder_notification_msg, channelName))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
