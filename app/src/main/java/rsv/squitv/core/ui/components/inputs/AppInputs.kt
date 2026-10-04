@@ -1,6 +1,7 @@
 ﻿package rsv.squitv.core.ui.components.inputs
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -12,6 +13,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -30,7 +34,8 @@ fun AppTextField(
     leadingIcon: @Composable (() -> Unit)? = null,
     trailingIcon: @Composable (() -> Unit)? = null,
     imeAction: ImeAction = ImeAction.Default,
-    keyboardActions: KeyboardActions = KeyboardActions.Default
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    requireClickToEdit: Boolean = false
 ) {
     val tokens = AppDesignSystem
     val responsive = tokens.responsive
@@ -40,6 +45,10 @@ fun AppTextField(
     val labelSize = responsive.sp(tokens.typography.label.fontSize)
 
     var isFocused by remember { mutableStateOf(false) }
+    var isEditing by remember { mutableStateOf(false) }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    val isReadOnly = requireClickToEdit && !isEditing
 
     val animatedBorderColor by animateColorAsState(
         targetValue = if (isFocused) tokens.colors.primary else tokens.colors.textPrimary.copy(alpha = 0.12f),
@@ -53,10 +62,37 @@ fun AppTextField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
+        readOnly = isReadOnly,
         modifier = modifier
             .fillMaxWidth()
             .height(height)
-            .onFocusChanged { isFocused = it.isFocused }
+            .onFocusChanged { 
+                isFocused = it.isFocused
+                if (!it.isFocused) {
+                    isEditing = false
+                }
+            }
+            .pointerInput(requireClickToEdit) {
+                if (requireClickToEdit) {
+                    detectTapGestures(
+                        onTap = {
+                            isEditing = true
+                            keyboardController?.show()
+                        }
+                    )
+                }
+            }
+            .onKeyEvent { keyEvent ->
+                if (requireClickToEdit && isFocused && !isEditing) {
+                    if (keyEvent.type == KeyEventType.KeyDown && 
+                        (keyEvent.key == Key.DirectionCenter || keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter)) {
+                        isEditing = true
+                        keyboardController?.show()
+                        return@onKeyEvent true
+                    }
+                }
+                false
+            }
             .then(
                 if (isFocused) {
                     Modifier.shadow(

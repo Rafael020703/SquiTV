@@ -53,6 +53,13 @@ fun LoginScreen(
     val passwordFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
+        delay(150)
+        try {
+            usernameFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
+
+    LaunchedEffect(Unit) {
         viewModel.loginSuccess.collect {
             onLoginSuccess()
         }
@@ -329,7 +336,8 @@ private fun CompactLoginLayout(
                             )
                         },
                         imeAction = ImeAction.Next,
-                        keyboardActions = KeyboardActions(onNext = { passwordFocusRequester.requestFocus() })
+                        keyboardActions = KeyboardActions(onNext = { passwordFocusRequester.requestFocus() }),
+                        requireClickToEdit = true
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -352,7 +360,8 @@ private fun CompactLoginLayout(
                             )
                         },
                         imeAction = ImeAction.Go,
-                        keyboardActions = KeyboardActions(onGo = { if (!isLoading) onLoginClick() })
+                        keyboardActions = KeyboardActions(onGo = { if (!isLoading) onLoginClick() }),
+                        requireClickToEdit = true
                     )
 
                     if (errorMessage != null) {
@@ -632,7 +641,8 @@ private fun ExpandedLoginLayout(
                             )
                         },
                         imeAction = ImeAction.Next,
-                        keyboardActions = KeyboardActions(onNext = { passwordFocusRequester.requestFocus() })
+                        keyboardActions = KeyboardActions(onNext = { passwordFocusRequester.requestFocus() }),
+                        requireClickToEdit = true
                     )
 
                     Spacer(modifier = Modifier.height(if (isVeryCompactHeight) 6.dp else 10.dp))
@@ -655,7 +665,8 @@ private fun ExpandedLoginLayout(
                             )
                         },
                         imeAction = ImeAction.Go,
-                        keyboardActions = KeyboardActions(onGo = { if (!isLoading) onLoginClick() })
+                        keyboardActions = KeyboardActions(onGo = { if (!isLoading) onLoginClick() }),
+                        requireClickToEdit = true
                     )
 
                     if (errorMessage != null) {

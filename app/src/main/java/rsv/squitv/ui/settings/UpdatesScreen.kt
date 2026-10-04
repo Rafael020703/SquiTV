@@ -236,6 +236,21 @@ private fun UpToDateCard(
     }
 }
 
+private fun formatPublishedDate(publishedAt: String?): String {
+    if (publishedAt.isNullOrBlank()) return ""
+    return try {
+        val cleanDate = publishedAt.take(10)
+        val parts = cleanDate.split("-")
+        if (parts.size == 3) {
+            "${parts[2]}/${parts[1]}/${parts[0]}"
+        } else {
+            cleanDate
+        }
+    } catch (_: Exception) {
+        publishedAt.take(10)
+    }
+}
+
 @Composable
 private fun UpdateAvailableCard(
     currentVersion: String,
@@ -248,6 +263,7 @@ private fun UpdateAvailableCard(
 ) {
     val tokens = AppDesignSystem
     val responsive = tokens.responsive
+    val formattedDate = remember(updateInfo.publishedAt) { formatPublishedDate(updateInfo.publishedAt) }
 
     Surface(
         modifier = Modifier
@@ -312,6 +328,20 @@ private fun UpdateAvailableCard(
                 }
             }
 
+            if (formattedDate.isNotBlank()) {
+                Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.small)))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = responsive.dp(64.dp))
+                ) {
+                    Text(
+                        text = "${stringResource(R.string.published_at_label)} $formattedDate",
+                        style = tokens.typography.caption.copy(fontSize = responsive.sp(12.sp)),
+                        color = tokens.colors.textSecondary
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.large)))
 
             // Version Comparison
@@ -364,7 +394,7 @@ private fun UpdateAvailableCard(
 
             Text(
                 text = stringResource(R.string.changelog_title).uppercase(),
-                style = tokens.typography.label.copy(fontSize = responsive.sp(12.sp)),
+                style = tokens.typography.label.copy(fontSize = responsive.sp(13.sp)),
                 fontWeight = FontWeight.Black,
                 color = tokens.colors.primary,
                 letterSpacing = responsive.sp(1.sp)
@@ -375,10 +405,10 @@ private fun UpdateAvailableCard(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = responsive.dp(200.dp)),
-                color = tokens.colors.surface.copy(alpha = 0.2f),
+                    .heightIn(min = responsive.dp(140.dp), max = responsive.dp(300.dp)),
+                color = tokens.colors.surface.copy(alpha = 0.25f),
                 shape = tokens.shapes.medium,
-                border = BorderStroke(responsive.dp(1.dp), Color.White.copy(alpha = 0.05f))
+                border = BorderStroke(responsive.dp(1.dp), Color.White.copy(alpha = 0.08f))
             ) {
                 Box(
                     modifier = Modifier
@@ -387,8 +417,8 @@ private fun UpdateAvailableCard(
                 ) {
                     Text(
                         text = updateInfo.changelog.ifBlank { stringResource(R.string.no_changelog) },
-                        style = tokens.typography.body.copy(fontSize = responsive.sp(13.sp), lineHeight = responsive.sp(18.sp)),
-                        color = tokens.colors.textSecondary
+                        style = tokens.typography.body.copy(fontSize = responsive.sp(15.sp), lineHeight = responsive.sp(22.sp)),
+                        color = tokens.colors.textPrimary
                     )
                 }
             }
