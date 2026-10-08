@@ -28,6 +28,7 @@ import rsv.squitv.core.ui.components.buttons.AppIconButton
 import rsv.squitv.core.ui.components.buttons.AppSecondaryButton
 import rsv.squitv.core.ui.components.cards.CategoryCard
 import rsv.squitv.core.ui.components.cards.CinematicActionCard
+import rsv.squitv.core.ui.components.cards.HomeCardType
 import rsv.squitv.core.ui.components.navigation.AppHeader
 import rsv.squitv.core.ui.theme.*
 import rsv.squitv.core.ui.components.common.DigitalClock
@@ -270,10 +271,10 @@ fun DashboardContent(
                         1 -> Icons.Rounded.Movie
                         else -> Icons.Rounded.VideoLibrary
                     },
-                    backgroundImage = when(index) {
-                        0 -> "https://images.unsplash.com/photo-1781707328305-5bdff1e3d72b?auto=format&fit=crop&q=80&w=1200"
-                        1 -> "https://images.unsplash.com/photo-1780147344191-49c92a340e50?auto=format&fit=crop&q=80&w=1200"
-                        else -> "https://images.unsplash.com/photo-1786085848082-7c25ea01d9b3?auto=format&fit=crop&q=80&w=1200"
+                    cardType = when(index) {
+                        0 -> HomeCardType.LIVE_TV
+                        1 -> HomeCardType.MOVIES
+                        else -> HomeCardType.SERIES
                     },
                     themeColor = color,
                     isLarge = true,
@@ -312,11 +313,11 @@ fun DashboardContent(
                 title = title,
                 description = "",
                 icon = icon,
-                backgroundImage = when(title) {
-                    "EPG" -> "https://upload.wikimedia.org/wikipedia/commons/2/2a/EPG-TVGuide.png"
-                    "MULTI-VIEW" -> "https://images.unsplash.com/photo-1568720978116-55c74f784fa2?auto=format&fit=crop&q=80&w=800"
-                    downloadsLabel -> "https://images.unsplash.com/photo-1667372283496-893f0b1e7c16?auto=format&fit=crop&q=80&w=800"
-                    else -> "https://images.unsplash.com/photo-1779234518761-4e60d082dcbd?auto=format&fit=crop&q=80&w=800"
+                cardType = when(title) {
+                    "EPG" -> HomeCardType.EPG
+                    "MULTI-VIEW" -> HomeCardType.MULTI_VIEW
+                    downloadsLabel -> HomeCardType.DOWNLOADS
+                    else -> HomeCardType.FAVORITES
                 },
                 themeColor = color,
                 modifier = Modifier

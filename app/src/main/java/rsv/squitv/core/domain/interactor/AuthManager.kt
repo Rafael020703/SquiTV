@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
+import rsv.squitv.core.debug.*
 
 @Singleton
 class AuthManager @Inject constructor(
@@ -60,6 +61,11 @@ class AuthManager @Inject constructor(
     }
 
     fun logout() {
+        DebugLogger.log(
+            level = DebugLevel.INFO,
+            category = DebugCategory.AUTH,
+            event = "SESSION_LOGOUT"
+        )
         Timber.i("AuthManager: Logout initiated. Clearing session states.")
         _isLoggedIn.value = false
         _sessionStatus.value = SessionStatus.UNKNOWN
@@ -87,6 +93,14 @@ class AuthManager @Inject constructor(
     }
 
     suspend fun login(credentials: XtreamCredentials): XtreamResponse {
+        val opId = DebugTrace.startTrace("SESSION_LOGIN", DebugCategory.AUTH)
+        DebugLogger.log(
+            level = DebugLevel.INFO,
+            category = DebugCategory.AUTH,
+            event = "SESSION_LOGIN_START",
+            operationId = opId,
+            context = mapOf("baseUrl" to DebugSanitizer.sanitizeUrl(credentials.baseUrl))
+        )
         Timber.d("Tentando login para usuário: ${credentials.username} em ${credentials.baseUrl}")
         try {
             val response = xtreamService.login(credentials.username, credentials.password)
@@ -100,13 +114,37 @@ class AuthManager @Inject constructor(
             _sessionStatus.value = status
             
             if (response.userInfo?.auth == 0) {
+                DebugLogger.log(
+                    level = DebugLevel.WARN,
+                    category = DebugCategory.AUTH,
+                    event = "SESSION_LOGIN_FAILURE",
+                    operationId = opId,
+                    context = mapOf("reason" to "AUTH_REJECTED")
+                )
+                DebugTrace.endTrace(opId, result = "AUTH_REJECTED")
                 Timber.e("Falha na autenticação: Servidor recusou usuário/senha")
             } else {
+                DebugLogger.log(
+                    level = DebugLevel.INFO,
+                    category = DebugCategory.AUTH,
+                    event = "SESSION_LOGIN_SUCCESS",
+                    operationId = opId,
+                    context = mapOf("status" to status.name, "activeCons" to (response.userInfo?.activeCons ?: "0"))
+                )
+                DebugTrace.endTrace(opId, result = "SUCCESS")
                 Timber.i("Login OK. Status: $status. Conexões: ${response.userInfo?.activeCons}/${response.userInfo?.maxConnections}")
             }
             return response
         } catch (e: Exception) {
             _sessionStatus.value = SessionStatus.OFFLINE
+            DebugLogger.log(
+                level = DebugLevel.ERROR,
+                category = DebugCategory.AUTH,
+                event = "SESSION_LOGIN_ERROR",
+                operationId = opId,
+                error = "${e.javaClass.simpleName}: ${e.message}"
+            )
+            DebugTrace.endTrace(opId, result = "ERROR", error = e.message)
             Timber.e(e, "Erro de rede/servidor no login")
             throw e
         }

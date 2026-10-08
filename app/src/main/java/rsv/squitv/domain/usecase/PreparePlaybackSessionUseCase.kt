@@ -42,10 +42,7 @@ class PreparePlaybackSessionUseCase @Inject constructor(
                 
                 val active = response.userInfo?.activeCons?.toIntOrNull() ?: 0
                 val max = response.userInfo?.maxConnections?.toIntOrNull() ?: 1
-                
-                if (max > 0 && active > max) {
-                    return Result.Error("Limite de conexões atingido ($active/$max).")
-                }
+                Timber.d("PreparePlaybackSessionUseCase: Login atualizado. Conexões ativas=$active / máx=$max (sem bloqueio de cliente)")
             } catch (e: Exception) {
                 Timber.w(e, "Erro silencioso ao validar conta para playback")
                 // We return Success here to maintain existing behavior of allowing playback 

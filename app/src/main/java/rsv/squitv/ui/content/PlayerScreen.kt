@@ -83,11 +83,12 @@ fun PlayerScreen(
     val zappingSessionId by viewModel.zappingSessionId.collectAsStateWithLifecycle()
     val zappingChannel by viewModel.zappingChannel.collectAsStateWithLifecycle()
     
-    var isControlsVisible by remember { mutableStateOf(true) }
+    var isControlsVisible by remember { mutableStateOf(false) }
     var lastInteraction by remember { mutableStateOf(0L) }
     
     var showSettings by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
+    var settingsInitialTab by remember { mutableStateOf(0) }
     var isLocked by remember { mutableStateOf(false) }
     var digitBuffer by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
@@ -114,17 +115,12 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(zappingSessionId) {
-        showOverlayWith5sTimer()
-    }
-
     val onZapping = { isNext: Boolean ->
         if (isNext) {
             viewModel.playNextChannel()
         } else {
             viewModel.playPreviousChannel()
         }
-        showOverlayWith5sTimer()
     }
 
     LaunchedEffect(digitBuffer) {
@@ -224,6 +220,8 @@ fun PlayerScreen(
             setShowSettings = { showSettings = it },
             showQualityMenu = showQualityMenu,
             setShowQualityMenu = { showQualityMenu = it },
+            settingsInitialTab = settingsInitialTab,
+            setSettingsInitialTab = { settingsInitialTab = it },
             focusRequester = focusRequester,
             countdown = countdown,
             isTablet = isTablet,
@@ -237,7 +235,8 @@ fun PlayerScreen(
             setSplitView = { isSplitView = it },
             playerEngine = appSettings.playerEngine,
             zappingChannel = zappingChannel,
-            isLiveContent = viewModel.isLiveContent
+            isLiveContent = viewModel.isLiveContent,
+            showOverlayWith5sTimer = showOverlayWith5sTimer
         )
     }
 }
@@ -281,6 +280,8 @@ fun PlayerContent(
     setShowSettings: (Boolean) -> Unit,
     showQualityMenu: Boolean,
     setShowQualityMenu: (Boolean) -> Unit,
+    settingsInitialTab: Int,
+    setSettingsInitialTab: (Int) -> Unit,
     focusRequester: FocusRequester,
     countdown: Int?,
     isTablet: Boolean,
@@ -294,7 +295,8 @@ fun PlayerContent(
     setSplitView: (Boolean) -> Unit,
     playerEngine: String,
     zappingChannel: XtreamStream?,
-    isLiveContent: Boolean = true
+    isLiveContent: Boolean = true,
+    showOverlayWith5sTimer: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val tokens = AppDesignSystem
@@ -319,49 +321,51 @@ fun PlayerContent(
                 updateInteraction()
                 val isLive = isLiveContent || (uiState as? PlayerUiState.Playing)?.isLive == true
                 val keyCode = keyEvent.nativeKeyEvent.keyCode
-                if (keyEvent.key in listOf(Key.DirectionUp, Key.DirectionDown) || keyCode in listOf(166, 167, 87, 88, 92, 93)) {
-                    Timber.d("[DPAD_DEBUG] type=${keyEvent.type} key=${keyEvent.key} keyCode=$keyCode isLive=$isLive showSettings=$showSettings showQuality=$showQualityMenu isSplitView=$isSplitView zappingChannel=${zappingChannel?.name}")
-                }
                 if (keyEvent.type == KeyEventType.KeyUp) {
                     when {
-                        // Modal dialogues absorb navigation
+                        // Dialogs absorb navigation
                         showSettings || showQualityMenu || isSplitView -> {
                             if (keyEvent.key == Key.Back) {
                                 when {
-                                    showSettings -> setShowSettings(false)
-                                    showQualityMenu -> setShowQualityMenu(false)
+                                    showSettings || showQualityMenu -> {
+                                        setShowSettings(false)
+                                        setShowQualityMenu(false)
+                                    }
                                     isSplitView -> setSplitView(false)
                                 }
                                 true
                             } else false
                         }
 
-                        // Live Zapping Navigation (D-Pad Up/Down, Channel +/- , Page +/-, Media Next/Prev)
-                        isLive && (keyEvent.key == Key.DirectionDown || keyCode in listOf(166, 87, 92)) -> {
+                        // Live Zapping Navigation when controls are NOT visible
+                        isLive && !isControlsVisible && (keyEvent.key == Key.DirectionDown || keyCode in listOf(166, 87, 92)) -> {
                             updateInteraction()
                             onZapping(true)
                             true
                         }
 
-                        isLive && (keyEvent.key == Key.DirectionUp || keyCode in listOf(167, 88, 93)) -> {
+                        isLive && !isControlsVisible && (keyEvent.key == Key.DirectionUp || keyCode in listOf(167, 88, 93)) -> {
                             updateInteraction()
                             onZapping(false)
                             true
                         }
 
-                        // Controls Overlay Toggle
-                        keyEvent.key in listOf(Key.DirectionCenter, Key.Enter, Key.Spacebar) -> {
-                            onToggleControls()
+                        // Controls Overlay Toggle when controls are NOT visible
+                        !isControlsVisible && keyEvent.key in listOf(Key.DirectionCenter, Key.Enter, Key.Spacebar) -> {
+                            showOverlayWith5sTimer()
                             true
                         }
 
-                        // VOD Seek Controls
-                        !isLive && !isControlsVisible -> {
-                            when (keyEvent.key) {
-                                Key.DirectionLeft -> { onSeekBack(); onToggleControls(); true }
-                                Key.DirectionRight -> { onSeekForward(); onToggleControls(); true }
-                                else -> false
-                            }
+                        // VOD Seek Controls when controls are NOT visible
+                        !isLive && !isControlsVisible && keyEvent.key == Key.DirectionLeft -> {
+                            onSeekBack()
+                            showOverlayWith5sTimer()
+                            true
+                        }
+                        !isLive && !isControlsVisible && keyEvent.key == Key.DirectionRight -> {
+                            onSeekForward()
+                            showOverlayWith5sTimer()
+                            true
                         }
 
                         // Back Button handling
@@ -373,7 +377,7 @@ fun PlayerContent(
                             }
                         }
 
-                        // Numpad Digit Entry (Keycodes 7 to 16 mapped to 0-9)
+                        // Numpad Digit Entry
                         keyCode in 7..16 -> {
                             val digit = (keyCode - 7).toString()
                             onDigitEntry(digit)
@@ -383,8 +387,8 @@ fun PlayerContent(
                         // Special Remote Color Keys
                         keyCode == 183 -> { onToggleFavorite(); true } // Red
                         keyCode == 184 -> { onToggleResizeMode(); true } // Green
-                        keyCode == 185 -> { setShowSettings(true); true } // Yellow
-                        keyCode == 186 -> { setShowQualityMenu(true); true } // Blue
+                        keyCode == 185 -> { setSettingsInitialTab(0); setShowSettings(true); true } // Yellow
+                        keyCode == 186 -> { setSettingsInitialTab(0); setShowSettings(true); true } // Blue
                         keyCode == 172 -> { setSplitView(true); true } // Guide
 
                         else -> false
@@ -444,10 +448,11 @@ fun PlayerContent(
                         currentProgram = currentProgram,
                         isControlsVisible = isControlsVisible,
                         isReconnecting = state.isReconnecting,
-                        onShowSettings = { setShowSettings(true) },
+                        onShowSettings = { setSettingsInitialTab(0); setShowSettings(true) },
                         onToggleResize = onToggleResizeMode,
-                        onShowAudio = { setShowSettings(true) },
-                        onShowSubtitles = { setShowSettings(true) }
+                        onShowAudio = { setSettingsInitialTab(1); setShowSettings(true) },
+                        onShowSubtitles = { setSettingsInitialTab(2); setShowSettings(true) },
+                        onShowQuality = { setSettingsInitialTab(0); setShowSettings(true) }
                     )
 
                     AnimatedVisibility(
@@ -479,9 +484,9 @@ fun PlayerContent(
                             onSeekForward = onSeekForward,
                             onSeekBack = onSeekBack,
                             onNextEpisode = onNextEpisode,
-                            onShowSettings = { setShowSettings(true) },
+                            onShowSettings = { setSettingsInitialTab(0); setShowSettings(true) },
                             onShowChannels = { setSplitView(true) },
-                            onShowQuality = { setShowQualityMenu(true) },
+                            onShowQuality = { setSettingsInitialTab(0); setShowSettings(true) },
                             onShowSpeed = { },
                             onToggleFavorite = onToggleFavorite,
                             onToggleResizeMode = onToggleResizeMode,
@@ -528,14 +533,18 @@ fun PlayerContent(
                 }
             }
 
-            // Settings Dialog
-            if (showSettings && uiState is PlayerUiState.Playing) { 
+            // Settings Dialog (TV-First)
+            if ((showSettings || showQualityMenu) && uiState is PlayerUiState.Playing) { 
                 val state = uiState as PlayerUiState.Playing
                 PlayerSettingsDialog(
                     tracks = state.tracks, 
                     sleepTimer = sleepTimer,
                     subtitleSize = subtitleSize,
-                    onDismiss = { setShowSettings(false) }, 
+                    initialTab = settingsInitialTab,
+                    onDismiss = { 
+                        setShowSettings(false)
+                        setShowQualityMenu(false)
+                    }, 
                     onSelectTrack = onSelectTrack, 
                     onClearOverride = onClearTrackOverride,
                     onSetSleepTimer = onSetSleepTimer,

@@ -22,12 +22,34 @@ class GetPlayerEpgUseCase @Inject constructor(
     )
 
     suspend operator fun invoke(streamId: Int): Result {
+        val nowTimestamp = System.currentTimeMillis() / 1000
+
+        // 1. Check local Room DB first (fast & zero network traffic to Xtream server)
+        try {
+            val localPrograms = epgRepository.getEpgForChannel(streamId.toString()).first()
+            if (localPrograms.isNotEmpty()) {
+                val currentEntity = localPrograms.find { it.startTime <= nowTimestamp && it.stopTime > nowTimestamp }
+                val nextEntities = localPrograms.filter { it.startTime > nowTimestamp }.sortedBy { it.startTime }.take(5)
+                
+                val currentProg = currentEntity?.let {
+                    EpgProgramme(it.startTime.toString(), it.stopTime.toString(), streamId.toString(), it.title, it.description)
+                }
+                val nextProgs = nextEntities.map {
+                    EpgProgramme(it.startTime.toString(), it.stopTime.toString(), streamId.toString(), it.title, it.description)
+                }
+                val listings = localPrograms.map {
+                    EpgListing("${it.channelId}_${it.startTime}", it.channelId, it.title, null, null, null, it.description, it.channelId, it.startTime, it.stopTime)
+                }
+                return Result(currentProg, nextProgs, listings)
+            }
+        } catch (_: Exception) {}
+
+        // 2. Fallback to remote Xtream API if local Room DB has no EPG entries
         val credentials = settingsRepository.settingsFlow.first().credentials 
             ?: return Result(null, emptyList(), emptyList())
 
         val response = epgRepository.getShortEpg(credentials, streamId)
         val listings = response.epgListings ?: emptyList()
-        val nowTimestamp = System.currentTimeMillis() / 1000
 
         val current = listings.find { prog ->
             val start = prog.startTimestamp ?: 0L

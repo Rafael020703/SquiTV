@@ -27,6 +27,7 @@ import rsv.squitv.ui.viewmodel.settings.SettingsViewModel
 import rsv.squitv.util.WindowSize
 import rsv.squitv.util.rememberWindowInfo
 import kotlinx.coroutines.delay
+import timber.log.Timber
 
 @UnstableApi
 @Composable
@@ -71,11 +72,34 @@ fun LiveChannelsScreen(
 
     var isInitialLoad by remember { mutableStateOf(true) }
 
+    LaunchedEffect(categories, settings.lastLiveCategory) {
+        if (categories.isNotEmpty()) {
+            val savedCat = settings.lastLiveCategory
+            val isSavedValid = savedCat != null && (savedCat == "RECENTS" || savedCat == "FAVORITES" || categories.any { it.categoryId == savedCat })
+            if (!isSavedValid && savedCat != null) {
+                val fallbackCatId = categories.firstOrNull()?.categoryId ?: "RECENTS"
+                if (selectedCategoryId != fallbackCatId) {
+                    selectedCategoryId = fallbackCatId
+                    viewModel.saveLastCategory("live", fallbackCatId)
+                    categoryViewModel.loadContent("live", fallbackCatId, ids)
+                }
+            }
+        }
+    }
+
     LaunchedEffect(isLoading) {
         if (!isLoading && isInitialLoad) {
             isInitialLoad = false
             delay(200)
-            try { sidebarFocusRequester.requestFocus() } catch (_: Exception) {}
+            try {
+                val items = contentRows.flatMap { it.items }
+                val hasSavedChannel = settings.lastLiveChannelId != null && items.any { it.id == settings.lastLiveChannelId }
+                if (hasSavedChannel) {
+                    gridFocusRequester.requestFocus()
+                } else {
+                    sidebarFocusRequester.requestFocus()
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -132,12 +156,8 @@ fun LiveChannelsScreen(
                                 }
                             }
                         },
-                        onItemFocus = { cat ->
-                            cat.categoryId?.let { catId ->
-                                if (catId != selectedCategoryId) {
-                                    handleCategorySelect(catId)
-                                }
-                            }
+                        onItemFocus = { _ ->
+                            // Do not change open category on visual focus change
                         },
                         focusRequester = sidebarFocusRequester,
                         nextFocusRequester = gridFocusRequester
@@ -153,11 +173,37 @@ fun LiveChannelsScreen(
                             description = "Tente outra categoria."
                         )
                     } else {
+                        val allItems = remember(contentRows) { contentRows.flatMap { it.items } }
+                        val activeCatId = selectedCategoryId ?: activeCat?.categoryId ?: settings.lastLiveCategory ?: categories.firstOrNull()?.categoryId ?: "RECENTS"
+                        val targetChannelId = remember(allItems, activeCatId, settings.lastLiveChannelId, settings.lastLiveCategory, settings.lastLiveCategoryChannels) {
+                            val globalId = settings.lastLiveChannelId
+                            val globalCat = settings.lastLiveCategory
+                            if (globalId != null && globalCat == activeCatId && allItems.any { it.id == globalId }) {
+                                Timber.i("GLOBAL_CHANNEL_PRIORITY_APPLIED: categoryId=$activeCatId, channelId=$globalId")
+                                globalId
+                            } else {
+                                val catSpecificId = settings.lastLiveCategoryChannels[activeCatId]
+                                if (catSpecificId != null && allItems.any { it.id == catSpecificId }) {
+                                    Timber.i("CATEGORY_CHANNEL_MEMORY_HIT: categoryId=$activeCatId, channelId=$catSpecificId")
+                                    catSpecificId
+                                } else {
+                                    val fallback = allItems.firstOrNull()?.id
+                                    if (fallback != null) {
+                                        Timber.i("CHANNEL_FALLBACK_APPLIED: categoryId=$activeCatId, channelId=$fallback")
+                                    }
+                                    fallback
+                                }
+                            }
+                        }
+
                         ContentGrid(
-                            items = contentRows.flatMap { it.items },
+                            items = allItems,
                             gridFocusRequester = gridFocusRequester,
                             sidebarFocusRequester = sidebarFocusRequester,
+                            targetItemId = targetChannelId,
                             onItemClick = { item ->
+                                Timber.i("PLAYBACK_REQUESTED_BY_USER: channelId=${item.id}, name=${item.name}")
+                                viewModel.saveLastChannel("live", activeCatId, item.id, item.name)
                                 onPlay(item.id.toInt(), item.name, item.type.toString(), item.epgId, item.qualities, item.icon)
                             }
                         )

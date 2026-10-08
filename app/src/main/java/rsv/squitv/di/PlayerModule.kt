@@ -66,6 +66,7 @@ object PlayerModule {
     }
 
     @Provides
+    @Singleton
     @OptIn(UnstableApi::class)
     fun provideExoPlayer(
         @ApplicationContext context: Context,
@@ -135,13 +136,13 @@ object PlayerModule {
 
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                2500,  // minBufferMs (Lower for faster start)
-                30000, // maxBufferMs
-                1000,  // bufferForPlaybackMs
-                2000   // bufferForPlaybackAfterRebufferMs
+                3000,  // minBufferMs (3s safety buffer to absorb temporary server drops)
+                30000, // maxBufferMs (30s max buffer)
+                500,   // bufferForPlaybackMs (ultra-fast 500ms startup latency for Live IPTV)
+                1500   // bufferForPlaybackAfterRebufferMs (1.5s after rebuffer before resuming)
             )
             .setPrioritizeTimeOverSizeThresholds(true)
-            .setBackBuffer(0, false)
+            .setBackBuffer(1000, true) // Retain 1s back-buffer from keyframe for seamless decoder recovery
             .build()
 
         val renderersFactory = DefaultRenderersFactory(context)

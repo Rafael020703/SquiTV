@@ -2,7 +2,7 @@
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -25,6 +25,7 @@ fun ContentGrid(
     sidebarFocusRequester: FocusRequester,
     favorites: List<IptvItem> = emptyList(),
     watchProgress: Map<Int, Float> = emptyMap(),
+    targetItemId: String? = null,
     onItemClick: (IptvItem) -> Unit,
     onItemLongClick: (IptvItem, Boolean) -> Unit = { _, _ -> }
 ) {
@@ -41,9 +42,29 @@ fun ContentGrid(
     }
 
     val gridSpacing = responsive.dp(tokens.spacing.extraLarge)
+    val gridState = rememberLazyGridState()
+
+    val targetIndex = remember(items, targetItemId) {
+        val idx = items.indexOfFirst { it.id == targetItemId }
+        if (idx != -1) idx else 0
+    }
+
+    val targetFocusRequester = remember { FocusRequester() }
+
+    androidx.compose.runtime.LaunchedEffect(targetIndex, items) {
+        if (items.isNotEmpty() && targetIndex in items.indices) {
+            gridState.scrollToItem(targetIndex)
+            kotlinx.coroutines.delay(50)
+            try {
+                targetFocusRequester.requestFocus()
+                gridFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
+        state = gridState,
         modifier = Modifier
             .fillMaxSize()
             .focusProperties { left = sidebarFocusRequester },
@@ -54,7 +75,11 @@ fun ContentGrid(
         itemsIndexed(items, key = { _, item -> item.id + item.type.toString() }) { index, item ->
             val isFav = favorites.any { it.id == item.id && it.type == item.type }
             val progress = watchProgress[item.id.toIntOrNull() ?: -1]
-            val itemModifier = if (index == 0) Modifier.focusRequester(gridFocusRequester) else Modifier
+            val itemModifier = if (index == targetIndex) {
+                Modifier.focusRequester(targetFocusRequester).focusRequester(gridFocusRequester)
+            } else {
+                Modifier
+            }
             
             if (isLive) {
                 ChannelCard(

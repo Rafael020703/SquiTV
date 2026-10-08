@@ -11,6 +11,7 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import timber.log.Timber
+import rsv.squitv.core.debug.DebugNetworkInterceptor
 
 object RetrofitClient {
     private const val USER_AGENT = "IPTVSmarters"
@@ -31,6 +32,7 @@ object RetrofitClient {
         .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
         .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
         .addInterceptor(baseUrlInterceptor)
+        .addInterceptor(DebugNetworkInterceptor(isPlayerStream = false))
         .addInterceptor { chain ->
             val request = chain.request().newBuilder()
                 .header("User-Agent", USER_AGENT)
@@ -49,16 +51,70 @@ object RetrofitClient {
         })
         .build()
 
+    private val streamRequestCounter = java.util.concurrent.atomic.AtomicInteger(100)
+
     val playerOkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-        .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .connectionPool(okhttp3.ConnectionPool(0, 1, java.util.concurrent.TimeUnit.NANOSECONDS))
+        .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+        .eventListener(object : okhttp3.EventListener() {
+            override fun callStart(call: okhttp3.Call) {
+                val path = call.request().url.encodedPath
+                val sanitized = if (path.contains("/live/")) {
+                    path.replace(Regex("/live/[^/]+/[^/]+/"), "/live/[REDACTED]/[REDACTED]/")
+                } else path
+                Timber.d("[SOCKET_EVENT] CALL_START path=$sanitized timestamp=${System.currentTimeMillis()}")
+            }
+            override fun connectStart(call: okhttp3.Call, inetSocketAddress: java.net.InetSocketAddress, proxy: java.net.Proxy) {
+                Timber.d("[SOCKET_EVENT] CONNECT_START addr=$inetSocketAddress timestamp=${System.currentTimeMillis()}")
+            }
+            override fun connectionAcquired(call: okhttp3.Call, connection: okhttp3.Connection) {
+                Timber.d("[SOCKET_EVENT] CONNECTION_ACQUIRED timestamp=${System.currentTimeMillis()}")
+            }
+            override fun responseHeadersStart(call: okhttp3.Call) {
+                Timber.d("[SOCKET_EVENT] RESPONSE_HEADERS_START timestamp=${System.currentTimeMillis()}")
+            }
+            override fun responseBodyStart(call: okhttp3.Call) {
+                Timber.d("[SOCKET_EVENT] RESPONSE_BODY_START timestamp=${System.currentTimeMillis()}")
+            }
+            override fun connectionReleased(call: okhttp3.Call, connection: okhttp3.Connection) {
+                Timber.d("[SOCKET_EVENT] CONNECTION_RELEASED timestamp=${System.currentTimeMillis()}")
+            }
+            override fun callEnd(call: okhttp3.Call) {
+                Timber.d("[SOCKET_EVENT] CALL_END timestamp=${System.currentTimeMillis()}")
+            }
+            override fun callFailed(call: okhttp3.Call, ioe: java.io.IOException) {
+                Timber.w(ioe, "[SOCKET_EVENT] CALL_FAILED exception=${ioe.javaClass.simpleName} msg=${ioe.message} timestamp=${System.currentTimeMillis()}")
+            }
+        })
         .addInterceptor { chain ->
+            val reqId = streamRequestCounter.incrementAndGet()
             val request = chain.request().newBuilder()
                 .header("User-Agent", USER_AGENT)
+                .header("Connection", "close")
                 .build()
-            chain.proceed(request)
+
+            val urlPath = request.url.encodedPath
+            val sanitizedPath = urlPath.replace(Regex("/live/[^/]+/[^/]+/"), "/live/[REDACTED]/[REDACTED]/")
+            val startTime = System.currentTimeMillis()
+            Timber.d("[STREAM_HTTP_START] requestId=$reqId path=$sanitizedPath timestamp=$startTime")
+
+            try {
+                val response = chain.proceed(request)
+                val code = response.code
+                val respTime = System.currentTimeMillis()
+                val elapsedMs = respTime - startTime
+                Timber.d("[STREAM_HTTP_RESPONSE] requestId=$reqId code=$code elapsedMs=${elapsedMs}ms timestamp=$respTime")
+                response
+            } catch (e: Exception) {
+                val errTime = System.currentTimeMillis()
+                val elapsedMs = errTime - startTime
+                Timber.w(e, "[STREAM_HTTP_ERROR] requestId=$reqId exception=${e.javaClass.simpleName} elapsedMs=${elapsedMs}ms timestamp=$errTime")
+                throw e
+            }
         }
+        .addInterceptor(DebugNetworkInterceptor(isPlayerStream = true))
         .addInterceptor(HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.NONE
         })
@@ -71,7 +127,7 @@ object RetrofitClient {
         if (url.isNotEmpty() && !url.startsWith("http://") && !url.startsWith("https://")) {
             url = "http://$url"
         }
-        Timber.d("Atualizando base URL para: %s", url)
+        Timber.i("[BASE_URL_CHANGED] Atualizando base URL para: %s", url)
         baseUrlInterceptor.updateBaseUrl(url)
     }
 

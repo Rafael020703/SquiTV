@@ -36,26 +36,25 @@ class GetQuickSwitchUseCase @Inject constructor(
     }
 
     /**
-     * Returns a flow that fetches current EPG for the first [limit] streams and emits them.
+     * Returns a flow that fetches current EPG for the first [limit] streams from local Room DB and emits them.
      */
     fun loadZappingEpg(streams: List<XtreamStream>, limit: Int = 20): Flow<Pair<Int, EpgProgramme>> = flow {
-        val credentials = settingsRepository.settingsFlow.first().credentials ?: return@flow
-        
-        // Use supervisorScope to allow parallel fetching without failing the whole flow if one fails
         supervisorScope {
             streams.take(limit).forEach { stream ->
                 val streamId = stream.streamId ?: return@forEach
                 launch {
                     try {
-                        val response = epgRepository.getShortEpg(credentials, streamId)
+                        val localPrograms = epgRepository.getEpgForChannel(streamId.toString()).first()
                         val now = System.currentTimeMillis() / 1000
-                        response.epgListings?.find { ((it.startTimestamp ?: 0) <= now) && ((it.stopTimestamp ?: 0) > now) }?.let { listing ->
+                        val currentLocal = localPrograms.find { it.startTime <= now && it.stopTime > now }
+                        
+                        if (currentLocal != null) {
                             val prog = EpgProgramme(
-                                start = listing.start ?: "",
-                                stop = listing.end ?: "",
+                                start = currentLocal.startTime.toString(),
+                                stop = currentLocal.stopTime.toString(),
                                 channelId = streamId.toString(),
-                                title = listing.title,
-                                description = listing.description
+                                title = currentLocal.title,
+                                description = currentLocal.description
                             )
                             emit(streamId to prog)
                         }

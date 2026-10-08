@@ -99,14 +99,6 @@ fun PlayerControlOverlay(
                 .align(Alignment.TopStart),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AppIconButton(
-                icon = Icons.AutoMirrored.Rounded.ArrowBack,
-                onClick = onBack,
-                modifier = Modifier.size(if (isTv) 64.dp else 48.dp)
-            )
-            
-            Spacer(modifier = Modifier.width(tokens.spacing.large))
-            
             Column {
                 Text(
                     text = streamName.uppercase(),

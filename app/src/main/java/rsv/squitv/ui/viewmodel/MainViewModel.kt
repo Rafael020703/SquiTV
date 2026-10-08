@@ -211,6 +211,12 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    fun saveLastChannel(type: String, categoryId: String, channelId: String, channelName: String) {
+        viewModelScope.launch {
+            settingsRepository.updateLastChannel(type, categoryId, channelId, channelName)
+        }
+    }
+
     fun addSearchHistory(query: String) {
         viewModelScope.launch {
             userRepository.insertSearchHistory(query)

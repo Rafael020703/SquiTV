@@ -20,6 +20,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -76,11 +78,21 @@ fun BoxScope.LiveBottomOverlay(
     onShowSettings: () -> Unit,
     onToggleResize: () -> Unit,
     onShowAudio: () -> Unit,
-    onShowSubtitles: () -> Unit
+    onShowSubtitles: () -> Unit,
+    onShowQuality: () -> Unit = {}
 ) {
     val tokens = AppDesignSystem
     val windowInfo = rememberWindowInfo()
     val isExpanded = windowInfo.isExpanded
+    
+    val firstBtnFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(isControlsVisible) {
+        if (isControlsVisible) {
+            kotlinx.coroutines.delay(150)
+            try { firstBtnFocusRequester.requestFocus() } catch (_: Exception) {}
+        }
+    }
 
     AnimatedVisibility(
         visible = isControlsVisible,
@@ -94,17 +106,17 @@ fun BoxScope.LiveBottomOverlay(
                 .padding(if (isExpanded) tokens.spacing.extraLarge * 2 else tokens.spacing.large)
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color.Transparent, tokens.colors.backgroundSecondary.copy(alpha = 0.9f))
+                        listOf(Color.Transparent, tokens.colors.backgroundSecondary.copy(alpha = 0.95f))
                     ),
                     tokens.shapes.large
                 )
-                .border(1.dp, Color.White.copy(alpha = 0.05f), tokens.shapes.large)
+                .border(1.dp, Color.White.copy(alpha = 0.1f), tokens.shapes.large)
                 .padding(tokens.spacing.large)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // Channel Logo
                 Surface(
-                    modifier = Modifier.size(if (isExpanded) 90.dp else 64.dp),
+                    modifier = Modifier.size(if (isExpanded) 80.dp else 60.dp),
                     shape = tokens.shapes.medium,
                     color = tokens.colors.surface.copy(alpha = 0.2f),
                     border = BorderStroke(1.dp, tokens.colors.border.copy(alpha = 0.2f))
@@ -148,10 +160,32 @@ fun BoxScope.LiveBottomOverlay(
 
                 // Controls
                 Row(horizontalArrangement = Arrangement.spacedBy(tokens.spacing.medium)) {
-                    ControlIconButton(Icons.Rounded.ClosedCaption, onShowSubtitles, "Legendas")
-                    ControlIconButton(Icons.Rounded.AspectRatio, onToggleResize, "Proporção")
-                    ControlIconButton(Icons.Rounded.Settings, onShowSettings, "Configurações")
-                    ControlIconButton(Icons.Rounded.MusicNote, onShowAudio, "Áudio")
+                    ControlIconButton(
+                        icon = Icons.Rounded.ClosedCaption,
+                        onClick = onShowSubtitles,
+                        contentDescription = "Legendas",
+                        modifier = Modifier.focusRequester(firstBtnFocusRequester)
+                    )
+                    ControlIconButton(
+                        icon = Icons.Rounded.VideoSettings,
+                        onClick = onShowQuality,
+                        contentDescription = "Qualidade"
+                    )
+                    ControlIconButton(
+                        icon = Icons.Rounded.InterpreterMode,
+                        onClick = onShowAudio,
+                        contentDescription = "Áudio"
+                    )
+                    ControlIconButton(
+                        icon = Icons.Rounded.AspectRatio,
+                        onClick = onToggleResize,
+                        contentDescription = "Proporção"
+                    )
+                    ControlIconButton(
+                        icon = Icons.Rounded.Settings,
+                        onClick = onShowSettings,
+                        contentDescription = "Configurações"
+                    )
                 }
             }
             
@@ -164,20 +198,48 @@ fun BoxScope.LiveBottomOverlay(
 }
 
 @Composable
-fun ControlIconButton(icon: ImageVector, onClick: () -> Unit, contentDescription: String? = null) {
+fun ControlIconButton(
+    icon: ImageVector,
+    onClick: () -> Unit,
+    contentDescription: String? = null,
+    modifier: Modifier = Modifier
+) {
+    var isFocused by remember { mutableStateOf(false) }
     val tokens = AppDesignSystem
-    IconButton(
+
+    val bgColor by animateColorAsState(
+        if (isFocused) tokens.colors.primary else Color.White.copy(alpha = 0.12f),
+        label = "btnBg"
+    )
+    val iconColor by animateColorAsState(
+        if (isFocused) Color.Black else Color.White,
+        label = "btnIcon"
+    )
+
+    Surface(
         onClick = onClick,
-        modifier = Modifier
-            .size(if (tokens.dimensions.sidebarWidth > 200.dp) 56.dp else 48.dp)
-            .appFocus(shape = CircleShape)
+        color = bgColor,
+        shape = CircleShape,
+        border = BorderStroke(
+            if (isFocused) 2.5.dp else 1.dp,
+            if (isFocused) FocusGlowCyan else Color.White.copy(alpha = 0.15f)
+        ),
+        modifier = modifier
+            .size(52.dp)
+            .adaptiveFocus(
+                shape = CircleShape,
+                focusedScale = 1.18f,
+                onFocus = { isFocused = it }
+            )
     ) {
-        Icon(
-            icon, 
-            contentDescription = contentDescription, 
-            tint = Color.White, 
-            modifier = Modifier.size(24.dp)
-        )
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = iconColor,
+                modifier = Modifier.size(26.dp)
+            )
+        }
     }
 }
 

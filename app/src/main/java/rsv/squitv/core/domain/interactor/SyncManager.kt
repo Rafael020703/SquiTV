@@ -174,7 +174,17 @@ class SyncManager @Inject constructor(
                     "series" -> catalogRepository.getSeriesCategories(creds, forceRefresh = isRefresh)
                     else -> emptyList()
                 }
-                _categories.value = cats.map { XtreamCategory(it.id, it.name) }
+                val mappedCats = cats.map { XtreamCategory(it.id, it.name) }.toMutableList()
+                if (type == "live") {
+                    val recents = mappedCats.find { it.categoryId == "RECENTS" }
+                    if (recents != null) {
+                        mappedCats.remove(recents)
+                        mappedCats.add(0, recents)
+                    } else {
+                        mappedCats.add(0, XtreamCategory("RECENTS", "Recém Adicionados"))
+                    }
+                }
+                _categories.value = mappedCats
             } catch (e: Exception) {
                 Timber.e(e, "Error loading categories")
             }

@@ -28,6 +28,7 @@ import rsv.squitv.ui.login.SyncScreen
 import rsv.squitv.ui.viewmodel.LocalLoginViewModel
 import rsv.squitv.ui.search.SearchScreen
 import rsv.squitv.ui.series.SeriesDetailScreen
+import rsv.squitv.ui.debug.DebugConsoleScreen
 import rsv.squitv.ui.settings.DnsTesterScreen
 import rsv.squitv.ui.settings.SettingsScreen
 import rsv.squitv.ui.settings.UpdatesScreen
@@ -322,6 +323,12 @@ fun NavGraphBuilder.appNavGraph(
     composable<Route.DnsTester> {
         DnsTesterScreen(
             onBack = { appController.goBack() }
+        )
+    }
+
+    composable<Route.DebugConsole> {
+        DebugConsoleScreen(
+            onNavigateBack = { appController.goBack() }
         )
     }
 

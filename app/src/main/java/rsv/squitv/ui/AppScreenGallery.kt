@@ -92,15 +92,6 @@ fun AppGalleryScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (onBack != null) {
-                                AppIconButton(
-                                    icon = Icons.AutoMirrored.Rounded.ArrowBack,
-                                    onClick = onBack,
-                                    tint = AppDesignSystem.colors.primary,
-                                    contentDescription = "Voltar"
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                            }
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)

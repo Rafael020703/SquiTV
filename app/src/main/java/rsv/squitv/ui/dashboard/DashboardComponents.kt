@@ -47,14 +47,16 @@ fun PortalBackground(
             .background(tokens.colors.background)
     ) {
         if (showAtmosphere) {
-            // Cinematic Atmosphere Image
-            AsyncImage(
-                model = atmosphereUrl ?: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&q=80&w=1920",
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                alpha = 0.25f
-            )
+            // Optional custom atmosphere image
+            if (!atmosphereUrl.isNullOrEmpty()) {
+                AsyncImage(
+                    model = atmosphereUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    alpha = 0.20f
+                )
+            }
 
             // Deep vignette and color grading
             Box(
@@ -63,11 +65,12 @@ fun PortalBackground(
                     .background(
                         Brush.radialGradient(
                             colors = listOf(
-                                Color.Transparent,
-                                Color.Black.copy(alpha = 0.8f)
+                                tokens.colors.surfaceVariant.copy(alpha = 0.12f),
+                                tokens.colors.background.copy(alpha = 0.85f),
+                                tokens.colors.background
                             ),
-                            center = Offset(0.5f, 0.5f),
-                            radius = 2000f
+                            center = Offset(0.5f, 0.4f),
+                            radius = 1800f
                         )
                     )
             )
@@ -79,7 +82,7 @@ fun PortalBackground(
                     .background(
                         Brush.radialGradient(
                             colors = listOf(
-                                tokens.colors.primary.copy(alpha = 0.05f),
+                                tokens.colors.primary.copy(alpha = 0.06f),
                                 Color.Transparent
                             ),
                             center = Offset(0.8f, 0.2f),

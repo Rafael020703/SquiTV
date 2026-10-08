@@ -16,6 +16,7 @@ import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 import dagger.hilt.android.qualifiers.ApplicationContext
+import timber.log.Timber
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
@@ -107,6 +108,10 @@ class SettingsRepository @Inject constructor(
         val BACKGROUND_PLAYBACK_ENABLED = booleanPreferencesKey("background_playback_enabled")
         
         val LAST_LIVE_CATEGORY = stringPreferencesKey("last_live_category")
+        val LAST_LIVE_CHANNEL_ID = stringPreferencesKey("last_live_channel_id")
+        val LAST_LIVE_CHANNEL_NAME = stringPreferencesKey("last_live_channel_name")
+        val LAST_LIVE_CATEGORY_CHANNELS = stringPreferencesKey("last_live_category_channels")
+        val LAST_LIVE_CATEGORY_CHANNEL_NAMES = stringPreferencesKey("last_live_category_channel_names")
         val LAST_MOVIE_CATEGORY = stringPreferencesKey("last_movie_category")
         val LAST_SERIES_CATEGORY = stringPreferencesKey("last_series_category")
         
@@ -156,6 +161,10 @@ class SettingsRepository @Inject constructor(
         val detailedNotifications: Boolean = true,
         val backgroundPlaybackEnabled: Boolean = false,
         val lastLiveCategory: String? = null,
+        val lastLiveChannelId: String? = null,
+        val lastLiveChannelName: String? = null,
+        val lastLiveCategoryChannels: Map<String, String> = emptyMap(),
+        val lastLiveCategoryChannelNames: Map<String, String> = emptyMap(),
         val lastMovieCategory: String? = null,
         val lastSeriesCategory: String? = null,
         val cachedUserInfo: UserInfo? = null,
@@ -214,6 +223,16 @@ class SettingsRepository @Inject constructor(
         val bgPlaybackEnabled = preferences[PreferencesKeys.BACKGROUND_PLAYBACK_ENABLED] ?: false
         
         val lastLive = preferences[PreferencesKeys.LAST_LIVE_CATEGORY]
+        val lastLiveChannelId = preferences[PreferencesKeys.LAST_LIVE_CHANNEL_ID]
+        val lastLiveChannelName = preferences[PreferencesKeys.LAST_LIVE_CHANNEL_NAME]
+        val lastLiveChannelsJson = preferences[PreferencesKeys.LAST_LIVE_CATEGORY_CHANNELS]
+        val lastLiveCategoryChannels = try {
+            if (lastLiveChannelsJson != null) Json.decodeFromString<Map<String, String>>(lastLiveChannelsJson) else emptyMap()
+        } catch (_: Exception) { emptyMap() }
+        val lastLiveNamesJson = preferences[PreferencesKeys.LAST_LIVE_CATEGORY_CHANNEL_NAMES]
+        val lastLiveCategoryChannelNames = try {
+            if (lastLiveNamesJson != null) Json.decodeFromString<Map<String, String>>(lastLiveNamesJson) else emptyMap()
+        } catch (_: Exception) { emptyMap() }
         val lastMovie = preferences[PreferencesKeys.LAST_MOVIE_CATEGORY]
         val lastSeries = preferences[PreferencesKeys.LAST_SERIES_CATEGORY]
 
@@ -246,14 +265,49 @@ class SettingsRepository @Inject constructor(
         }
         
         AppSettings(
-            creds, accounts, currentIndex, playerEngine, isLiveLoaded, isVodLoaded, isSeriesLoaded,
-            lastSyncLive, lastSyncVod, lastSyncSeries,
-            bufferStrat, oledTheme, dataSaver, zoom, language,
-            lastSync, interval, pin, autoPlay, resizeMode, diagnostics, compact, hideBlocked, appLock,
-            downloadWifiOnly, smartDownloads, audioLang, subLang, profileId, detailedNotifs, bgPlaybackEnabled,
-            lastLive, lastMovie, lastSeries,
-            cachedUserInfo,
-            lastUpdateCheck, lastAvailableVersion, lastNotifiedVersion, ignoredVersion
+            credentials = creds,
+            accounts = accounts,
+            currentAccountIndex = currentIndex,
+            playerEngine = playerEngine,
+            isLiveLoaded = isLiveLoaded,
+            isVodLoaded = isVodLoaded,
+            isSeriesLoaded = isSeriesLoaded,
+            lastSyncLive = lastSyncLive,
+            lastSyncVod = lastSyncVod,
+            lastSyncSeries = lastSyncSeries,
+            bufferStrategy = bufferStrat,
+            useOledTheme = oledTheme,
+            dataSaverMode = dataSaver,
+            uiZoom = zoom,
+            language = language,
+            lastSyncTimestamp = lastSync,
+            syncIntervalHours = interval,
+            appPin = pin,
+            autoPlayEnabled = autoPlay,
+            defaultResizeMode = resizeMode,
+            showDiagnostics = diagnostics,
+            compactMode = compact,
+            hideBlockedCategories = hideBlocked,
+            appLockEnabled = appLock,
+            downloadWifiOnly = downloadWifiOnly,
+            smartDownloadsEnabled = smartDownloads,
+            preferredAudioLang = audioLang,
+            preferredSubtitleLang = subLang,
+            activeProfileId = profileId,
+            detailedNotifications = detailedNotifs,
+            backgroundPlaybackEnabled = bgPlaybackEnabled,
+            lastLiveCategory = lastLive,
+            lastLiveChannelId = lastLiveChannelId,
+            lastLiveChannelName = lastLiveChannelName,
+            lastLiveCategoryChannels = lastLiveCategoryChannels,
+            lastLiveCategoryChannelNames = lastLiveCategoryChannelNames,
+            lastMovieCategory = lastMovie,
+            lastSeriesCategory = lastSeries,
+            cachedUserInfo = cachedUserInfo,
+            lastUpdateCheckTimestamp = lastUpdateCheck,
+            lastAvailableVersion = lastAvailableVersion,
+            lastNotifiedVersion = lastNotifiedVersion,
+            ignoredVersion = ignoredVersion
         )
     }
 
@@ -538,6 +592,38 @@ class SettingsRepository @Inject constructor(
                 "live" -> preferences[PreferencesKeys.LAST_LIVE_CATEGORY] = categoryId
                 "movie" -> preferences[PreferencesKeys.LAST_MOVIE_CATEGORY] = categoryId
                 "series" -> preferences[PreferencesKeys.LAST_SERIES_CATEGORY] = categoryId
+            }
+        }
+    }
+
+    suspend fun updateLastChannel(type: String, categoryId: String, channelId: String, channelName: String) {
+        context.dataStore.edit { preferences ->
+            when (type.lowercase()) {
+                "live" -> {
+                    if (categoryId.isNotBlank()) {
+                        preferences[PreferencesKeys.LAST_LIVE_CATEGORY] = categoryId
+                    }
+                    preferences[PreferencesKeys.LAST_LIVE_CHANNEL_ID] = channelId
+                    preferences[PreferencesKeys.LAST_LIVE_CHANNEL_NAME] = channelName
+
+                    if (categoryId.isNotBlank()) {
+                        val channelsJson = preferences[PreferencesKeys.LAST_LIVE_CATEGORY_CHANNELS]
+                        val namesJson = preferences[PreferencesKeys.LAST_LIVE_CATEGORY_CHANNEL_NAMES]
+                        val channelsMap = try {
+                            if (channelsJson != null) Json.decodeFromString<MutableMap<String, String>>(channelsJson) else mutableMapOf()
+                        } catch (_: Exception) { mutableMapOf() }
+                        val namesMap = try {
+                            if (namesJson != null) Json.decodeFromString<MutableMap<String, String>>(namesJson) else mutableMapOf()
+                        } catch (_: Exception) { mutableMapOf() }
+
+                        channelsMap[categoryId] = channelId
+                        namesMap[categoryId] = channelName
+
+                        preferences[PreferencesKeys.LAST_LIVE_CATEGORY_CHANNELS] = Json.encodeToString(channelsMap)
+                        preferences[PreferencesKeys.LAST_LIVE_CATEGORY_CHANNEL_NAMES] = Json.encodeToString(namesMap)
+                        Timber.i("CATEGORY_SELECTION_SAVED: categoryId=$categoryId, channelId=$channelId, channelName=$channelName")
+                    }
+                }
             }
         }
     }

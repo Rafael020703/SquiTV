@@ -36,6 +36,9 @@ import java.util.concurrent.Executors
 import androidx.work.Configuration
 import androidx.hilt.work.HiltWorkerFactory
 import rsv.squitv.data.repository.SettingsRepository
+import rsv.squitv.core.debug.DebugLogger
+import rsv.squitv.core.debug.DebugExceptionHandler
+import rsv.squitv.core.debug.DebugLifecycleObserver
 import kotlinx.coroutines.flow.collectLatest
 import javax.inject.Inject
 
@@ -232,6 +235,9 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
         super.onCreate()
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
+            DebugLogger.init(this)
+            DebugExceptionHandler.install()
+            registerActivityLifecycleCallbacks(DebugLifecycleObserver())
         }
 
         // Subscribe to global topic for content updates if Firebase messaging is active

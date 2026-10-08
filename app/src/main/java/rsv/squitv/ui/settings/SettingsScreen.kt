@@ -124,15 +124,6 @@ fun SettingsScreen(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AppIconButton(
-                    icon = Icons.AutoMirrored.Rounded.ArrowBack,
-                    onClick = onBack,
-                    tint = tokens.colors.primary,
-                    contentDescription = "Voltar"
-                )
-
-                Spacer(modifier = Modifier.width(16.dp))
-
                 Column {
                     Text(
                         text = stringResource(R.string.settings_nav_title).uppercase(),
@@ -171,6 +162,7 @@ fun SettingsScreen(
                         modifier = if (index == 0) Modifier.focusRequester(contentFocusRequester) else Modifier,
                         onClick = {
                             when (category) {
+                                SettingsCategory.ACCOUNT -> onNavigateToAccount()
                                 SettingsCategory.SIGN_OUT -> mainViewModel.logout()
                                 SettingsCategory.UPDATE -> mainViewModel.loadData(force = true)
                                 SettingsCategory.APP_UPDATES -> onNavigateToUpdates()

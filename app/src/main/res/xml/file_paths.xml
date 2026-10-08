@@ -3,4 +3,5 @@
     <cache-path name="cache_updates" path="updates/" />
     <external-cache-path name="external_cache_updates" path="updates/" />
     <files-path name="files_updates" path="updates/" />
+    <files-path name="debug_logs" path="debug_logs/" />
 </paths>

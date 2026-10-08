@@ -33,6 +33,9 @@ import kotlinx.coroutines.runBlocking
 import rsv.squitv.core.navigation.AppController
 import rsv.squitv.core.navigation.MainNavigation
 import rsv.squitv.core.navigation.Route
+import android.view.KeyEvent
+import rsv.squitv.core.debug.DebugInputTracker
+import rsv.squitv.core.debug.DebugLogger
 import rsv.squitv.core.ui.theme.MeusCanaisTheme
 import rsv.squitv.ui.viewmodel.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
@@ -51,8 +54,14 @@ class MainActivity : AppCompatActivity() {
 
     // Removed dispatchKeyEvent to use OnBackPressedDispatcher for standard consumption
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        DebugInputTracker.trackKeyEvent(event)
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        DebugInputTracker.trackFocusChange("MainActivity_Window", hasFocus)
         if (hasFocus) {
             hideSystemBars()
         }

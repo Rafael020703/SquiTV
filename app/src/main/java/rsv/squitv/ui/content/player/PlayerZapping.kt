@@ -89,7 +89,7 @@ fun QuickSwitchSidebar(
 }
 
 @Composable
-fun ZappingBanner(
+fun BoxScope.ZappingBanner(
     isVisible: Boolean,
     channel: XtreamStream?,
     program: EpgProgramme?,
@@ -98,13 +98,17 @@ fun ZappingBanner(
     val tokens = AppDesignSystem
     AnimatedVisibility(
         visible = isVisible,
-        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-        modifier = Modifier.fillMaxWidth()
+        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .align(Alignment.TopCenter)
     ) {
         Box(
-            modifier = Modifier.fillMaxWidth().padding(if (isExpanded) tokens.spacing.extraLarge * 2 else tokens.spacing.large), 
-            contentAlignment = Alignment.BottomCenter
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = if (isExpanded) 36.dp else 20.dp, start = tokens.spacing.large, end = tokens.spacing.large), 
+            contentAlignment = Alignment.TopCenter
         ) {
             Surface(
                 color = tokens.colors.backgroundSecondary.copy(alpha = 0.95f),

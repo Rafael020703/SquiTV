@@ -75,6 +75,9 @@ sealed interface Route {
     data object LocalLogin : Route
 
     @Serializable
+    data object DebugConsole : Route
+
+    @Serializable
     data class ActorDetail(val name: String) : Route
 
     @Serializable

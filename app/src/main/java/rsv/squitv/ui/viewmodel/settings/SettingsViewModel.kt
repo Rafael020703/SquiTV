@@ -21,10 +21,6 @@ class SettingsViewModel @Inject constructor(
         initialValue = SettingsRepository.AppSettings(null, lastSyncTimestamp = 0L, syncIntervalHours = 24)
     )
 
-    fun updateSyncInterval(hours: Int) {
-        viewModelScope.launch { settingsRepository.updateSyncInterval(hours) }
-    }
-
     fun updatePin(pin: String?) {
         viewModelScope.launch { settingsRepository.updatePin(pin) }
     }
@@ -37,16 +33,8 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.updateShowDiagnostics(enabled) }
     }
 
-    fun updateDefaultResizeMode(mode: Int) {
-        viewModelScope.launch { settingsRepository.updateDefaultResizeMode(mode) }
-    }
-
     fun updateHideBlockedCategories(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.updateHideBlockedCategories(enabled) }
-    }
-
-    fun updateAppLockEnabled(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.updateAppLockEnabled(enabled) }
     }
 
     fun addAccount(credentials: XtreamCredentials) {
@@ -73,10 +61,6 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.updateUseOledTheme(enabled) }
     }
 
-    fun updateDataSaverMode(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.updateDataSaverMode(enabled) }
-    }
-
     fun updateUiZoom(zoom: Float) {
         viewModelScope.launch { settingsRepository.updateUiZoom(zoom) }
     }
@@ -85,20 +69,8 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.updateLanguage(language) }
     }
 
-    fun updateDownloadWifiOnly(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.updateDownloadWifiOnly(enabled) }
-    }
-
-    fun updateSmartDownloads(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.updateSmartDownloads(enabled) }
-    }
-
     fun updateBackgroundPlaybackEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.updateBackgroundPlaybackEnabled(enabled) }
-    }
-
-    fun updateDetailedNotifications(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.updateDetailedNotifications(enabled) }
     }
 
     fun updateProfilePicture(url: String) {

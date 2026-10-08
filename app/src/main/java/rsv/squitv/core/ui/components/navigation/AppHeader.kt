@@ -1,14 +1,11 @@
 ﻿package rsv.squitv.core.ui.components.navigation
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import rsv.squitv.core.ui.components.buttons.AppIconButton
 import rsv.squitv.core.ui.theme.*
 
 @Composable
@@ -28,14 +25,6 @@ fun AppHeader(
             .padding(horizontal = responsive.dp(tokens.spacing.extraLarge), vertical = responsive.dp(tokens.spacing.large)),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (onBack != null) {
-            AppIconButton(
-                icon = Icons.AutoMirrored.Rounded.ArrowBack,
-                onClick = onBack,
-                modifier = Modifier.padding(end = responsive.dp(tokens.spacing.medium))
-            )
-        }
-        
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title.uppercase(),
