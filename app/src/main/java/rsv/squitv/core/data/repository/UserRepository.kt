@@ -12,10 +12,11 @@ class UserRepository @Inject constructor(
     private val iptvDao: IptvDao
 ) {
     suspend fun updateFavorite(item: IptvItem, isFav: Boolean) {
+        val streamType = item.type.name
         if (isFav) {
             iptvDao.insertFavorite(FavoriteEntity(
-                streamId = item.id.toInt(),
-                streamType = item.type.name,
+                streamId = item.id.toIntOrNull() ?: 0,
+                streamType = streamType,
                 name = item.name,
                 logo = item.icon,
                 rating = item.rating,
@@ -25,7 +26,7 @@ class UserRepository @Inject constructor(
                 categoryId = item.categoryId
             ))
         } else {
-            iptvDao.deleteFavorite(item.id.toInt())
+            iptvDao.deleteFavorite(item.id.toIntOrNull() ?: 0, streamType)
         }
     }
 

@@ -101,7 +101,7 @@ class MultiViewViewModel @Inject constructor(
 
     private fun createPlayer(): ExoPlayer {
         val httpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
-            .setUserAgent("IPTVSmarters")
+            .setUserAgent(rsv.squitv.data.network.RetrofitClient.USER_AGENT)
 
         val cacheDataSourceFactory = CacheDataSource.Factory()
             .setCache(playbackCache)

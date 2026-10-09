@@ -18,6 +18,23 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import androidx.credentials.CredentialManager
+import androidx.credentials.CreatePasswordRequest
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.GetPasswordOption
+import androidx.credentials.PasswordCredential
+import androidx.credentials.exceptions.CreateCredentialCancellationException
+import androidx.credentials.exceptions.CreateCredentialException
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
+
+import rsv.squitv.data.repository.UpdateRepository
+import rsv.squitv.domain.model.AppUpdateInfo
+import rsv.squitv.domain.model.UpdateCheckResult
+
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 
@@ -27,6 +44,7 @@ class LoginViewModel @Inject constructor(
     private val firebaseRepository: FirebaseRepository,
     private val dnsManager: DnsManager,
     private val authManager: AuthManager,
+    private val updateRepository: UpdateRepository,
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
 ) : ViewModel() {
 
@@ -59,6 +77,9 @@ class LoginViewModel @Inject constructor(
     private val _loginSuccess = MutableSharedFlow<Unit>()
     val loginSuccess = _loginSuccess.asSharedFlow()
 
+    private val _promptSaveCredentialEvent = MutableSharedFlow<Pair<String, String>>()
+    val promptSaveCredentialEvent = _promptSaveCredentialEvent.asSharedFlow()
+
     private val _dnsStatusMap = MutableStateFlow<Map<String, Long>>(emptyMap())
     val dnsStatusMap: StateFlow<Map<String, Long>> = _dnsStatusMap
 
@@ -68,11 +89,15 @@ class LoginViewModel @Inject constructor(
     private val _isTestingDns = MutableStateFlow(false)
     val isTestingDns: StateFlow<Boolean> = _isTestingDns
 
+    private val _updateInfo = MutableStateFlow<AppUpdateInfo?>(null)
+    val updateInfo: StateFlow<AppUpdateInfo?> = _updateInfo
+
     val availableDns = dnsManager.getDnsOptions()
 
     init {
         testAllDns()
         autoRestoreIfNeeded()
+        checkForUpdates()
         
         // DEBUG ONLY: Pre-fill test credentials for local development testing
         if (BuildConfig.DEBUG) {
@@ -166,6 +191,7 @@ class LoginViewModel @Inject constructor(
                         if (response.userInfo?.auth == 1) {
                             settingsRepository.saveCredentials(credentials)
                             _state.value = LoginState.SUCCESS
+                            _promptSaveCredentialEvent.emit(Pair(currentUser, currentPass))
                             _loginSuccess.emit(Unit)
                             success = true
                             break
@@ -219,5 +245,80 @@ class LoginViewModel @Inject constructor(
                 if (!isAuto) _isLoading.value = false
             }
         }
+    }
+
+    fun checkForUpdates() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val result = updateRepository.checkForUpdates(force = false)
+                if (result is UpdateCheckResult.UpdateAvailable) {
+                    _updateInfo.value = result.updateInfo
+                } else {
+                    _updateInfo.value = null
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error checking update on login screen")
+                _updateInfo.value = null
+            }
+        }
+    }
+
+    fun fetchSavedCredentials(context: Context) {
+        viewModelScope.launch {
+            try {
+                val targetContext = context.findActivity() ?: context
+                val credentialManager = CredentialManager.create(targetContext)
+                val getPasswordOption = GetPasswordOption()
+                val request = GetCredentialRequest(listOf(getPasswordOption))
+                val response = credentialManager.getCredential(targetContext, request)
+                val credential = response.credential
+                if (credential is PasswordCredential) {
+                    val fetchedUser = credential.id
+                    val fetchedPass = credential.password
+                    _username.value = fetchedUser
+                    _password.value = fetchedPass
+
+                    // Lookup matching server URL from account history if available
+                    val settings = settingsRepository.settingsFlow.first()
+                    val cachedAccount = settings.credentials
+                    if (cachedAccount != null && cachedAccount.username == fetchedUser) {
+                        _url.value = cachedAccount.baseUrl
+                    }
+                    _errorMessage.value = null
+                    Timber.i("Credential successfully retrieved from CredentialManager")
+                }
+            } catch (e: GetCredentialCancellationException) {
+                Timber.d("User cancelled credential picker")
+            } catch (e: GetCredentialException) {
+                Timber.d("No saved credential found or provider unavailable: ${e.message}")
+            } catch (e: Exception) {
+                Timber.w("Error fetching credential: ${e.message}")
+            }
+        }
+    }
+
+    suspend fun saveCredentialToPasswordManager(context: Context, user: String, pass: String) {
+        try {
+            val targetContext = context.findActivity() ?: context
+            val credentialManager = CredentialManager.create(targetContext)
+            val request = CreatePasswordRequest(id = user, password = pass)
+            credentialManager.createCredential(targetContext, request)
+            Timber.i("Password save request completed for account")
+        } catch (e: CreateCredentialCancellationException) {
+            Timber.d("User cancelled saving password credential")
+        } catch (e: CreateCredentialException) {
+            Timber.w("CreateCredentialException: ${e.message}")
+        } catch (e: Exception) {
+            Timber.w("Could not save password credential: ${e.message}")
+        }
+    }
+
+    private fun Context.findActivity(): Activity? {
+        var ctx = this
+        while (ctx is ContextWrapper) {
+            if (ctx is Activity) return ctx
+            ctx = ctx.baseContext
+        }
+        return null
     }
 }

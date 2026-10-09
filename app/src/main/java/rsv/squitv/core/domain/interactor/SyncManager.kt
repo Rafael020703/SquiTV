@@ -79,6 +79,7 @@ class SyncManager @Inject constructor(
     fun startSync(force: Boolean = false) {
         if (syncJob?.isActive == true && !force) return
         
+        syncJob?.cancel()
         Timber.d("Sync: STARTING (force=$force)")
         syncJob = managerScope.launch {
             syncDataUseCase(force = force).collect { result ->
@@ -175,15 +176,17 @@ class SyncManager @Inject constructor(
                     else -> emptyList()
                 }
                 val mappedCats = cats.map { XtreamCategory(it.id, it.name) }.toMutableList()
-                if (type == "live") {
-                    val recents = mappedCats.find { it.categoryId == "RECENTS" }
-                    if (recents != null) {
-                        mappedCats.remove(recents)
-                        mappedCats.add(0, recents)
-                    } else {
-                        mappedCats.add(0, XtreamCategory("RECENTS", "Recém Adicionados"))
-                    }
-                }
+                
+                // Add FAVORITES category if not present
+                val favCat = mappedCats.find { it.categoryId == "FAVORITES" }
+                if (favCat != null) mappedCats.remove(favCat)
+                mappedCats.add(0, XtreamCategory("FAVORITES", "Favoritos"))
+
+                // Add RECENTS category if not present
+                val recentsCat = mappedCats.find { it.categoryId == "RECENTS" }
+                if (recentsCat != null) mappedCats.remove(recentsCat)
+                mappedCats.add(1, XtreamCategory("RECENTS", "Adicionados recentemente"))
+
                 _categories.value = mappedCats
             } catch (e: Exception) {
                 Timber.e(e, "Error loading categories")

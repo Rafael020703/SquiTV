@@ -447,4 +447,10 @@
     <string name="update_notification_title">Nova atualização disponível</string>
     <string name="update_notification_msg">Squi TV %s está disponível.</string>
     <string name="view_update_action">Ver atualização</string>
+    <string name="empty_favorites_movies">Você ainda não tem filmes favoritos.</string>
+    <string name="empty_favorites_series">Você ainda não tem séries favoritas.</string>
+    <string name="empty_favorites_live">Você ainda não tem canais favoritos.</string>
+    <string name="update_available_login">Atualização Disponível</string>
+    <string name="autofill_google_button">USAR SENHA SALVA NO GOOGLE</string>
+    <string name="credential_filled_msg">Credenciais preenchidas do Google</string>
 </resources>

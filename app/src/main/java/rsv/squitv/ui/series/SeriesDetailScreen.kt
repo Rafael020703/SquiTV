@@ -81,8 +81,8 @@ fun SeriesDetailScreen(
     val favorites by libraryViewModel.favorites.collectAsStateWithLifecycle()
     val credentials = mainViewModel.credentials
 
-    val isFavorite = remember(favorites, seriesName) { 
-        favorites.any { it.name == seriesName && (it.type == ContentType.SERIES) } 
+    val isFavorite = remember(favorites, seriesId) { 
+        favorites.any { it.id == seriesId.toString() && (it.type == ContentType.SERIES) } 
     }
 
     val windowInfo = rememberWindowInfo()

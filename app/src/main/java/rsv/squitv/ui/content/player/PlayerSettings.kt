@@ -39,12 +39,14 @@ fun PlayerSettingsDialog(
     tracks: Tracks?,
     sleepTimer: Int?,
     subtitleSize: Float,
+    currentSpeed: Float = 1.0f,
     initialTab: Int = 0,
     onDismiss: () -> Unit,
     onSelectTrack: (Int, Int, Int) -> Unit,
     onClearOverride: (Int) -> Unit,
     onSetSleepTimer: (Int?) -> Unit,
-    onSetSubtitleSize: (Float) -> Unit
+    onSetSubtitleSize: (Float) -> Unit,
+    onSetSpeed: (Float) -> Unit = {}
 ) {
     val tokens = AppDesignSystem
     var selectedTab by remember { mutableStateOf(initialTab) }
@@ -133,7 +135,8 @@ fun PlayerSettingsDialog(
                             Triple(0, "VÍDEO", Icons.Rounded.VideoSettings),
                             Triple(1, "ÁUDIO", Icons.Rounded.InterpreterMode),
                             Triple(2, "LEGENDAS", Icons.Rounded.ClosedCaption),
-                            Triple(3, "SISTEMA", Icons.Rounded.SettingsSuggest)
+                            Triple(3, "VELOCIDADE", Icons.Rounded.Speed),
+                            Triple(4, "SISTEMA", Icons.Rounded.SettingsSuggest)
                         )
 
                         categories.forEachIndexed { idx, (catId, title, icon) ->
@@ -174,7 +177,11 @@ fun PlayerSettingsDialog(
                                 onClearOverride = onClearOverride,
                                 onSetSubtitleSize = onSetSubtitleSize
                             )
-                            3 -> SystemSettingsSection(
+                            3 -> PlaybackSpeedSettingsSection(
+                                currentSpeed = currentSpeed,
+                                onSetSpeed = onSetSpeed
+                            )
+                            4 -> SystemSettingsSection(
                                 sleepTimer = sleepTimer,
                                 onSetSleepTimer = onSetSleepTimer
                             )
@@ -499,6 +506,7 @@ fun TvOptionRowItem(
     label: String,
     sublabel: String? = null,
     isSelected: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val tokens = AppDesignSystem
@@ -538,7 +546,7 @@ fun TvOptionRowItem(
             if (isFocused) 2.5.dp else if (isSelected) 1.dp else 0.dp,
             if (isFocused) FocusGlowCyan else if (isSelected) tokens.colors.primary.copy(alpha = 0.4f) else Color.Transparent
         ),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .adaptiveFocus(
                 shape = RoundedCornerShape(14.dp),
@@ -633,4 +641,139 @@ private fun NoOptionsPlaceholder() {
         color = tokens.colors.textSecondary.copy(alpha = 0.6f),
         style = tokens.typography.body
     )
+}
+
+@Composable
+fun PlaybackSpeedSettingsSection(
+    currentSpeed: Float,
+    onSetSpeed: (Float) -> Unit
+) {
+    val tokens = AppDesignSystem
+    val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Text(
+            text = "VELOCIDADE DE REPRODUÇÃO",
+            style = tokens.typography.title,
+            color = tokens.colors.primary,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Ajuste a velocidade de reprodução do filme ou episódio.",
+            style = tokens.typography.caption,
+            color = tokens.colors.textSecondary
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            itemsIndexed(speeds) { _, speed ->
+                val label = "${speed}x"
+                val sublabel = when (speed) {
+                    1.0f -> "Velocidade Normal (Padrão)"
+                    0.5f, 0.75f -> "Câmera Lenta"
+                    else -> "Acelerado"
+                }
+                TvOptionRowItem(
+                    label = label,
+                    sublabel = sublabel,
+                    isSelected = Math.abs(currentSpeed - speed) < 0.05f,
+                    onClick = { onSetSpeed(speed) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun PlayerSpeedDialog(
+    currentSpeed: Float,
+    onDismiss: () -> Unit,
+    onSetSpeed: (Float) -> Unit
+) {
+    val tokens = AppDesignSystem
+    val initialFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(150)
+        try { initialFocusRequester.requestFocus() } catch (_: Exception) {}
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.65f))
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyUp && keyEvent.key == Key.Back) {
+                    onDismiss()
+                    true
+                } else false
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            modifier = Modifier
+                .width(420.dp)
+                .wrapContentHeight()
+                .padding(24.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xFF0D121C),
+            border = BorderStroke(1.5.dp, tokens.colors.primary.copy(alpha = 0.5f)),
+            shadowElevation = 24.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.Speed,
+                            contentDescription = null,
+                            tint = tokens.colors.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "VELOCIDADE",
+                            style = tokens.typography.title,
+                            fontWeight = FontWeight.Black,
+                            color = tokens.colors.textPrimary,
+                            letterSpacing = 1.sp
+                        )
+                    }
+
+                    AppIconButton(
+                        icon = Icons.Rounded.Close,
+                        onClick = onDismiss,
+                        tint = tokens.colors.textSecondary
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    speeds.forEachIndexed { idx, speed ->
+                        val isSelected = Math.abs(currentSpeed - speed) < 0.05f
+                        TvOptionRowItem(
+                            label = "${speed}x" + if (speed == 1.0f) " (NORMAL)" else "",
+                            sublabel = null,
+                            isSelected = isSelected,
+                            modifier = if (idx == 2) Modifier.focusRequester(initialFocusRequester) else Modifier,
+                            onClick = {
+                                onSetSpeed(speed)
+                                onDismiss()
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
 }

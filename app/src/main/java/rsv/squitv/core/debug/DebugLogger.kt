@@ -311,16 +311,20 @@ object DebugLogger {
         }
 
         val formattedMessage = sb.toString()
-        when (e.level) {
-            "TRACE" -> Log.v(TAG, formattedMessage)
-            "DEBUG" -> Log.d(TAG, formattedMessage)
-            "INFO" -> Log.i(TAG, formattedMessage)
-            "WARN" -> Log.w(TAG, formattedMessage)
-            "ERROR" -> Log.e(TAG, formattedMessage)
-            "FATAL" -> Log.e(TAG, "FATAL: $formattedMessage")
-        }
-        if (e.stackTrace != null) {
-            Log.e(TAG, "StackTrace: ${e.stackTrace}")
+        try {
+            when (e.level) {
+                "TRACE" -> Log.v(TAG, formattedMessage)
+                "DEBUG" -> Log.d(TAG, formattedMessage)
+                "INFO" -> Log.i(TAG, formattedMessage)
+                "WARN" -> Log.w(TAG, formattedMessage)
+                "ERROR" -> Log.e(TAG, formattedMessage)
+                "FATAL" -> Log.e(TAG, "FATAL: $formattedMessage")
+            }
+            if (e.stackTrace != null) {
+                Log.e(TAG, "StackTrace: ${e.stackTrace}")
+            }
+        } catch (_: Throwable) {
+            // Android Log not mocked in local JVM unit tests
         }
     }
 

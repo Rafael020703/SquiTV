@@ -1,11 +1,9 @@
 ﻿package rsv.squitv.data.local.entities
 
 import androidx.room.Entity
-import androidx.room.PrimaryKey
 
-@Entity(tableName = "favorites")
+@Entity(tableName = "favorites", primaryKeys = ["streamId", "streamType"])
 data class FavoriteEntity(
-    @PrimaryKey
     val streamId: Int,
     val streamType: String, // LIVE, VOD, SERIES
     val name: String = "",

@@ -66,7 +66,6 @@ object PlayerModule {
     }
 
     @Provides
-    @Singleton
     @OptIn(UnstableApi::class)
     fun provideExoPlayer(
         @ApplicationContext context: Context,
@@ -75,7 +74,7 @@ object PlayerModule {
         @PlaybackCache playbackCache: SimpleCache
     ): ExoPlayer {
         val httpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
-            .setUserAgent("IPTVSmarters")
+            .setUserAgent(rsv.squitv.data.network.RetrofitClient.USER_AGENT)
 
         val cacheDataSourceFactory = CacheDataSource.Factory()
             .setCache(playbackCache)

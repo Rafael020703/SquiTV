@@ -23,13 +23,33 @@ import rsv.squitv.data.local.entities.*
         EpgProgramStagingEntity::class,
         PendingSyncEntity::class
     ], 
-    version = 24,
+    version = 25,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun iptvDao(): IptvDao
 
     companion object {
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `favorites_new` (" +
+                    "`streamId` INTEGER NOT NULL, `streamType` TEXT NOT NULL, " +
+                    "`name` TEXT NOT NULL DEFAULT '', `logo` TEXT, " +
+                    "`rating` TEXT, `releaseDate` TEXT, `url` TEXT, " +
+                    "`containerExtension` TEXT, `categoryId` TEXT, " +
+                    "`timestamp` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`streamId`, `streamType`))"
+                )
+                database.execSQL(
+                    "INSERT OR IGNORE INTO favorites_new (streamId, streamType, name, logo, rating, releaseDate, url, containerExtension, categoryId, timestamp) " +
+                    "SELECT streamId, streamType, name, logo, rating, releaseDate, url, containerExtension, categoryId, timestamp FROM favorites"
+                )
+                database.execSQL("DROP TABLE favorites")
+                database.execSQL("ALTER TABLE favorites_new RENAME TO favorites")
+            }
+        }
+
         val MIGRATION_23_24 = object : Migration(23, 24) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL(

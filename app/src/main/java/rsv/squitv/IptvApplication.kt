@@ -117,7 +117,7 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
 
     val downloadManager by lazy {
         val dataSourceFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent("IPTVSmarters")
+            .setUserAgent(rsv.squitv.data.network.RetrofitClient.USER_AGENT)
             .setAllowCrossProtocolRedirects(true)
         DownloadManager(
             this,

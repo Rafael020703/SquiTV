@@ -282,7 +282,49 @@ class CatalogRepository @Inject constructor(
         val series = iptvDao.getNewSeries(ts).map { it.name }
         return Pair(movies, series)
     }
-    suspend fun getRecentStreams(limit: Int = 20): List<IptvItem> = iptvDao.getRecentStreams(limit).map { it.toIptvItem() }
+
+    fun parseAddedTimestamp(added: String?): Long {
+        if (added.isNullOrBlank()) return 0L
+        added.trim().toLongOrNull()?.let {
+            return if (it < 10000000000L) it * 1000L else it
+        }
+        try {
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+            sdf.parse(added)?.time?.let { return it }
+        } catch (_: Exception) {}
+        try {
+            val sdfDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            sdfDate.parse(added)?.time?.let { return it }
+        } catch (_: Exception) {}
+        return 0L
+    }
+
+    private fun sortAndFilterRecentStreams(streams: List<IptvStreamEntity>, limit: Int): List<IptvItem> {
+        return streams
+            .sortedWith(
+                compareByDescending<IptvStreamEntity> { parseAddedTimestamp(it.added) }
+                    .thenByDescending { it.id }
+            )
+            .take(limit)
+            .map { it.toIptvItem() }
+    }
+
+    suspend fun getRecentMovies(limit: Int = 100): List<IptvItem> {
+        val streams = iptvDao.getStreamsByType("VOD")
+        return sortAndFilterRecentStreams(streams, limit)
+    }
+
+    suspend fun getRecentSeries(limit: Int = 100): List<IptvItem> {
+        val streams = iptvDao.getStreamsByType("SERIES")
+        return sortAndFilterRecentStreams(streams, limit)
+    }
+
+    suspend fun getRecentLiveStreams(limit: Int = 100): List<IptvItem> {
+        val streams = iptvDao.getStreamsByType("LIVE")
+        return sortAndFilterRecentStreams(streams, limit)
+    }
+
+    suspend fun getRecentStreams(limit: Int = 20): List<IptvItem> = sortAndFilterRecentStreams(iptvDao.getStreamsByType("VOD") + iptvDao.getStreamsByType("SERIES") + iptvDao.getStreamsByType("LIVE"), limit)
     suspend fun getTopRatedStreams(minRating: String = "8.0", limit: Int = 20): List<IptvItem> = iptvDao.getTopRatedStreams(minRating, limit).map { it.toIptvItem() }
 
     suspend fun getRandomGenreRow(): Pair<String, List<IptvItem>>? {

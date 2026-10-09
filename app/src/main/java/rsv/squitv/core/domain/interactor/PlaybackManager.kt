@@ -144,6 +144,7 @@ class PlaybackManager @Inject constructor(
                 onConnected(controller)
             } catch (e: Exception) {
                 Timber.e(e, "Failed to connect to MediaSession")
+                controllerFuture = null
             }
         }, ContextCompat.getMainExecutor(context))
     }

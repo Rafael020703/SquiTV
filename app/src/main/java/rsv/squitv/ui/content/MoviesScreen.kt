@@ -142,7 +142,7 @@ fun MoviesScreen(
                     } else if (contentRows.isEmpty()) {
                         EmptyState(
                             title = stringResource(R.string.no_results_found),
-                            description = "Nenhum filme encontrado."
+                            description = if (selectedCategoryId == "FAVORITES") stringResource(R.string.empty_favorites_movies) else "Nenhum filme encontrado."
                         )
                     } else {
                         ContentGrid(

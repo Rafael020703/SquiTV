@@ -2,6 +2,7 @@
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -129,8 +130,8 @@ fun PlayerControlOverlay(
                 ),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // PROGRESS BAR
-            if (!isLive) {
+            // PROGRESS BAR FOR VOD
+            if (!isLive && uiState.duration > 0) {
                 DpadSeekBar(
                     position = uiState.position,
                     duration = uiState.duration,
@@ -138,7 +139,7 @@ fun PlayerControlOverlay(
                     onSeek = onSeek,
                     isTv = isTv
                 )
-            } else if (currentProgram != null) {
+            } else if (isLive && currentProgram != null) {
                 EpgMiniProgress(currentProgram, isTv)
             }
 
@@ -150,12 +151,21 @@ fun PlayerControlOverlay(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                PlayerActionIcon(Icons.Rounded.ClosedCaption, onShowSettings, isTv, contentDescription = "Legendas")
-                Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
-                PlayerActionIcon(Icons.Rounded.InterpreterMode, onShowSettings, isTv, contentDescription = "Áudio")
-                
-                Spacer(Modifier.width(if (isTv) tokens.spacing.xxl else tokens.spacing.large))
-                
+                if (!isLive) {
+                    // Audio / Subtitles
+                    PlayerActionIcon(Icons.Rounded.ClosedCaption, onShowSettings, isTv, contentDescription = "Áudio e Legendas")
+                    Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
+
+                    // Rewind -10s
+                    PlayerActionIcon(Icons.Rounded.Replay10, onSeekBack, isTv, contentDescription = "Voltar 10s")
+                    Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
+                } else {
+                    PlayerActionIcon(Icons.Rounded.ClosedCaption, onShowSettings, isTv, contentDescription = "Legendas")
+                    Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
+                    PlayerActionIcon(Icons.Rounded.InterpreterMode, onShowSettings, isTv, contentDescription = "Áudio")
+                    Spacer(Modifier.width(if (isTv) tokens.spacing.xxl else tokens.spacing.large))
+                }
+
                 // Play/Pause Center
                 Surface(
                     onClick = onTogglePlayPause,
@@ -176,15 +186,36 @@ fun PlayerControlOverlay(
                     }
                 }
 
-                Spacer(Modifier.width(if (isTv) tokens.spacing.xxl else tokens.spacing.large))
+                if (!isLive) {
+                    Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
+                    // Fast Forward +10s
+                    PlayerActionIcon(Icons.Rounded.Forward10, onSeekForward, isTv, contentDescription = "Avançar 10s")
+                    Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
 
+                    // Speed Selector
+                    PlayerActionIcon(Icons.Rounded.Speed, onShowSpeed, isTv, contentDescription = "Velocidade")
+                    Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
+
+                    // Next Episode (if available)
+                    if (uiState.nextEpisodeStreamId != null) {
+                        PlayerActionIcon(Icons.Rounded.SkipNext, onNextEpisode, isTv, contentDescription = "Próximo Episódio")
+                        Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
+                    }
+                } else {
+                    Spacer(Modifier.width(if (isTv) tokens.spacing.xxl else tokens.spacing.large))
+                }
+
+                // Favorite
                 PlayerActionIcon(
                     if (uiState.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     onToggleFavorite,
                     isTv,
-                    tint = if (uiState.isFavorite) tokens.colors.error else Color.White
+                    tint = if (uiState.isFavorite) tokens.colors.error else Color.White,
+                    contentDescription = "Favorito"
                 )
                 Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
+
+                // Settings
                 PlayerActionIcon(Icons.Rounded.Settings, onShowSettings, isTv, contentDescription = "Configurações")
             }
         }
@@ -199,67 +230,105 @@ fun DpadSeekBar(
     onSeek: (Long) -> Unit,
     isTv: Boolean
 ) {
+    if (duration <= 0) return
+
     val tokens = AppDesignSystem
+    val forceHours = duration >= 3600_000L
+
+    var isDragging by remember { mutableStateOf(false) }
+    var dragProgress by remember { mutableFloatStateOf(0f) }
     var seekTarget by remember { mutableStateOf<Long?>(null) }
-    val displayPosition = seekTarget ?: position
+    val displayPosition = if (isDragging) (dragProgress * duration).toLong() else seekTarget ?: position
     
     val scope = rememberCoroutineScope()
     var seekJob: Job? by remember { mutableStateOf(null) }
 
-    val handleSeek = { delta: Long ->
+    val handleDpadSeek = { deltaMs: Long ->
         val current = seekTarget ?: position
-        val newTarget = (current + delta).coerceIn(0, duration)
+        val newTarget = (current + deltaMs).coerceIn(0L, duration)
         seekTarget = newTarget
         
         seekJob?.cancel()
         seekJob = scope.launch {
-            delay(800)
+            delay(600)
             onSeek(newTarget)
             seekTarget = null
         }
     }
 
-    Row(
+    val currentProgress = (displayPosition.toFloat() / duration.coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = tokens.spacing.small)
-            .adaptiveFocus(shape = tokens.shapes.medium)
-            .onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown) {
-                    when (event.key) {
-                        Key.DirectionLeft -> { handleSeek(-15000L); true }
-                        Key.DirectionRight -> { handleSeek(15000L); true }
-                        else -> false
-                    }
-                } else false
-            }
-            .focusable(),
-        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = formatTime(displayPosition),
-            color = if (seekTarget != null) tokens.colors.primary else tokens.colors.textPrimary,
-            style = tokens.typography.label,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.width(64.dp)
-        )
-        
-        Box(modifier = Modifier.weight(1f).height(if (isTv) 12.dp else 8.dp).padding(horizontal = tokens.spacing.medium)) {
-            Box(modifier = Modifier.fillMaxSize().clip(CircleShape).background(tokens.colors.surface.copy(alpha = 0.2f)))
-            val bufferedProgress = bufferedPosition.toFloat() / duration.coerceAtLeast(1L).toFloat()
-            Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(bufferedProgress).clip(CircleShape).background(tokens.colors.surfaceVariant.copy(alpha = 0.3f)))
-            val progress = displayPosition.toFloat() / duration.coerceAtLeast(1L).toFloat()
-            Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(progress).clip(CircleShape).background(if (seekTarget != null) tokens.colors.primary else tokens.colors.accent))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "${formatTime(displayPosition, forceHours)} / ${formatTime(duration, forceHours)}",
+                color = if (seekTarget != null || isDragging) tokens.colors.primary else tokens.colors.textPrimary,
+                style = tokens.typography.label,
+                fontWeight = FontWeight.Bold
+            )
+            if (seekTarget != null || isDragging) {
+                Surface(
+                    color = tokens.colors.primary.copy(alpha = 0.2f),
+                    shape = tokens.shapes.small,
+                    border = BorderStroke(1.dp, tokens.colors.primary)
+                ) {
+                    Text(
+                        text = "BUSCANDO...",
+                        style = tokens.typography.caption,
+                        fontWeight = FontWeight.Black,
+                        color = tokens.colors.primary,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
         }
 
-        Text(
-            text = formatTime(duration),
-            color = tokens.colors.textSecondary.copy(alpha = 0.6f),
-            style = tokens.typography.label,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.width(64.dp),
-            textAlign = TextAlign.End
-        )
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(if (isTv) 28.dp else 24.dp)
+                .adaptiveFocus(shape = tokens.shapes.medium)
+                .onKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown) {
+                        when (event.key) {
+                            Key.DirectionLeft -> { handleDpadSeek(-10000L); true }
+                            Key.DirectionRight -> { handleDpadSeek(10000L); true }
+                            else -> false
+                        }
+                    } else false
+                }
+                .focusable(),
+            contentAlignment = Alignment.Center
+        ) {
+            Slider(
+                value = currentProgress,
+                onValueChange = { newProgress ->
+                    isDragging = true
+                    dragProgress = newProgress
+                },
+                onValueChangeFinished = {
+                    val targetMs = (dragProgress * duration).toLong().coerceIn(0L, duration)
+                    onSeek(targetMs)
+                    isDragging = false
+                },
+                colors = SliderDefaults.colors(
+                    thumbColor = if (seekTarget != null || isDragging) tokens.colors.primary else tokens.colors.accent,
+                    activeTrackColor = if (seekTarget != null || isDragging) tokens.colors.primary else tokens.colors.accent,
+                    inactiveTrackColor = tokens.colors.surface.copy(alpha = 0.3f)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
 }
 

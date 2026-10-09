@@ -142,7 +142,7 @@ fun SeriesScreen(
                     } else if (contentRows.isEmpty()) {
                         EmptyState(
                             title = stringResource(R.string.no_results_found),
-                            description = "Nenhuma série encontrada."
+                            description = if (selectedCategoryId == "FAVORITES") stringResource(R.string.empty_favorites_series) else "Nenhuma série encontrada."
                         )
                     } else {
                         ContentGrid(

@@ -14,7 +14,7 @@ import timber.log.Timber
 import rsv.squitv.core.debug.DebugNetworkInterceptor
 
 object RetrofitClient {
-    private const val USER_AGENT = "IPTVSmarters"
+    const val USER_AGENT = "IPTVSmarters"
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -54,10 +54,10 @@ object RetrofitClient {
     private val streamRequestCounter = java.util.concurrent.atomic.AtomicInteger(100)
 
     val playerOkHttpClient = OkHttpClient.Builder()
-        .connectionPool(okhttp3.ConnectionPool(0, 1, java.util.concurrent.TimeUnit.NANOSECONDS))
-        .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
-        .writeTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+        .connectionPool(okhttp3.ConnectionPool(5, 5, java.util.concurrent.TimeUnit.MINUTES))
+        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
         .eventListener(object : okhttp3.EventListener() {
             override fun callStart(call: okhttp3.Call) {
                 val path = call.request().url.encodedPath
@@ -92,7 +92,6 @@ object RetrofitClient {
             val reqId = streamRequestCounter.incrementAndGet()
             val request = chain.request().newBuilder()
                 .header("User-Agent", USER_AGENT)
-                .header("Connection", "close")
                 .build()
 
             val urlPath = request.url.encodedPath

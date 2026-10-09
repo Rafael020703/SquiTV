@@ -102,14 +102,13 @@ class CategoryViewModel @Inject constructor(
                 }
 
                 if (categoryId == "RECENTS") {
-                    val recentItems = catalogRepository.getRecentStreams(limit = 60)
                     val filteredItems = when (type) {
-                        "live" -> recentItems.filter { it.type == ContentType.LIVE }
-                        "movie" -> recentItems.filter { it.type == ContentType.MOVIE }
-                        "series" -> recentItems.filter { it.type == ContentType.SERIES }
-                        else -> recentItems
+                        "live" -> catalogRepository.getRecentLiveStreams(limit = 100)
+                        "movie" -> catalogRepository.getRecentMovies(limit = 100)
+                        "series" -> catalogRepository.getRecentSeries(limit = 100)
+                        else -> catalogRepository.getRecentStreams(limit = 60)
                     }
-                    _rawRows.value = listOf(DashboardRow(context.getString(R.string.recently_added_label), filteredItems, catId = "RECENTS"))
+                    _rawRows.value = listOf(DashboardRow("Adicionados recentemente", filteredItems, catId = "RECENTS"))
                     return@launch
                 }
 
@@ -123,7 +122,7 @@ class CategoryViewModel @Inject constructor(
                         "series" -> favList.filter { it.type == ContentType.SERIES }
                         else -> favList
                     }
-                    _rawRows.value = listOf(DashboardRow(context.getString(R.string.favorites_label), filteredItems, catId = "FAVORITES"))
+                    _rawRows.value = listOf(DashboardRow("Favoritos", filteredItems, catId = "FAVORITES"))
                     return@launch
                 }
 

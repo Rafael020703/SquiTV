@@ -88,6 +88,7 @@ fun PlayerScreen(
     
     var showSettings by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
+    var showSpeedMenu by remember { mutableStateOf(false) }
     var settingsInitialTab by remember { mutableStateOf(0) }
     var isLocked by remember { mutableStateOf(false) }
     var digitBuffer by remember { mutableStateOf("") }
@@ -220,6 +221,8 @@ fun PlayerScreen(
             setShowSettings = { showSettings = it },
             showQualityMenu = showQualityMenu,
             setShowQualityMenu = { showQualityMenu = it },
+            showSpeedMenu = showSpeedMenu,
+            setShowSpeedMenu = { showSpeedMenu = it },
             settingsInitialTab = settingsInitialTab,
             setSettingsInitialTab = { settingsInitialTab = it },
             focusRequester = focusRequester,
@@ -280,6 +283,8 @@ fun PlayerContent(
     setShowSettings: (Boolean) -> Unit,
     showQualityMenu: Boolean,
     setShowQualityMenu: (Boolean) -> Unit,
+    showSpeedMenu: Boolean,
+    setShowSpeedMenu: (Boolean) -> Unit,
     settingsInitialTab: Int,
     setSettingsInitialTab: (Int) -> Unit,
     focusRequester: FocusRequester,
@@ -324,12 +329,13 @@ fun PlayerContent(
                 if (keyEvent.type == KeyEventType.KeyUp) {
                     when {
                         // Dialogs absorb navigation
-                        showSettings || showQualityMenu || isSplitView -> {
+                        showSettings || showQualityMenu || showSpeedMenu || isSplitView -> {
                             if (keyEvent.key == Key.Back) {
                                 when {
-                                    showSettings || showQualityMenu -> {
+                                    showSettings || showQualityMenu || showSpeedMenu -> {
                                         setShowSettings(false)
                                         setShowQualityMenu(false)
+                                        setShowSpeedMenu(false)
                                     }
                                     isSplitView -> setSplitView(false)
                                 }
@@ -487,7 +493,7 @@ fun PlayerContent(
                             onShowSettings = { setSettingsInitialTab(0); setShowSettings(true) },
                             onShowChannels = { setSplitView(true) },
                             onShowQuality = { setSettingsInitialTab(0); setShowSettings(true) },
-                            onShowSpeed = { },
+                            onShowSpeed = { setShowSpeedMenu(true) },
                             onToggleFavorite = onToggleFavorite,
                             onToggleResizeMode = onToggleResizeMode,
                             onToggleLock = { onToggleLock(true) },
@@ -540,6 +546,7 @@ fun PlayerContent(
                     tracks = state.tracks, 
                     sleepTimer = sleepTimer,
                     subtitleSize = subtitleSize,
+                    currentSpeed = state.playbackSpeed,
                     initialTab = settingsInitialTab,
                     onDismiss = { 
                         setShowSettings(false)
@@ -548,8 +555,19 @@ fun PlayerContent(
                     onSelectTrack = onSelectTrack, 
                     onClearOverride = onClearTrackOverride,
                     onSetSleepTimer = onSetSleepTimer,
-                    onSetSubtitleSize = onSetSubtitleSize
+                    onSetSubtitleSize = onSetSubtitleSize,
+                    onSetSpeed = onSetSpeed
                 ) 
+            }
+
+            // Speed Selector Dialog
+            if (showSpeedMenu && uiState is PlayerUiState.Playing) {
+                val state = uiState as PlayerUiState.Playing
+                PlayerSpeedDialog(
+                    currentSpeed = state.playbackSpeed,
+                    onDismiss = { setShowSpeedMenu(false) },
+                    onSetSpeed = { speed -> onSetSpeed(speed) }
+                )
             }
 
             // Digit Entry Overlay

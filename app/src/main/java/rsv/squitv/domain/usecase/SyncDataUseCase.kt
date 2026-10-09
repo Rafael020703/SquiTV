@@ -234,15 +234,29 @@ class SyncDataUseCase @Inject constructor(
             try { epgRepository.syncFullEpg(creds) } catch (_: Exception) {}
         }
 
-        // 2. PERSIST SUCCESS TIMESTAMP BEFORE EMITTING COMPLETION
-        // This ensures that collectors (like SyncManager) see the updated timestamp
-        // during their "checkContentReadiness" logic.
-        if (currentResult.sessionStatus == SessionStatus.VALID) {
+        // 2. PERSIST SUCCESS TIMESTAMP BEFORE EMITTING COMPLETION IF NO ERRORS
+        val hasCategoryError = currentResult.liveStatus is AppSyncStatus.Error || 
+                               currentResult.vodStatus is AppSyncStatus.Error || 
+                               currentResult.seriesStatus is AppSyncStatus.Error
+
+        val errorSummary = if (hasCategoryError) {
+            val errors = listOfNotNull(
+                (currentResult.liveStatus as? AppSyncStatus.Error)?.message?.let { "Ao vivo: $it" },
+                (currentResult.vodStatus as? AppSyncStatus.Error)?.message?.let { "Filmes: $it" },
+                (currentResult.seriesStatus as? AppSyncStatus.Error)?.message?.let { "Séries: $it" }
+            )
+            errors.joinToString("; ")
+        } else null
+
+        if (currentResult.sessionStatus == SessionStatus.VALID && !hasCategoryError) {
             settingsRepository.updateLastSyncTimestamp(System.currentTimeMillis())
         }
 
         // 3. EMIT COMPLETE FOR UI (The catalog is now local)
-        val finalResult = currentResult.copy(isComplete = true)
+        val finalResult = currentResult.copy(
+            isComplete = true,
+            error = errorSummary
+        )
         emit(finalResult)
     }
 }

@@ -42,12 +42,15 @@ fun LoginScreen(
     viewModel: LoginViewModel,
     onOpenLocalLogin: (() -> Unit)? = null,
     onOpenGallery: (() -> Unit)? = null,
+    onOpenUpdates: (() -> Unit)? = null,
     onLoginSuccess: () -> Unit
 ) {
     val username by viewModel.username.collectAsState()
     val password by viewModel.password.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val updateInfo by viewModel.updateInfo.collectAsState()
+    val context = LocalContext.current
 
     val usernameFocusRequester = remember { FocusRequester() }
     val passwordFocusRequester = remember { FocusRequester() }
@@ -60,7 +63,21 @@ fun LoginScreen(
     }
 
     LaunchedEffect(Unit) {
+        delay(400)
+        if (username.isEmpty() && password.isEmpty()) {
+            viewModel.fetchSavedCredentials(context)
+        }
+    }
+
+    LaunchedEffect(Unit) {
         viewModel.loginSuccess.collect {
+            onLoginSuccess()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.promptSaveCredentialEvent.collect { (savedUser, savedPass) ->
+            viewModel.saveCredentialToPasswordManager(context, savedUser, savedPass)
             onLoginSuccess()
         }
     }
@@ -70,12 +87,15 @@ fun LoginScreen(
         password = password,
         isLoading = isLoading,
         errorMessage = errorMessage,
+        updateInfo = updateInfo,
         onUsernameChange = viewModel::onUsernameChanged,
         onPasswordChange = viewModel::onPasswordChanged,
         onLoginClick = viewModel::login,
         onRestoreClick = { viewModel.restoreBackup(isAuto = false) },
+        onFetchSavedCredential = { viewModel.fetchSavedCredentials(context) },
         onOpenLocalLogin = onOpenLocalLogin,
         onOpenGallery = onOpenGallery,
+        onOpenUpdates = onOpenUpdates,
         usernameFocusRequester = usernameFocusRequester,
         passwordFocusRequester = passwordFocusRequester
     )
@@ -87,12 +107,15 @@ fun LoginContent(
     password: String,
     isLoading: Boolean,
     errorMessage: String?,
+    updateInfo: rsv.squitv.domain.model.AppUpdateInfo? = null,
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
     onRestoreClick: () -> Unit,
+    onFetchSavedCredential: () -> Unit = {},
     onOpenLocalLogin: (() -> Unit)? = null,
     onOpenGallery: (() -> Unit)? = null,
+    onOpenUpdates: (() -> Unit)? = null,
     usernameFocusRequester: FocusRequester,
     passwordFocusRequester: FocusRequester
 ) {
@@ -116,6 +139,7 @@ fun LoginContent(
                 onPasswordChange = onPasswordChange,
                 onLoginClick = onLoginClick,
                 onRestoreClick = onRestoreClick,
+                onFetchSavedCredential = onFetchSavedCredential,
                 onOpenLocalLogin = onOpenLocalLogin,
                 usernameFocusRequester = usernameFocusRequester,
                 passwordFocusRequester = passwordFocusRequester
@@ -130,10 +154,47 @@ fun LoginContent(
                 onPasswordChange = onPasswordChange,
                 onLoginClick = onLoginClick,
                 onRestoreClick = onRestoreClick,
+                onFetchSavedCredential = onFetchSavedCredential,
                 onOpenLocalLogin = onOpenLocalLogin,
                 usernameFocusRequester = usernameFocusRequester,
                 passwordFocusRequester = passwordFocusRequester
             )
+        }
+
+        if (updateInfo != null && onOpenUpdates != null) {
+            Surface(
+                onClick = onOpenUpdates,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(16.dp)
+                    .adaptiveFocus(tokens.shapes.large),
+                shape = tokens.shapes.large,
+                color = Color(0xFF0D1322).copy(alpha = 0.85f),
+                border = BorderStroke(1.5.dp, tokens.colors.primary)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(tokens.colors.primary, CircleShape)
+                    )
+                    Icon(
+                        imageVector = Icons.Rounded.SystemUpdate,
+                        contentDescription = stringResource(R.string.update_available_login),
+                        tint = tokens.colors.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "ATUALIZAÇÃO DISPONÍVEL (${updateInfo.versionName})",
+                        style = tokens.typography.label.copy(fontSize = 12.sp, fontWeight = FontWeight.Black),
+                        color = tokens.colors.textPrimary
+                    )
+                }
+            }
         }
 
         if (onOpenGallery != null) {
@@ -166,6 +227,7 @@ private fun CompactLoginLayout(
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
     onRestoreClick: () -> Unit,
+    onFetchSavedCredential: () -> Unit = {},
     onOpenLocalLogin: (() -> Unit)? = null,
     usernameFocusRequester: FocusRequester,
     passwordFocusRequester: FocusRequester
@@ -404,6 +466,17 @@ private fun CompactLoginLayout(
                             .height(52.dp)
                     )
 
+                    Spacer(modifier = Modifier.height(10.dp))
+                    AppButton(
+                        text = stringResource(R.string.autofill_google_button),
+                        onClick = onFetchSavedCredential,
+                        useGradient = false,
+                        icon = Icons.Rounded.Key,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                    )
+
                     if (onOpenLocalLogin != null) {
                         Spacer(modifier = Modifier.height(10.dp))
                         AppButton(
@@ -448,6 +521,7 @@ private fun ExpandedLoginLayout(
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
     onRestoreClick: () -> Unit,
+    onFetchSavedCredential: () -> Unit = {},
     onOpenLocalLogin: (() -> Unit)? = null,
     usernameFocusRequester: FocusRequester,
     passwordFocusRequester: FocusRequester
@@ -704,6 +778,17 @@ private fun ExpandedLoginLayout(
                         enabled = !isLoading,
                         useGradient = true,
                         icon = Icons.AutoMirrored.Rounded.ArrowForward,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(buttonHeight)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    AppButton(
+                        text = stringResource(R.string.autofill_google_button),
+                        onClick = onFetchSavedCredential,
+                        useGradient = false,
+                        icon = Icons.Rounded.Key,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(buttonHeight)

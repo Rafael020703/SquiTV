@@ -74,7 +74,8 @@ sealed class PlayerUiState(
         val videoCodec: String? = null,
         val audioCodec: String? = null,
         val epgListings: List<rsv.squitv.data.model.EpgListing>? = null,
-        val signalHealth: Float = 1.0f // 0.0 to 1.0
+        val signalHealth: Float = 1.0f, // 0.0 to 1.0
+        val playbackSpeed: Float = 1.0f
     ) : PlayerUiState(position, duration)
     data class Error(
         val message: String,
@@ -176,8 +177,14 @@ class PlayerViewModel @Inject constructor(
         if (playbackManager.player == null) {
             initializeController()
         }
+        var attempts = 0
         while (playbackManager.player == null) {
             delay(100)
+            attempts++
+            if (attempts > 50) {
+                playbackManager.release()
+                throw IllegalStateException("Timeout ao conectar com o serviço de reprodução")
+            }
         }
         return playbackManager.player!!
     }
@@ -230,7 +237,8 @@ class PlayerViewModel @Inject constructor(
                 resolution = videoFormat?.let { "${it.width}x${it.height}" },
                 frameRate = videoFormat?.frameRate,
                 videoCodec = videoFormat?.sampleMimeType,
-                audioCodec = audioFormat?.sampleMimeType
+                audioCodec = audioFormat?.sampleMimeType,
+                playbackSpeed = if (p.playbackParameters.speed > 0f) p.playbackParameters.speed else _playbackSpeed.value
             )
         } else {
             _uiState.value = PlayerUiState.Playing(
@@ -250,7 +258,8 @@ class PlayerViewModel @Inject constructor(
                 resolution = videoFormat?.let { "${it.width}x${it.height}" },
                 frameRate = videoFormat?.frameRate,
                 videoCodec = videoFormat?.sampleMimeType,
-                audioCodec = audioFormat?.sampleMimeType
+                audioCodec = audioFormat?.sampleMimeType,
+                playbackSpeed = if (p.playbackParameters.speed > 0f) p.playbackParameters.speed else _playbackSpeed.value
             )
         }
     }
@@ -523,6 +532,9 @@ class PlayerViewModel @Inject constructor(
     private val _subtitleSize = MutableStateFlow(1f) // 1.0f is normal
     val subtitleSize: StateFlow<Float> = _subtitleSize.asStateFlow()
 
+    private val _playbackSpeed = MutableStateFlow(1.0f)
+    val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
+
     val appSettings: StateFlow<SettingsRepository.AppSettings> = settingsRepository.settingsFlow.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -678,6 +690,9 @@ class PlayerViewModel @Inject constructor(
             consecutiveStallCount = 0
             dnsRetryCount = 0
         }
+
+        _playbackSpeed.value = 1.0f
+        playbackManager.setPlaybackSpeed(1.0f)
         
         currentStreamId = streamId
         currentType = type
@@ -1126,7 +1141,12 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun setPlaybackSpeed(speed: Float) {
+        _playbackSpeed.value = speed
         playbackManager.setPlaybackSpeed(speed)
+        val currentState = _uiState.value
+        if (currentState is PlayerUiState.Playing) {
+            _uiState.value = currentState.copy(playbackSpeed = speed)
+        }
     }
 
     fun toggleResizeMode() {

@@ -84,14 +84,14 @@ class MediaPlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         mediaSession?.run {
-            try {
-                player.stop()
-                player.clearMediaItems()
-            } catch (_: Exception) {}
-            player.release()
             release()
             mediaSession = null
         }
+        try {
+            player.stop()
+            player.clearMediaItems()
+            player.release()
+        } catch (_: Exception) {}
         super.onDestroy()
     }
 

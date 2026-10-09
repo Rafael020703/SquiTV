@@ -137,17 +137,26 @@ interface IptvDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertFavorite(favorite: rsv.squitv.data.local.entities.FavoriteEntity)
 
+    @Query("DELETE FROM favorites WHERE streamId = :streamId AND streamType = :type")
+    suspend fun deleteFavorite(streamId: Int, type: String)
+
     @Query("DELETE FROM favorites WHERE streamId = :streamId")
     suspend fun deleteFavorite(streamId: Int)
 
-    @Query("SELECT * FROM favorites")
+    @Query("SELECT * FROM favorites ORDER BY timestamp DESC")
     fun getFavoritesListFlow(): kotlinx.coroutines.flow.Flow<List<rsv.squitv.data.local.entities.FavoriteEntity>>
+
+    @Query("SELECT * FROM favorites WHERE streamType = :type ORDER BY timestamp DESC")
+    fun getFavoritesByTypeFlow(type: String): kotlinx.coroutines.flow.Flow<List<rsv.squitv.data.local.entities.FavoriteEntity>>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE streamId = :streamId AND streamType = :type)")
+    suspend fun isFavorite(streamId: Int, type: String): Boolean
 
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE streamId = :streamId)")
     suspend fun isFavorite(streamId: Int): Boolean
 
     @Transaction
-    @Query("SELECT s.* FROM iptv_streams s INNER JOIN favorites f ON s.id = f.streamId")
+    @Query("SELECT s.* FROM iptv_streams s INNER JOIN favorites f ON s.id = f.streamId AND s.streamType = f.streamType")
     fun getFavoritesFlow(): kotlinx.coroutines.flow.Flow<List<IptvStreamEntity>>
 
     @Query("SELECT * FROM episodes WHERE title LIKE '%' || :query || '%'")

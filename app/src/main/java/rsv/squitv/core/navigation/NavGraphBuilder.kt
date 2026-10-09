@@ -54,6 +54,7 @@ fun NavGraphBuilder.appNavGraph(
             viewModel = loginViewModel,
             onOpenLocalLogin = { appController.navigate(Route.LocalLogin) },
             onOpenGallery = if (BuildConfig.DEBUG) { { appController.navigate(Route.Gallery) } } else null,
+            onOpenUpdates = { appController.navigate(Route.Updates) },
             onLoginSuccess = { /* Managed by LaunchedEffect in MainNavigation */ }
         )
     }
