@@ -8,8 +8,8 @@ import rsv.squitv.data.model.UserInfo
 import rsv.squitv.data.model.XtreamCredentials
 import rsv.squitv.util.SecurityHelper
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -313,16 +313,28 @@ class SettingsRepository @Inject constructor(
 
     val credentialsFlow: Flow<XtreamCredentials?> = settingsFlow.map { it.credentials }
 
-    suspend fun saveCredentials(credentials: XtreamCredentials) {
+    suspend fun saveSessionCredentials(credentials: XtreamCredentials) {
         context.dataStore.edit { preferences ->
             val encryptedPassword = SecurityHelper.encrypt(credentials.password) ?: credentials.password
-            val encryptedCreds = credentials.copy(password = encryptedPassword)
-            
             preferences[PreferencesKeys.USERNAME] = credentials.username
             preferences[PreferencesKeys.PASSWORD] = encryptedPassword
             preferences[PreferencesKeys.BASE_URL] = credentials.baseUrl
-            
-            // Also add to accounts list
+        }
+    }
+
+    suspend fun isAccountSaved(credentials: XtreamCredentials): Boolean {
+        val settings = settingsFlow.first()
+        return settings.accounts.any {
+            it.username.equals(credentials.username, ignoreCase = true) &&
+            it.baseUrl.equals(credentials.baseUrl, ignoreCase = true)
+        }
+    }
+
+    suspend fun saveAccountToSavedList(credentials: XtreamCredentials) {
+        context.dataStore.edit { preferences ->
+            val encryptedPassword = SecurityHelper.encrypt(credentials.password) ?: credentials.password
+            val encryptedCreds = credentials.copy(password = encryptedPassword)
+
             val accountsJson = preferences[PreferencesKeys.ACCOUNTS]
             val accounts = try {
                 if (accountsJson != null) Json.decodeFromString<List<XtreamCredentials>>(accountsJson).toMutableList()
@@ -330,21 +342,26 @@ class SettingsRepository @Inject constructor(
             } catch (_: Exception) {
                 mutableListOf()
             }
-            
-            if (!accounts.any { it.username == credentials.username && it.baseUrl == credentials.baseUrl }) {
+
+            val index = accounts.indexOfFirst {
+                it.username.equals(credentials.username, ignoreCase = true) &&
+                it.baseUrl.equals(credentials.baseUrl, ignoreCase = true)
+            }
+            if (index == -1) {
                 accounts.add(encryptedCreds)
                 preferences[PreferencesKeys.ACCOUNTS] = Json.encodeToString(accounts)
                 preferences[PreferencesKeys.CURRENT_ACCOUNT_INDEX] = accounts.size - 1
             } else {
-                // Update existing account with encrypted password
-                val index = accounts.indexOfFirst { it.username == credentials.username && it.baseUrl == credentials.baseUrl }
-                if (index != -1) {
-                    accounts[index] = encryptedCreds
-                    preferences[PreferencesKeys.ACCOUNTS] = Json.encodeToString(accounts)
-                    preferences[PreferencesKeys.CURRENT_ACCOUNT_INDEX] = index
-                }
+                accounts[index] = encryptedCreds
+                preferences[PreferencesKeys.ACCOUNTS] = Json.encodeToString(accounts)
+                preferences[PreferencesKeys.CURRENT_ACCOUNT_INDEX] = index
             }
         }
+    }
+
+    suspend fun saveCredentials(credentials: XtreamCredentials) {
+        saveSessionCredentials(credentials)
+        saveAccountToSavedList(credentials)
     }
 
     suspend fun addAccount(credentials: XtreamCredentials) {
@@ -475,6 +492,18 @@ class SettingsRepository @Inject constructor(
     suspend fun updateLastSyncTimestamp(timestamp: Long) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.LAST_SYNC_TIMESTAMP] = timestamp
+        }
+    }
+
+    suspend fun clearSyncTimestamps() {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LAST_SYNC_TIMESTAMP] = 0L
+            preferences[PreferencesKeys.LAST_SYNC_LIVE] = 0L
+            preferences[PreferencesKeys.LAST_SYNC_VOD] = 0L
+            preferences[PreferencesKeys.LAST_SYNC_SERIES] = 0L
+            preferences[PreferencesKeys.IS_LIVE_LOADED] = false
+            preferences[PreferencesKeys.IS_VOD_LOADED] = false
+            preferences[PreferencesKeys.IS_SERIES_LOADED] = false
         }
     }
 

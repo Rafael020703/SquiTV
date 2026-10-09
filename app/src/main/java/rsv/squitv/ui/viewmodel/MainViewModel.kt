@@ -105,7 +105,7 @@ class MainViewModel @Inject constructor(
                     is AppState.Ready -> {
                         _loadingMessage.value = "Bem-vindo!"
                         refreshStats()
-                        checkUpdatesInBackground()
+                        checkUpdatesForDashboard()
                     }
                     else -> {}
                 }
@@ -113,21 +113,43 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    private fun checkUpdatesInBackground() {
+    private val _availableUpdatePrompt = MutableStateFlow<rsv.squitv.domain.model.AppUpdateInfo?>(null)
+    val availableUpdatePrompt: StateFlow<rsv.squitv.domain.model.AppUpdateInfo?> = _availableUpdatePrompt.asStateFlow()
+
+    private var hasShownUpdateModalThisSession = false
+
+    fun checkUpdatesForDashboard() {
+        if (hasShownUpdateModalThisSession) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val updateResult = updateRepository.checkForUpdates(force = false)
                 if (updateResult is UpdateCheckResult.UpdateAvailable) {
                     val settings = settingsRepository.settingsFlow.first()
                     val info = updateResult.updateInfo
-                    if (settings.ignoredVersion != info.versionName && settings.lastNotifiedVersion != info.versionName) {
-                        NotificationHelper.showUpdateNotification(context, info)
-                        settingsRepository.updateLastNotifiedVersion(info.versionName)
+                    if (settings.ignoredVersion != info.versionName) {
+                        _availableUpdatePrompt.value = info
+                        if (settings.lastNotifiedVersion != info.versionName) {
+                            NotificationHelper.showUpdateNotification(context, info)
+                            settingsRepository.updateLastNotifiedVersion(info.versionName)
+                        }
                     }
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Erro ao verificar atualizações em background")
             }
+        }
+    }
+
+    fun dismissUpdateModal() {
+        hasShownUpdateModalThisSession = true
+        _availableUpdatePrompt.value = null
+    }
+
+    fun ignoreUpdateVersion(versionName: String) {
+        hasShownUpdateModalThisSession = true
+        _availableUpdatePrompt.value = null
+        viewModelScope.launch {
+            settingsRepository.updateIgnoredVersion(versionName)
         }
     }
 

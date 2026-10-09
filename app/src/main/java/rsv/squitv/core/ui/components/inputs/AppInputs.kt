@@ -53,6 +53,12 @@ fun AppTextField(
 
     val isReadOnly = requireClickToEdit && !isEditing
 
+    LaunchedEffect(isEditing, isFocused) {
+        if (isFocused && (!requireClickToEdit || isEditing)) {
+            keyboardController?.show()
+        }
+    }
+
     val effectiveTrailingIcon: @Composable (() -> Unit)? = if (isPassword) {
         {
             IconButton(
@@ -98,7 +104,6 @@ fun AppTextField(
                     detectTapGestures(
                         onTap = {
                             isEditing = true
-                            keyboardController?.show()
                         }
                     )
                 }
@@ -108,7 +113,6 @@ fun AppTextField(
                     if (keyEvent.type == KeyEventType.KeyDown && 
                         (keyEvent.key == Key.DirectionCenter || keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter)) {
                         isEditing = true
-                        keyboardController?.show()
                         return@onKeyEvent true
                     }
                 }

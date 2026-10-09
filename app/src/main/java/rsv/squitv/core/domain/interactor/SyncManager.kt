@@ -1,7 +1,6 @@
 ﻿package rsv.squitv.core.domain.interactor
 
 import rsv.squitv.core.domain.state.AppSyncProgress
-import rsv.squitv.core.domain.state.AppSyncStatus
 import rsv.squitv.core.data.repository.CatalogRepository
 import rsv.squitv.core.data.repository.UserRepository
 import rsv.squitv.data.model.XtreamCategory
@@ -195,9 +194,23 @@ class SyncManager @Inject constructor(
     }
 
     fun clearCatalogData() {
+        if (syncJob?.isActive == true) {
+            syncJob?.cancel()
+        }
+
+        _syncProgress.value = AppSyncProgress()
+        _isContentReady.value = false
+
         managerScope.launch {
-            catalogRepository.clearCatalogData()
-            checkContentReadiness()
+            try {
+                settingsRepository.clearSyncTimestamps()
+                catalogRepository.clearCatalogData()
+                Timber.i("SyncManager: Catalog data cleared and sync timestamps reset.")
+                startSync(force = true)
+            } catch (e: Exception) {
+                Timber.e(e, "Error during catalog data reset")
+                _syncProgress.value = AppSyncProgress(isComplete = true, error = e.message)
+            }
         }
     }
 }

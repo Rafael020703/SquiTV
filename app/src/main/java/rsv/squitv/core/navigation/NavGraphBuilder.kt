@@ -106,7 +106,8 @@ fun NavGraphBuilder.appNavGraph(
             onNavigateToSearch = { appController.navigate(Route.Search()) },
             onNavigateToAccount = { appController.navigate(Route.Account) },
             onNavigateToSettings = { appController.navigate(Route.Settings) },
-            onNavigateToDownloads = { appController.navigate(Route.Downloads) }
+            onNavigateToDownloads = { appController.navigate(Route.Downloads) },
+            onNavigateToUpdates = { appController.navigate(Route.Updates) }
         )
     }
 

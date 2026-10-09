@@ -13,8 +13,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -60,6 +62,7 @@ fun DashboardScreen(
     onNavigateToAccount: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
+    onNavigateToUpdates: () -> Unit = {}
 ) {
     val windowInfo = rememberWindowInfo()
     val accountInfo by viewModel.accountInfo.collectAsStateWithLifecycle()
@@ -69,7 +72,12 @@ fun DashboardScreen(
     val isContentReady by viewModel.isContentReady.collectAsStateWithLifecycle()
     val newlyAdded by viewModel.newlyAdded.collectAsStateWithLifecycle()
     val watchProgress by libraryViewModel.watchProgress.collectAsStateWithLifecycle()
+    val availableUpdatePrompt by viewModel.availableUpdatePrompt.collectAsStateWithLifecycle()
     val credentials = viewModel.credentials
+
+    LaunchedEffect(Unit) {
+        viewModel.checkUpdatesForDashboard()
+    }
 
     val expDateFormatted = remember(accountInfo) {
         accountInfo?.expDate?.let { 
@@ -109,6 +117,23 @@ fun DashboardScreen(
             expDate = expDateFormatted,
             actions = dashboardActions
         )
+
+        if (availableUpdatePrompt != null) {
+            val updateInfo = availableUpdatePrompt!!
+            DashboardUpdateModal(
+                updateInfo = updateInfo,
+                onUpdate = {
+                    viewModel.dismissUpdateModal()
+                    onNavigateToUpdates()
+                },
+                onIgnore = {
+                    viewModel.ignoreUpdateVersion(updateInfo.versionName)
+                },
+                onDismiss = {
+                    viewModel.dismissUpdateModal()
+                }
+            )
+        }
     }
 }
 
@@ -337,4 +362,158 @@ fun DashboardContent(
         
         Spacer(Modifier.height(responsive.dp(tokens.spacing.small)))
     }
+}
+
+@Composable
+fun DashboardUpdateModal(
+    updateInfo: rsv.squitv.domain.model.AppUpdateInfo,
+    onUpdate: () -> Unit,
+    onIgnore: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val tokens = AppDesignSystem
+    val updateButtonFocusRequester = remember { FocusRequester() }
+    var timeLeftSeconds by remember(updateInfo.versionName) { mutableIntStateOf(5) }
+
+    LaunchedEffect(updateInfo.versionName) {
+        delay(300)
+        try { updateButtonFocusRequester.requestFocus() } catch (_: Exception) {}
+    }
+
+    LaunchedEffect(updateInfo.versionName) {
+        while (timeLeftSeconds > 0) {
+            delay(1000)
+            timeLeftSeconds--
+        }
+        onDismiss()
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0D1322).copy(alpha = 0.95f),
+        shape = tokens.shapes.extraLarge,
+        icon = {
+            Icon(
+                imageVector = Icons.Rounded.SystemUpdate,
+                contentDescription = null,
+                tint = tokens.colors.primary,
+                modifier = Modifier.size(36.dp)
+            )
+        },
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "NOVA ATUALIZAÇÃO DISPONÍVEL!",
+                    style = tokens.typography.headline.copy(fontSize = 18.sp),
+                    fontWeight = FontWeight.Black,
+                    color = tokens.colors.textPrimary,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Surface(
+                    color = tokens.colors.primary.copy(alpha = 0.15f),
+                    shape = CircleShape,
+                    border = BorderStroke(1.dp, tokens.colors.primary.copy(alpha = 0.3f))
+                ) {
+                    Text(
+                        text = "VERSÃO ${updateInfo.versionName.uppercase()}",
+                        style = tokens.typography.caption.copy(fontSize = 11.sp, fontWeight = FontWeight.Black),
+                        color = tokens.colors.primary,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "NOVIDADES DESSA VERSÃO:",
+                    style = tokens.typography.label.copy(fontSize = 11.sp),
+                    fontWeight = FontWeight.Bold,
+                    color = tokens.colors.textSecondary
+                )
+
+                // CHANGELOG BOX
+                Surface(
+                    color = tokens.colors.surfaceElevated.copy(alpha = 0.5f),
+                    shape = tokens.shapes.medium,
+                    border = BorderStroke(1.dp, tokens.colors.border.copy(alpha = 0.2f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 140.dp)
+                ) {
+                    val rawChangelog = updateInfo.changelog.trim()
+                    val displayChangelog = if (rawChangelog.isBlank()) {
+                        "Detalhes das alterações não fornecidos."
+                    } else {
+                        rawChangelog
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .padding(12.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = displayChangelog,
+                            style = tokens.typography.body.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                            color = tokens.colors.textPrimary
+                        )
+                    }
+                }
+
+                // TIMER PROGRESS INDICATOR
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    LinearProgressIndicator(
+                        progress = { timeLeftSeconds / 5f },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(4.dp)
+                            .clip(CircleShape),
+                        color = tokens.colors.primary,
+                        trackColor = tokens.colors.textSecondary.copy(alpha = 0.2f)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Fechando em ${timeLeftSeconds}s",
+                        style = tokens.typography.caption.copy(fontSize = 10.sp),
+                        color = tokens.colors.textSecondary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            rsv.squitv.core.ui.components.buttons.AppButton(
+                text = "ATUALIZAR",
+                onClick = onUpdate,
+                useGradient = true,
+                icon = Icons.Rounded.SystemUpdate,
+                modifier = Modifier
+                    .width(150.dp)
+                    .height(48.dp)
+                    .focusRequester(updateButtonFocusRequester)
+            )
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onIgnore,
+                modifier = Modifier.height(48.dp)
+            ) {
+                Text(
+                    text = "IGNORAR",
+                    color = tokens.colors.textSecondary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    )
 }

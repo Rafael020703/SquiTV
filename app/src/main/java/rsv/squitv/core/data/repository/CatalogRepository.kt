@@ -283,6 +283,10 @@ class CatalogRepository @Inject constructor(
         return Pair(movies, series)
     }
 
+    companion object {
+        const val FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000L
+    }
+
     fun parseAddedTimestamp(added: String?): Long {
         if (added.isNullOrBlank()) return 0L
         added.trim().toLongOrNull()?.let {
@@ -299,32 +303,48 @@ class CatalogRepository @Inject constructor(
         return 0L
     }
 
-    private fun sortAndFilterRecentStreams(streams: List<IptvStreamEntity>, limit: Int): List<IptvItem> {
+    fun sortAndFilterRecentStreams(
+        streams: List<IptvStreamEntity>,
+        limit: Int,
+        currentTimeMillis: Long = System.currentTimeMillis()
+    ): List<IptvItem> {
+        val minTimestamp = currentTimeMillis - FOURTEEN_DAYS_MS
+        val maxTimestamp = currentTimeMillis + 300_000L // 5 min clock skew tolerance
+
         return streams
+            .mapNotNull { stream ->
+                val timestamp = parseAddedTimestamp(stream.added)
+                if (timestamp in minTimestamp..maxTimestamp) {
+                    stream to timestamp
+                } else {
+                    null
+                }
+            }
             .sortedWith(
-                compareByDescending<IptvStreamEntity> { parseAddedTimestamp(it.added) }
-                    .thenByDescending { it.id }
+                compareByDescending<Pair<IptvStreamEntity, Long>> { it.second }
+                    .thenByDescending { it.first.id }
             )
             .take(limit)
-            .map { it.toIptvItem() }
+            .map { it.first.toIptvItem() }
     }
 
-    suspend fun getRecentMovies(limit: Int = 100): List<IptvItem> {
+    suspend fun getRecentMovies(limit: Int = 100, currentTimeMillis: Long = System.currentTimeMillis()): List<IptvItem> {
         val streams = iptvDao.getStreamsByType("VOD")
-        return sortAndFilterRecentStreams(streams, limit)
+        return sortAndFilterRecentStreams(streams, limit, currentTimeMillis)
     }
 
-    suspend fun getRecentSeries(limit: Int = 100): List<IptvItem> {
+    suspend fun getRecentSeries(limit: Int = 100, currentTimeMillis: Long = System.currentTimeMillis()): List<IptvItem> {
         val streams = iptvDao.getStreamsByType("SERIES")
-        return sortAndFilterRecentStreams(streams, limit)
+        return sortAndFilterRecentStreams(streams, limit, currentTimeMillis)
     }
 
-    suspend fun getRecentLiveStreams(limit: Int = 100): List<IptvItem> {
+    suspend fun getRecentLiveStreams(limit: Int = 100, currentTimeMillis: Long = System.currentTimeMillis()): List<IptvItem> {
         val streams = iptvDao.getStreamsByType("LIVE")
-        return sortAndFilterRecentStreams(streams, limit)
+        return sortAndFilterRecentStreams(streams, limit, currentTimeMillis)
     }
 
-    suspend fun getRecentStreams(limit: Int = 20): List<IptvItem> = sortAndFilterRecentStreams(iptvDao.getStreamsByType("VOD") + iptvDao.getStreamsByType("SERIES") + iptvDao.getStreamsByType("LIVE"), limit)
+    suspend fun getRecentStreams(limit: Int = 20, currentTimeMillis: Long = System.currentTimeMillis()): List<IptvItem> =
+        sortAndFilterRecentStreams(iptvDao.getStreamsByType("VOD") + iptvDao.getStreamsByType("SERIES") + iptvDao.getStreamsByType("LIVE"), limit, currentTimeMillis)
     suspend fun getTopRatedStreams(minRating: String = "8.0", limit: Int = 20): List<IptvItem> = iptvDao.getTopRatedStreams(minRating, limit).map { it.toIptvItem() }
 
     suspend fun getRandomGenreRow(): Pair<String, List<IptvItem>>? {

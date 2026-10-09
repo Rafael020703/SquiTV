@@ -3,9 +3,10 @@
 import android.provider.Settings
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -30,6 +31,7 @@ import rsv.squitv.core.ui.components.buttons.*
 import rsv.squitv.core.ui.components.navigation.AppHeader
 import rsv.squitv.core.ui.theme.*
 import rsv.squitv.data.model.UserInfo
+import rsv.squitv.data.model.XtreamCredentials
 import rsv.squitv.ui.dashboard.PortalBackground
 import rsv.squitv.ui.viewmodel.MainViewModel
 import rsv.squitv.util.NetworkUtils
@@ -46,6 +48,7 @@ fun AccountScreen(
     onBack: () -> Unit
 ) {
     val accountInfo by viewModel.accountInfo.collectAsStateWithLifecycle()
+    val appSettings by viewModel.appSettings.collectAsStateWithLifecycle()
     
     LaunchedEffect(Unit) {
         viewModel.refreshAccountInfo()
@@ -64,8 +67,12 @@ fun AccountScreen(
             ipAddress = ipAddress,
             serverUrl = credentials?.baseUrl ?: "N/A",
             username = credentials?.username ?: accountInfo?.username ?: "N/A",
+            savedAccounts = appSettings.accounts,
+            currentAccountIndex = appSettings.currentAccountIndex,
             onBack = onBack,
             onRefresh = { viewModel.refreshAccountInfo() },
+            onSwitchAccount = { index -> viewModel.switchAccount(index) },
+            onRemoveAccount = { index -> viewModel.removeAccount(index) },
             onLogout = { viewModel.logout(); onBack() }
         )
     }
@@ -80,8 +87,12 @@ fun AccountContent(
     ipAddress: String,
     serverUrl: String,
     username: String,
+    savedAccounts: List<XtreamCredentials> = emptyList(),
+    currentAccountIndex: Int = 0,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
+    onSwitchAccount: (Int) -> Unit = {},
+    onRemoveAccount: (Int) -> Unit = {},
     onLogout: () -> Unit
 ) {
     val tokens = AppDesignSystem
@@ -180,7 +191,7 @@ fun AccountContent(
                     }
                 }
 
-                // Compact Info Cards Container (No Scroll, perfectly fitting viewport)
+                // Compact Info Cards Container
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -213,6 +224,138 @@ fun AccountContent(
                         }
                     }
 
+                    // SAVED ACCOUNTS SECTION
+                    if (savedAccounts.isNotEmpty()) {
+                        SectionHeader("CONTAS SALVAS (${savedAccounts.size})")
+
+                        Surface(
+                            color = tokens.colors.surface.copy(alpha = 0.08f),
+                            shape = tokens.shapes.large,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(tokens.spacing.small),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                savedAccounts.forEachIndexed { index, account ->
+                                    var showDeleteConfirm by remember { mutableStateOf(false) }
+                                    val isCurrent = index == currentAccountIndex || (account.username == username && account.baseUrl == serverUrl)
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.AccountCircle,
+                                                null,
+                                                tint = if (isCurrent) tokens.colors.primary else tokens.colors.textSecondary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Column {
+                                                Text(
+                                                    text = account.username.uppercase(),
+                                                    style = tokens.typography.label.copy(fontSize = 12.sp),
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = tokens.colors.textPrimary
+                                                )
+                                                Text(
+                                                    text = account.baseUrl,
+                                                    style = tokens.typography.caption.copy(fontSize = 10.sp),
+                                                    color = tokens.colors.textSecondary
+                                                )
+                                            }
+                                        }
+
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            if (isCurrent) {
+                                                Surface(
+                                                    color = tokens.colors.primary.copy(alpha = 0.2f),
+                                                    shape = tokens.shapes.small
+                                                ) {
+                                                    Text(
+                                                        text = "ATIVA",
+                                                        style = tokens.typography.caption.copy(fontSize = 9.sp, fontWeight = FontWeight.Black),
+                                                        color = tokens.colors.primary,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            } else {
+                                                TextButton(
+                                                    onClick = { onSwitchAccount(index) },
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text("ALTERAR", fontSize = 11.sp, color = tokens.colors.primary, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+
+                                            IconButton(
+                                                onClick = { showDeleteConfirm = true },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Rounded.Delete,
+                                                    "Remover conta",
+                                                    tint = tokens.colors.error.copy(alpha = 0.8f),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    if (showDeleteConfirm) {
+                                        AlertDialog(
+                                            onDismissRequest = { showDeleteConfirm = false },
+                                            containerColor = tokens.colors.backgroundSecondary,
+                                            shape = tokens.shapes.extraLarge,
+                                            title = {
+                                                Text(
+                                                    text = "REMOVER CONTA SALVA",
+                                                    style = tokens.typography.headline.copy(fontSize = 16.sp),
+                                                    fontWeight = FontWeight.Black,
+                                                    color = tokens.colors.error
+                                                )
+                                            },
+                                            text = {
+                                                Text(
+                                                    text = "Deseja realmente remover a conta ${account.username} (${account.baseUrl}) das contas salvas?",
+                                                    style = tokens.typography.body.copy(fontSize = 12.sp),
+                                                    color = tokens.colors.textSecondary
+                                                )
+                                            },
+                                            confirmButton = {
+                                                Button(
+                                                    onClick = {
+                                                        showDeleteConfirm = false
+                                                        onRemoveAccount(index)
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = tokens.colors.error)
+                                                ) {
+                                                    Text("REMOVER", fontWeight = FontWeight.Black, color = Color.White)
+                                                }
+                                            },
+                                            dismissButton = {
+                                                TextButton(onClick = { showDeleteConfirm = false }) {
+                                                    Text("CANCELAR", color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     SectionHeader("DETALHES DO SISTEMA")
 
                     Surface(
@@ -236,7 +379,7 @@ fun AccountContent(
                     }
                 }
 
-                // Bottom Logout Button (Always fully visible without scrolling)
+                // Bottom Logout Button
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()

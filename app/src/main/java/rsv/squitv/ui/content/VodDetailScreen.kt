@@ -41,7 +41,6 @@ import rsv.squitv.core.ui.components.content.ActorAvatar
 import rsv.squitv.core.ui.components.content.MetadataItem
 import rsv.squitv.core.ui.theme.AppDesignSystem
 import rsv.squitv.core.ui.theme.AppDimensions
-import rsv.squitv.core.ui.theme.AppShapes
 import rsv.squitv.domain.model.ContentType
 import rsv.squitv.domain.model.IptvItem
 import rsv.squitv.ui.dashboard.*
@@ -299,10 +298,11 @@ fun VodDetailContent(
                             horizontalArrangement = Arrangement.spacedBy(tokens.spacing.large)
                         ) {
                             val isResuming = currentProgress != null && currentProgress > 0.05f
+                            val containerExt = vodInfo?.movieData?.container_extension ?: "mp4"
                             AppButton(
                                 text = if (isResuming) stringResource(R.string.row_continue_watching) else stringResource(R.string.watch_now_button),
                                 icon = if (isResuming) Icons.Rounded.History else Icons.Rounded.PlayArrow,
-                                onClick = { onPlay(vodId, vodName, movie?.duration) },
+                                onClick = { onPlay(vodId, vodName, containerExt) },
                                 modifier = Modifier
                                     .height(if (isTv) 72.dp else 56.dp)
                                     .weight(1f)

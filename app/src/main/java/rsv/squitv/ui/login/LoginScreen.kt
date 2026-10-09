@@ -4,6 +4,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +35,7 @@ import rsv.squitv.core.ui.components.buttons.AppButton
 import rsv.squitv.core.ui.components.common.adaptiveFocus
 import rsv.squitv.core.ui.components.inputs.AppTextField
 import rsv.squitv.core.ui.theme.*
+import rsv.squitv.data.model.XtreamCredentials
 import rsv.squitv.ui.dashboard.PortalBackground
 import rsv.squitv.util.AppVersionProvider
 import kotlinx.coroutines.delay
@@ -47,13 +50,16 @@ fun LoginScreen(
 ) {
     val username by viewModel.username.collectAsState()
     val password by viewModel.password.collectAsState()
+    val url by viewModel.url.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val updateInfo by viewModel.updateInfo.collectAsState()
-    val context = LocalContext.current
+    val promptSaveAccount by viewModel.promptSaveAccount.collectAsState()
+    val savedAccounts by viewModel.savedAccounts.collectAsState()
 
     val usernameFocusRequester = remember { FocusRequester() }
     val passwordFocusRequester = remember { FocusRequester() }
+    val tokens = AppDesignSystem
 
     LaunchedEffect(Unit) {
         delay(150)
@@ -63,21 +69,7 @@ fun LoginScreen(
     }
 
     LaunchedEffect(Unit) {
-        delay(400)
-        if (username.isEmpty() && password.isEmpty()) {
-            viewModel.fetchSavedCredentials(context)
-        }
-    }
-
-    LaunchedEffect(Unit) {
         viewModel.loginSuccess.collect {
-            onLoginSuccess()
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        viewModel.promptSaveCredentialEvent.collect { (savedUser, savedPass) ->
-            viewModel.saveCredentialToPasswordManager(context, savedUser, savedPass)
             onLoginSuccess()
         }
     }
@@ -85,34 +77,88 @@ fun LoginScreen(
     LoginContent(
         username = username,
         password = password,
+        url = url,
         isLoading = isLoading,
         errorMessage = errorMessage,
         updateInfo = updateInfo,
+        savedAccounts = savedAccounts,
         onUsernameChange = viewModel::onUsernameChanged,
         onPasswordChange = viewModel::onPasswordChanged,
         onLoginClick = viewModel::login,
         onRestoreClick = { viewModel.restoreBackup(isAuto = false) },
-        onFetchSavedCredential = { viewModel.fetchSavedCredentials(context) },
+        onSelectSavedAccount = viewModel::selectSavedAccount,
+        onRemoveSavedAccount = viewModel::removeSavedAccount,
         onOpenLocalLogin = onOpenLocalLogin,
         onOpenGallery = onOpenGallery,
         onOpenUpdates = onOpenUpdates,
         usernameFocusRequester = usernameFocusRequester,
         passwordFocusRequester = passwordFocusRequester
     )
+
+    // DIÁLOGO "DESEJA SALVAR OS DADOS DESTE ACESSO?"
+    if (promptSaveAccount != null) {
+        val accountToSave = promptSaveAccount!!
+        AlertDialog(
+            onDismissRequest = { viewModel.confirmSaveAccount(accountToSave, save = false) },
+            containerColor = tokens.colors.backgroundSecondary,
+            shape = tokens.shapes.extraLarge,
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.Key,
+                    contentDescription = null,
+                    tint = tokens.colors.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "SALVAR CONTA",
+                    style = tokens.typography.headline.copy(fontSize = 18.sp),
+                    fontWeight = FontWeight.Black,
+                    color = tokens.colors.textPrimary
+                )
+            },
+            text = {
+                Text(
+                    text = "Deseja salvar os dados deste acesso (${accountToSave.username}) para a próxima vez?",
+                    style = tokens.typography.body.copy(fontSize = 13.sp),
+                    color = tokens.colors.textSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.confirmSaveAccount(accountToSave, save = true) },
+                    colors = ButtonDefaults.buttonColors(containerColor = tokens.colors.primary)
+                ) {
+                    Text("SALVAR", fontWeight = FontWeight.Black, color = Color.Black)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.confirmSaveAccount(accountToSave, save = false) }
+                ) {
+                    Text("AGORA NÃO", color = tokens.colors.textSecondary, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
 }
 
 @Composable
 fun LoginContent(
     username: String,
     password: String,
+    url: String,
     isLoading: Boolean,
     errorMessage: String?,
     updateInfo: rsv.squitv.domain.model.AppUpdateInfo? = null,
+    savedAccounts: List<XtreamCredentials> = emptyList(),
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
     onRestoreClick: () -> Unit,
-    onFetchSavedCredential: () -> Unit = {},
+    onSelectSavedAccount: (XtreamCredentials) -> Unit = {},
+    onRemoveSavedAccount: (Int) -> Unit = {},
     onOpenLocalLogin: (() -> Unit)? = null,
     onOpenGallery: (() -> Unit)? = null,
     onOpenUpdates: (() -> Unit)? = null,
@@ -133,13 +179,16 @@ fun LoginContent(
             CompactLoginLayout(
                 username = username,
                 password = password,
+                url = url,
                 isLoading = isLoading,
                 errorMessage = errorMessage,
+                savedAccounts = savedAccounts,
                 onUsernameChange = onUsernameChange,
                 onPasswordChange = onPasswordChange,
                 onLoginClick = onLoginClick,
                 onRestoreClick = onRestoreClick,
-                onFetchSavedCredential = onFetchSavedCredential,
+                onSelectSavedAccount = onSelectSavedAccount,
+                onRemoveSavedAccount = onRemoveSavedAccount,
                 onOpenLocalLogin = onOpenLocalLogin,
                 usernameFocusRequester = usernameFocusRequester,
                 passwordFocusRequester = passwordFocusRequester
@@ -148,13 +197,16 @@ fun LoginContent(
             ExpandedLoginLayout(
                 username = username,
                 password = password,
+                url = url,
                 isLoading = isLoading,
                 errorMessage = errorMessage,
+                savedAccounts = savedAccounts,
                 onUsernameChange = onUsernameChange,
                 onPasswordChange = onPasswordChange,
                 onLoginClick = onLoginClick,
                 onRestoreClick = onRestoreClick,
-                onFetchSavedCredential = onFetchSavedCredential,
+                onSelectSavedAccount = onSelectSavedAccount,
+                onRemoveSavedAccount = onRemoveSavedAccount,
                 onOpenLocalLogin = onOpenLocalLogin,
                 usernameFocusRequester = usernameFocusRequester,
                 passwordFocusRequester = passwordFocusRequester
@@ -221,13 +273,16 @@ fun LoginContent(
 private fun CompactLoginLayout(
     username: String,
     password: String,
+    url: String,
     isLoading: Boolean,
     errorMessage: String?,
+    savedAccounts: List<XtreamCredentials> = emptyList(),
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
     onRestoreClick: () -> Unit,
-    onFetchSavedCredential: () -> Unit = {},
+    onSelectSavedAccount: (XtreamCredentials) -> Unit = {},
+    onRemoveSavedAccount: (Int) -> Unit = {},
     onOpenLocalLogin: (() -> Unit)? = null,
     usernameFocusRequester: FocusRequester,
     passwordFocusRequester: FocusRequester
@@ -243,8 +298,6 @@ private fun CompactLoginLayout(
     val sectionSpacer = if (screenHeight < 600.dp) 14.dp else 24.dp
     val formMaxWidth = if (screenWidth >= 600.dp) 440.dp else 420.dp
     val surfacePadding = if (screenWidth < 360.dp) 16.dp else 22.dp
-
-    var isRestoreFocused by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -378,6 +431,32 @@ private fun CompactLoginLayout(
                         fontWeight = FontWeight.Medium
                     )
 
+                    // SAVED ACCOUNTS SELECTOR
+                    if (savedAccounts.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "CONTAS SALVAS",
+                            style = tokens.typography.label.copy(fontSize = 11.sp),
+                            color = tokens.colors.primary,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            itemsIndexed(savedAccounts) { index, account ->
+                                SavedAccountChip(
+                                    account = account,
+                                    isSelected = username == account.username && (url.isEmpty() || url == account.baseUrl),
+                                    onSelect = { onSelectSavedAccount(account) },
+                                    onDelete = { onRemoveSavedAccount(index) }
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // FIELDS WITH CYAN GLOW
@@ -466,17 +545,6 @@ private fun CompactLoginLayout(
                             .height(52.dp)
                     )
 
-                    Spacer(modifier = Modifier.height(10.dp))
-                    AppButton(
-                        text = stringResource(R.string.autofill_google_button),
-                        onClick = onFetchSavedCredential,
-                        useGradient = false,
-                        icon = Icons.Rounded.Key,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                    )
-
                     if (onOpenLocalLogin != null) {
                         Spacer(modifier = Modifier.height(10.dp))
                         AppButton(
@@ -515,13 +583,16 @@ private fun CompactLoginLayout(
 private fun ExpandedLoginLayout(
     username: String,
     password: String,
+    url: String,
     isLoading: Boolean,
     errorMessage: String?,
+    savedAccounts: List<XtreamCredentials> = emptyList(),
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
     onRestoreClick: () -> Unit,
-    onFetchSavedCredential: () -> Unit = {},
+    onSelectSavedAccount: (XtreamCredentials) -> Unit = {},
+    onRemoveSavedAccount: (Int) -> Unit = {},
     onOpenLocalLogin: (() -> Unit)? = null,
     usernameFocusRequester: FocusRequester,
     passwordFocusRequester: FocusRequester
@@ -549,8 +620,6 @@ private fun ExpandedLoginLayout(
     val logoIconSize = if (isVeryCompactHeight) 20.dp else if (isCompactHeight) 26.dp else 38.dp
     val displayTitleSize = if (isVeryCompactHeight) 22.sp else if (isCompactHeight) 28.sp else 38.sp
     val displaySubtitleSize = if (isVeryCompactHeight) 11.sp else if (isCompactHeight) 13.sp else 15.sp
-
-    var isRestoreFocused by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -695,6 +764,32 @@ private fun ExpandedLoginLayout(
                         fontWeight = FontWeight.Medium
                     )
 
+                    // SAVED ACCOUNTS SELECTOR
+                    if (savedAccounts.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "CONTAS SALVAS",
+                            style = tokens.typography.label.copy(fontSize = 11.sp),
+                            color = tokens.colors.primary,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.5.sp
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            itemsIndexed(savedAccounts) { index, account ->
+                                SavedAccountChip(
+                                    account = account,
+                                    isSelected = username == account.username && (url.isEmpty() || url == account.baseUrl),
+                                    onSelect = { onSelectSavedAccount(account) },
+                                    onDelete = { onRemoveSavedAccount(index) }
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(formSpacer))
 
                     // FIELDS WITH CYAN GLOW
@@ -783,17 +878,6 @@ private fun ExpandedLoginLayout(
                             .height(buttonHeight)
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
-                    AppButton(
-                        text = stringResource(R.string.autofill_google_button),
-                        onClick = onFetchSavedCredential,
-                        useGradient = false,
-                        icon = Icons.Rounded.Key,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(buttonHeight)
-                    )
-
                     if (onOpenLocalLogin != null) {
                         Spacer(modifier = Modifier.height(8.dp))
                         AppButton(
@@ -810,7 +894,7 @@ private fun ExpandedLoginLayout(
             }
         }
 
-        // FOOTER (EXIBIDO SE HOUVER ESPAÇO SUFICIENTE)
+        // FOOTER
         if (screenHeight >= 420.dp) {
             val context = LocalContext.current
             val appVersion = remember(context) { AppVersionProvider.getFormattedVersionName(context).uppercase() }
@@ -824,6 +908,63 @@ private fun ExpandedLoginLayout(
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 8.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun SavedAccountChip(
+    account: XtreamCredentials,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val tokens = AppDesignSystem
+
+    Surface(
+        onClick = onSelect,
+        shape = tokens.shapes.medium,
+        color = if (isSelected) tokens.colors.primary.copy(alpha = 0.25f) else tokens.colors.surfaceElevated.copy(alpha = 0.6f),
+        border = BorderStroke(
+            1.dp,
+            if (isSelected) tokens.colors.primary else tokens.colors.border.copy(alpha = 0.3f)
+        ),
+        modifier = Modifier.adaptiveFocus(tokens.shapes.medium)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.AccountCircle,
+                contentDescription = null,
+                tint = if (isSelected) tokens.colors.primary else tokens.colors.textSecondary,
+                modifier = Modifier.size(18.dp)
+            )
+            Column {
+                Text(
+                    text = account.username.uppercase(),
+                    style = tokens.typography.label.copy(fontSize = 11.sp, fontWeight = FontWeight.Black),
+                    color = tokens.colors.textPrimary
+                )
+                Text(
+                    text = account.baseUrl.removePrefix("http://").removePrefix("https://").take(18),
+                    style = tokens.typography.caption.copy(fontSize = 9.sp),
+                    color = tokens.colors.textSecondary
+                )
+            }
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.size(22.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "Remover conta",
+                    tint = tokens.colors.error.copy(alpha = 0.8f),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
         }
     }
 }

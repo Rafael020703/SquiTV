@@ -12,24 +12,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
-
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
-import androidx.credentials.CredentialManager
-import androidx.credentials.CreatePasswordRequest
-import androidx.credentials.GetCredentialRequest
-import androidx.credentials.GetPasswordOption
-import androidx.credentials.PasswordCredential
-import androidx.credentials.exceptions.CreateCredentialCancellationException
-import androidx.credentials.exceptions.CreateCredentialException
-import androidx.credentials.exceptions.GetCredentialCancellationException
-import androidx.credentials.exceptions.GetCredentialException
 
 import rsv.squitv.data.repository.UpdateRepository
 import rsv.squitv.domain.model.AppUpdateInfo
@@ -77,8 +68,20 @@ class LoginViewModel @Inject constructor(
     private val _loginSuccess = MutableSharedFlow<Unit>()
     val loginSuccess = _loginSuccess.asSharedFlow()
 
-    private val _promptSaveCredentialEvent = MutableSharedFlow<Pair<String, String>>()
-    val promptSaveCredentialEvent = _promptSaveCredentialEvent.asSharedFlow()
+    private val _promptSaveAccount = MutableStateFlow<XtreamCredentials?>(null)
+    val promptSaveAccount: StateFlow<XtreamCredentials?> = _promptSaveAccount.asStateFlow()
+
+    val appSettings: StateFlow<SettingsRepository.AppSettings> = settingsRepository.settingsFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = SettingsRepository.AppSettings(null, lastSyncTimestamp = 0L, syncIntervalHours = 24)
+    )
+
+    val savedAccounts: StateFlow<List<XtreamCredentials>> = appSettings.map { it.accounts }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
 
     private val _dnsStatusMap = MutableStateFlow<Map<String, Long>>(emptyMap())
     val dnsStatusMap: StateFlow<Map<String, Long>> = _dnsStatusMap
@@ -121,6 +124,32 @@ class LoginViewModel @Inject constructor(
     fun onUsernameChanged(value: String) { _username.value = value }
     fun onPasswordChanged(value: String) { _password.value = value }
     fun onDnsSelected(url: String?) { _selectedDns.value = url }
+
+    fun selectSavedAccount(account: XtreamCredentials) {
+        _username.value = account.username
+        _password.value = account.password
+        _url.value = account.baseUrl
+        _selectedDns.value = account.baseUrl
+    }
+
+    fun removeSavedAccount(index: Int) {
+        viewModelScope.launch {
+            settingsRepository.removeAccount(index)
+        }
+    }
+
+    fun confirmSaveAccount(credentials: XtreamCredentials, save: Boolean) {
+        viewModelScope.launch {
+            if (save) {
+                settingsRepository.saveAccountToSavedList(credentials)
+                Timber.i("User confirmed saving account ${credentials.username}")
+            } else {
+                Timber.i("User declined saving account ${credentials.username}")
+            }
+            _promptSaveAccount.value = null
+            _loginSuccess.emit(Unit)
+        }
+    }
 
     fun testAllDns() {
         viewModelScope.launch {
@@ -189,10 +218,16 @@ class LoginViewModel @Inject constructor(
                         val response = authManager.login(credentials)
 
                         if (response.userInfo?.auth == 1) {
-                            settingsRepository.saveCredentials(credentials)
+                            settingsRepository.saveSessionCredentials(credentials)
                             _state.value = LoginState.SUCCESS
-                            _promptSaveCredentialEvent.emit(Pair(currentUser, currentPass))
-                            _loginSuccess.emit(Unit)
+
+                            val isAlreadySaved = settingsRepository.isAccountSaved(credentials)
+                            if (!isAlreadySaved) {
+                                _promptSaveAccount.value = credentials
+                            } else {
+                                settingsRepository.saveAccountToSavedList(credentials)
+                                _loginSuccess.emit(Unit)
+                            }
                             success = true
                             break
                         } else {
@@ -261,64 +296,5 @@ class LoginViewModel @Inject constructor(
                 _updateInfo.value = null
             }
         }
-    }
-
-    fun fetchSavedCredentials(context: Context) {
-        viewModelScope.launch {
-            try {
-                val targetContext = context.findActivity() ?: context
-                val credentialManager = CredentialManager.create(targetContext)
-                val getPasswordOption = GetPasswordOption()
-                val request = GetCredentialRequest(listOf(getPasswordOption))
-                val response = credentialManager.getCredential(targetContext, request)
-                val credential = response.credential
-                if (credential is PasswordCredential) {
-                    val fetchedUser = credential.id
-                    val fetchedPass = credential.password
-                    _username.value = fetchedUser
-                    _password.value = fetchedPass
-
-                    // Lookup matching server URL from account history if available
-                    val settings = settingsRepository.settingsFlow.first()
-                    val cachedAccount = settings.credentials
-                    if (cachedAccount != null && cachedAccount.username == fetchedUser) {
-                        _url.value = cachedAccount.baseUrl
-                    }
-                    _errorMessage.value = null
-                    Timber.i("Credential successfully retrieved from CredentialManager")
-                }
-            } catch (e: GetCredentialCancellationException) {
-                Timber.d("User cancelled credential picker")
-            } catch (e: GetCredentialException) {
-                Timber.d("No saved credential found or provider unavailable: ${e.message}")
-            } catch (e: Exception) {
-                Timber.w("Error fetching credential: ${e.message}")
-            }
-        }
-    }
-
-    suspend fun saveCredentialToPasswordManager(context: Context, user: String, pass: String) {
-        try {
-            val targetContext = context.findActivity() ?: context
-            val credentialManager = CredentialManager.create(targetContext)
-            val request = CreatePasswordRequest(id = user, password = pass)
-            credentialManager.createCredential(targetContext, request)
-            Timber.i("Password save request completed for account")
-        } catch (e: CreateCredentialCancellationException) {
-            Timber.d("User cancelled saving password credential")
-        } catch (e: CreateCredentialException) {
-            Timber.w("CreateCredentialException: ${e.message}")
-        } catch (e: Exception) {
-            Timber.w("Could not save password credential: ${e.message}")
-        }
-    }
-
-    private fun Context.findActivity(): Activity? {
-        var ctx = this
-        while (ctx is ContextWrapper) {
-            if (ctx is Activity) return ctx
-            ctx = ctx.baseContext
-        }
-        return null
     }
 }
