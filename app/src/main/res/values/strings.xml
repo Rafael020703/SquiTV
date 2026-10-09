@@ -453,4 +453,21 @@
     <string name="update_available_login">Atualização Disponível</string>
     <string name="autofill_google_button">USAR SENHA SALVA NO GOOGLE</string>
     <string name="credential_filled_msg">Credenciais preenchidas do Google</string>
+    <string name="lang_auto">Automático (Sistema)</string>
+    <string name="lang_portuguese">Português</string>
+    <string name="lang_english">English</string>
+    <string name="lang_spanish">Español</string>
+    <string name="debug_console_title">SquiTV Diagnóstico &amp; Telemetria</string>
+    <string name="debug_snapshot_button">Snapshot</string>
+    <string name="debug_clear_button">Limpar</string>
+    <string name="debug_export_button">Exportar Logs</string>
+    <string name="debug_search_placeholder">Pesquisar evento...</string>
+    <string name="export_chooser_title">Exportar Logs Debug</string>
+    <string name="export_error_toast">Erro ao exportar: %s</string>
+    <string name="pin_digits_label">PIN DE 4 DÍGITOS</string>
+    <string name="save_new_pin_button">SALVAR NOVO PIN</string>
+    <string name="network_stats_label">ESTATÍSTICAS DE REDE</string>
+    <string name="network_stats_desc">Exibir velocidade e buffer durante a reprodução.</string>
+    <string name="hide_locked_label">OCULTAR BLOQUEADOS</string>
+    <string name="hide_locked_desc">Categorias protegidas por PIN não aparecerão no catálogo.</string>
 </resources>

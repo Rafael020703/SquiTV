@@ -166,6 +166,7 @@
     <string name="filter_series">Series</string>
     <string name="no_results_found">No results found</string>
     <string name="episode_label">EPISODE</string>
+    <string name="download_season_button">DOWNLOAD SEASON</string>
     <string name="season_prefix">Season %d</string>
 
     <!-- Account Screen -->
@@ -440,4 +441,31 @@
     <string name="update_available_login">Update Available</string>
     <string name="autofill_google_button">USE GOOGLE SAVED PASSWORD</string>
     <string name="credential_filled_msg">Credentials filled from Google</string>
+    <string name="lang_auto">Automatic (System)</string>
+    <string name="lang_portuguese">Portuguese</string>
+    <string name="lang_english">English</string>
+    <string name="lang_spanish">Spanish</string>
+    <string name="debug_console_title">SquiTV Diagnostics &amp; Telemetry</string>
+    <string name="debug_snapshot_button">Snapshot</string>
+    <string name="debug_clear_button">Clear</string>
+    <string name="debug_export_button">Export Logs</string>
+    <string name="debug_search_placeholder">Search event...</string>
+    <string name="export_chooser_title">Export Debug Logs</string>
+    <string name="export_error_toast">Export error: %s</string>
+    <string name="pin_digits_label">4-DIGIT PIN</string>
+    <string name="save_new_pin_button">SAVE NEW PIN</string>
+    <string name="network_stats_label">NETWORK STATISTICS</string>
+    <string name="network_stats_desc">Display speed and buffer during playback.</string>
+    <string name="hide_locked_label">HIDE BLOCKED</string>
+    <string name="hide_locked_desc">PIN-protected categories will not appear in the catalog.</string>
+    <string name="offline_mode_banner">OFFLINE MODE — SHOWING SAVED CONTENT</string>
+    <string name="never_synced">Never synced</string>
+    <string name="synced_now">Synced now</string>
+    <string name="synced_minutes_ago">Synced %d minutes ago</string>
+    <string name="synced_hours_ago">Synced %d hours ago</string>
+    <string name="last_sync_at">Last sync: %s</string>
+    <string name="auth_invalid_error">IPTV authentication failed. Check your credentials.</string>
+    <string name="auth_expired_error">Your IPTV account has expired. Contact your provider.</string>
+    <string name="server_offline_error">IPTV server is offline. Using local data.</string>
+    <string name="stream_playback_error">Could not play this content. The server may be unavailable.</string>
 </resources>

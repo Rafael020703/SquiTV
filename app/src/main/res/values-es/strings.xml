@@ -166,6 +166,7 @@
     <string name="filter_series">Series</string>
     <string name="no_results_found">No se encontraron resultados</string>
     <string name="episode_label">EPISODIO</string>
+    <string name="download_season_button">DESCARGAR TEMPORADA</string>
     <string name="season_prefix">Temporada %d</string>
 
     <!-- Account Screen -->
@@ -440,4 +441,31 @@
     <string name="update_available_login">Actualización Disponible</string>
     <string name="autofill_google_button">USAR CONTRASEÑA GUARDADA DE GOOGLE</string>
     <string name="credential_filled_msg">Credenciales completadas de Google</string>
+    <string name="lang_auto">Automático (Sistema)</string>
+    <string name="lang_portuguese">Portugués</string>
+    <string name="lang_english">Inglés</string>
+    <string name="lang_spanish">Español</string>
+    <string name="debug_console_title">Diagnóstico y Telemetría SquiTV</string>
+    <string name="debug_snapshot_button">Instantánea</string>
+    <string name="debug_clear_button">Limpiar</string>
+    <string name="debug_export_button">Exportar Registros</string>
+    <string name="debug_search_placeholder">Buscar evento...</string>
+    <string name="export_chooser_title">Exportar Registros de Depuración</string>
+    <string name="export_error_toast">Error al exportar: %s</string>
+    <string name="pin_digits_label">PIN DE 4 DÍGITOS</string>
+    <string name="save_new_pin_button">GUARDAR NUEVO PIN</string>
+    <string name="network_stats_label">ESTADÍSTICAS DE RED</string>
+    <string name="network_stats_desc">Mostrar velocidad y búfer durante la reproducción.</string>
+    <string name="hide_locked_label">OCULTAR BLOQUEADOS</string>
+    <string name="hide_locked_desc">Las categorías protegidas por PIN no aparecerán en el catálogo.</string>
+    <string name="offline_mode_banner">MODO OFFLINE — MOSTRANDO CONTENIDO GUARDADO</string>
+    <string name="never_synced">Nunca sincronizado</string>
+    <string name="synced_now">Sincronizado ahora</string>
+    <string name="synced_minutes_ago">Sincronizado hace %d minutos</string>
+    <string name="synced_hours_ago">Sincronizado hace %d horas</string>
+    <string name="last_sync_at">Última sincronización: %s</string>
+    <string name="auth_invalid_error">Fallo de autenticación IPTV. Verifique sus credenciales.</string>
+    <string name="auth_expired_error">Su cuenta IPTV ha expirado. Contacte a su proveedor.</string>
+    <string name="server_offline_error">El servidor IPTV está desconectado. Usando datos locales.</string>
+    <string name="stream_playback_error">No se pudo reproducir este contenido. El servidor puede no estar disponible.</string>
 </resources>
