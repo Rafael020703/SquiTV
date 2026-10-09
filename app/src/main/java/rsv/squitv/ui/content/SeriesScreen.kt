@@ -44,6 +44,7 @@ fun SeriesScreen(
 ) {
     val contentRows by categoryViewModel.currentContentRows.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val categoryCounts by categoryViewModel.categoryCounts.collectAsStateWithLifecycle()
     val isLoading by categoryViewModel.isLoading.collectAsStateWithLifecycle()
     val sortOrder by categoryViewModel.sortOrder.collectAsStateWithLifecycle()
     val favorites by libraryViewModel.favorites.collectAsStateWithLifecycle()
@@ -116,6 +117,7 @@ fun SeriesScreen(
                             cat.categoryId == selectedCategoryId || (selectedCategoryId == null && contentRows.any { it.catId == cat.categoryId })
                         },
                         itemLabel = { it.categoryName ?: "" },
+                        itemCount = { cat -> cat.categoryId?.let { categoryCounts[it] } },
                         onItemClick = { cat ->
                             cat.categoryId?.let { catId ->
                                 handleCategorySelect(catId)
@@ -124,12 +126,8 @@ fun SeriesScreen(
                                 }
                             }
                         },
-                        onItemFocus = { cat ->
-                            cat.categoryId?.let { catId ->
-                                if (catId != selectedCategoryId) {
-                                    handleCategorySelect(catId)
-                                }
-                            }
+                        onItemFocus = { _ ->
+                            // Do not change open category on visual focus change
                         },
                         focusRequester = sidebarFocusRequester,
                         nextFocusRequester = gridFocusRequester

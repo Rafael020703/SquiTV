@@ -42,6 +42,7 @@ fun LiveChannelsScreen(
 ) {
     val contentRows by categoryViewModel.currentContentRows.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val categoryCounts by categoryViewModel.categoryCounts.collectAsStateWithLifecycle()
     val isLoading by categoryViewModel.isLoading.collectAsStateWithLifecycle()
     val sortOrder by categoryViewModel.sortOrder.collectAsStateWithLifecycle()
     val blockedIds by viewModel.blockedCategoryIds.collectAsStateWithLifecycle()
@@ -148,6 +149,7 @@ fun LiveChannelsScreen(
                             cat.categoryId == selectedCategoryId || (selectedCategoryId == null && contentRows.any { it.catId == cat.categoryId })
                         },
                         itemLabel = { it.categoryName ?: "" },
+                        itemCount = { cat -> cat.categoryId?.let { categoryCounts[it] } },
                         onItemClick = { cat ->
                             cat.categoryId?.let { catId ->
                                 handleCategorySelect(catId)

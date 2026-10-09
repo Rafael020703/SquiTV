@@ -129,7 +129,11 @@ class MainActivity : AppCompatActivity() {
             val language by mainViewModel.language.collectAsState()
 
             LaunchedEffect(language) {
-                val appLocales: LocaleListCompat = LocaleListCompat.forLanguageTags(language)
+                val appLocales = if (language.isBlank() || language == "auto") {
+                    LocaleListCompat.forLanguageTags("")
+                } else {
+                    LocaleListCompat.forLanguageTags(language)
+                }
                 AppCompatDelegate.setApplicationLocales(appLocales)
             }
             

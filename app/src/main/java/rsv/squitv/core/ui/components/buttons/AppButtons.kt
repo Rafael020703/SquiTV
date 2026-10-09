@@ -131,7 +131,7 @@ fun AppIconButton(
     val responsive = tokens.responsive
     
     val baseTint = tint ?: tokens.colors.textPrimary
-    val size = responsive.dp(tokens.dimensions.minTouchTarget + tokens.spacing.small)
+    val size = responsive.dp(tokens.dimensions.minTouchTarget + tokens.spacing.small).coerceAtLeast(tokens.dimensions.minTouchTarget)
     
     IconButton(
         onClick = onClick,
@@ -147,7 +147,7 @@ fun AppIconButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = if (isFocused) tokens.colors.primary else baseTint,
-            modifier = Modifier.size(responsive.dp(24.dp))
+            modifier = Modifier.size(responsive.dp(24.dp).coerceAtLeast(20.dp))
         )
     }
 }

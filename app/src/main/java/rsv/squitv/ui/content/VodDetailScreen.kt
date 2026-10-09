@@ -23,6 +23,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.util.UnstableApi
@@ -183,7 +184,6 @@ fun VodDetailContent(
     onViewTrailer: (String) -> Unit
 ) {
     val tokens = AppDesignSystem
-    val isExpanded = windowInfo.isExpanded
     val isTv = windowInfo.isTv
     val backdropUrl = vodInfo?.info?.backdropPath?.firstOrNull() ?: icon
     val density = LocalDensity.current
@@ -218,7 +218,6 @@ fun VodDetailContent(
             LoadingState(message = stringResource(R.string.refreshing_label))
         } else {
             val movie = vodInfo?.info
-            val scrollState = rememberScrollState()
 
             Column(modifier = Modifier.fillMaxSize()) {
                 AppHeader(
@@ -236,52 +235,53 @@ fun VodDetailContent(
                 Row(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = if (isExpanded) tokens.spacing.extraLarge * 2 else tokens.spacing.large)
-                        .verticalScroll(scrollState)
+                        .padding(horizontal = tokens.spacing.extraLarge, vertical = tokens.spacing.large),
+                    horizontalArrangement = Arrangement.spacedBy(tokens.spacing.giant),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (isExpanded) {
-                        Column(
-                            modifier = Modifier
-                                .width(380.dp)
-                                .padding(top = tokens.spacing.large),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Surface(
-                                shape = tokens.shapes.extraLarge,
-                                shadowElevation = 32.dp,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(AppDimensions.posterAspectRatio)
-                                    .border(
-                                        tokens.dimensions.standardBorderWidth * 2,
-                                        Color.White.copy(alpha = 0.1f),
-                                        tokens.shapes.extraLarge
-                                    )
-                            ) {
-                                AsyncImage(
-                                    model = icon,
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(tokens.spacing.giant * 2))
+                    // LEFT COLUMN: POSTER
+                    Surface(
+                        shape = tokens.shapes.extraLarge,
+                        shadowElevation = 24.dp,
+                        modifier = Modifier
+                            .width(240.dp)
+                            .aspectRatio(AppDimensions.posterAspectRatio)
+                            .border(
+                                tokens.dimensions.standardBorderWidth * 2,
+                                Color.White.copy(alpha = 0.1f),
+                                tokens.shapes.extraLarge
+                            )
+                    ) {
+                        AsyncImage(
+                            model = icon,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
 
-                    Column(modifier = Modifier.weight(1f).padding(bottom = tokens.spacing.giant * 2)) {
-                        val titleStyle = if (isTv) tokens.typography.display else tokens.typography.headline
+                    // RIGHT COLUMN: DETAILS & ACTIONS (NO SCROLL)
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        val titleStyle = if (isTv) tokens.typography.headline else tokens.typography.title
                         
                         Text(
                             text = vodName.uppercase(), 
                             style = titleStyle, 
                             fontWeight = FontWeight.Black, 
                             color = tokens.colors.textPrimary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
                             letterSpacing = 1.sp
                         )
 
+                        Spacer(modifier = Modifier.height(tokens.spacing.small))
+
                         Row(
-                            modifier = Modifier.padding(vertical = tokens.spacing.large), 
                             horizontalArrangement = Arrangement.spacedBy(tokens.spacing.large), 
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -292,9 +292,11 @@ fun VodDetailContent(
                             movie?.duration?.let { MetadataItem(it) }
                         }
 
+                        Spacer(modifier = Modifier.height(tokens.spacing.large))
+
                         // ACTIONS
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = tokens.spacing.extraLarge),
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(tokens.spacing.large)
                         ) {
                             val isResuming = currentProgress != null && currentProgress > 0.05f
@@ -304,7 +306,7 @@ fun VodDetailContent(
                                 icon = if (isResuming) Icons.Rounded.History else Icons.Rounded.PlayArrow,
                                 onClick = { onPlay(vodId, vodName, containerExt) },
                                 modifier = Modifier
-                                    .height(if (isTv) 72.dp else 56.dp)
+                                    .height(if (isTv) 56.dp else 48.dp)
                                     .weight(1f)
                                     .focusRequester(playButtonFocusRequester)
                             )
@@ -314,75 +316,48 @@ fun VodDetailContent(
                                     text = "TRAILER",
                                     icon = Icons.Rounded.PlayCircle,
                                     onClick = { onViewTrailer(movie.youtubeTrailer!!) },
-                                    modifier = Modifier.height(if (isTv) 72.dp else 56.dp)
+                                    modifier = Modifier.height(if (isTv) 56.dp else 48.dp)
                                 )
                             }
 
                             AppIconButton(
                                 icon = Icons.Rounded.Download,
                                 onClick = onDownload,
-                                modifier = Modifier.size(if (isTv) 72.dp else 56.dp)
+                                modifier = Modifier.size(if (isTv) 56.dp else 48.dp)
                             )
                         }
 
                         if (currentProgress != null) {
+                            Spacer(modifier = Modifier.height(tokens.spacing.medium))
                             LinearProgressIndicator(
                                 progress = { currentProgress },
                                 modifier = Modifier.fillMaxWidth().height(tokens.spacing.micro).clip(CircleShape),
                                 color = tokens.colors.primary,
                                 trackColor = Color.White.copy(alpha = 0.1f)
                             )
-                            Spacer(modifier = Modifier.height(tokens.spacing.extraLarge))
                         }
+
+                        Spacer(modifier = Modifier.height(tokens.spacing.large))
 
                         Text(
-                            text = movie?.plot ?: stringResource(R.string.no_description), 
-                            style = tokens.typography.body, 
-                            color = tokens.colors.textSecondary, 
-                            lineHeight = 28.sp, 
-                            modifier = Modifier.padding(vertical = tokens.spacing.medium)
+                            text = movie?.plot ?: stringResource(R.string.no_description),
+                            style = tokens.typography.body.copy(fontSize = 13.sp, lineHeight = 18.sp),
+                            color = tokens.colors.textSecondary,
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis
                         )
 
-                        if (!movie?.cast.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(tokens.spacing.extraLarge))
+                        if (!movie?.director.isNullOrBlank() || !movie?.genre.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(tokens.spacing.small))
                             Text(
-                                text = stringResource(R.string.cast_label).uppercase(),
-                                style = tokens.typography.title,
-                                fontWeight = FontWeight.Black,
-                                color = tokens.colors.primary,
-                                letterSpacing = 1.sp
-                            )
-                            val actors = remember(movie.cast) { movie.cast.split(",").map { it.trim() }.filter { it.isNotEmpty() } }
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(tokens.spacing.large),
-                                contentPadding = PaddingValues(vertical = tokens.spacing.large)
-                            ) {
-                                items(actors) { actor -> 
-                                    ActorAvatar(
-                                        name = actor, 
-                                        onClick = { onActorClick(actor) }, 
-                                        isExpanded = isExpanded
-                                    ) 
-                                }
-                            }
-                        }
-                        
-                        MetadataDetailsSection(movie, onGenreClick, onDirectorClick)
-
-                        if (similarContent.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(tokens.spacing.giant))
-                            Text(
-                                text = stringResource(R.string.similar_content).uppercase(),
-                                style = tokens.typography.title,
-                                fontWeight = FontWeight.Black,
-                                color = tokens.colors.primary,
-                                letterSpacing = 1.sp
-                            )
-                            ContentRow(
-                                title = "",
-                                items = similarContent,
-                                watchProgress = watchProgress,
-                                onItemClick = { item -> onPlay(item.id.toInt(), item.name, null) }
+                                text = buildString {
+                                    if (!movie?.director.isNullOrBlank()) append("Diretor: ${movie.director}  ")
+                                    if (!movie?.genre.isNullOrBlank()) append("Gênero: ${movie.genre}")
+                                },
+                                style = tokens.typography.caption.copy(fontSize = 11.sp),
+                                color = tokens.colors.textSecondary.copy(alpha = 0.8f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }

@@ -217,8 +217,16 @@ class MainViewModel @Inject constructor(
 
     fun clearCache() {
         viewModelScope.launch(Dispatchers.IO) {
-            context.cacheDir.deleteRecursively()
-            context.externalCacheDir?.deleteRecursively()
+            try {
+                val imageLoader = coil.Coil.imageLoader(context)
+                imageLoader.memoryCache?.clear()
+                val imageCacheDir = File(context.cacheDir, "image_cache")
+                if (imageCacheDir.exists()) {
+                    imageCacheDir.deleteRecursively()
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error clearing image cache")
+            }
             calculateCacheSize()
         }
     }

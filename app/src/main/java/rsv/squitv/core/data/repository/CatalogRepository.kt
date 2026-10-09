@@ -270,6 +270,10 @@ class CatalogRepository @Inject constructor(
     suspend fun updateCategoryPinned(id: String, type: String, pinned: Boolean) = iptvDao.updateCategoryPinned(id, type, pinned)
     suspend fun getStreamCountByCategory(categoryId: String, type: String): Int = iptvDao.getStreamCountByCategory(categoryId, type)
 
+    suspend fun getCategoryCounts(type: String): Map<String, Int> {
+        return iptvDao.getCategoryCounts(type.uppercase()).associate { it.categoryId to it.count }
+    }
+
     suspend fun searchEpisodes(query: String, blockedIds: Set<String> = emptySet()): List<EpisodeEntity> {
         return if (blockedIds.isEmpty()) iptvDao.searchEpisodes(query) else iptvDao.searchEpisodesFiltered(query, blockedIds.toList())
     }

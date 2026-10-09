@@ -34,7 +34,7 @@ object AppDimensions {
     val focusBorderWidth = 3.dp
     val standardBorderWidth = 1.dp
     val posterAspectRatio = 2f / 3f
-    val channelAspectRatio = 16f / 9f
+    val channelAspectRatio = 1f / 1f
     
     val sidebarWidth = 280.dp
     val topBarHeight = 72.dp

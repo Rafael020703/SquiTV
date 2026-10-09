@@ -34,11 +34,11 @@ fun ContentGrid(
     val isLive = items.firstOrNull()?.type == ContentType.LIVE
     
     val columns = when {
-        responsive.widthDp > 1600.dp -> if (isLive) 5 else 8
-        responsive.widthDp > 1200.dp -> if (isLive) 4 else 6
-        responsive.widthDp > 900.dp -> if (isLive) 3 else 5
-        responsive.widthDp > 600.dp -> if (isLive) 2 else 4
-        else -> if (isLive) 1 else 2
+        responsive.widthDp > 1600.dp -> if (isLive) 7 else 8
+        responsive.widthDp > 1200.dp -> if (isLive) 6 else 6
+        responsive.widthDp > 900.dp -> if (isLive) 5 else 5
+        responsive.widthDp > 600.dp -> if (isLive) 4 else 4
+        else -> if (isLive) 2 else 2
     }
 
     val gridSpacing = responsive.dp(tokens.spacing.extraLarge)

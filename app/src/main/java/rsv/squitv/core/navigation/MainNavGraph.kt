@@ -1,7 +1,7 @@
 ﻿package rsv.squitv.core.navigation
 
 import android.app.Activity
-import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -54,6 +54,10 @@ fun MainNavigation(
 
     var showExitDialog by remember { mutableStateOf(false) }
 
+    BackHandler(enabled = showExitDialog) {
+        showExitDialog = false
+    }
+
     // Execute actions from AppController
     LaunchedEffect(appController, navController) {
         appController.actions.collect { action ->
@@ -61,6 +65,11 @@ fun MainNavigation(
                 is AppAction.Back -> {
                     // Safety check for UI lock
                     if (appState is AppState.Locked) return@collect
+
+                    if (showExitDialog) {
+                        showExitDialog = false
+                        return@collect
+                    }
 
                     val result = navController.popBackStack()
                     if (!result) {

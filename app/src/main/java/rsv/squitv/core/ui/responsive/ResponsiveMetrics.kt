@@ -38,9 +38,12 @@ data class ResponsiveMetrics(
     fun dp(base: Dp): Dp = base * viewportScale
     
     /**
-     * Scaling for text, usually more conservative than layout scaling
+     * Scaling for text with a legibility minimum floor (default 10.sp)
      */
-    fun sp(base: TextUnit): TextUnit = (base.value * textScale).sp
+    fun sp(base: TextUnit, minSp: TextUnit = 10.sp): TextUnit {
+        val scaled = base.value * textScale
+        return kotlin.math.max(scaled, minSp.value).sp
+    }
 }
 
 enum class ScreenClass {

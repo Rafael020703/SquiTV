@@ -11,14 +11,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import rsv.squitv.R
 import rsv.squitv.core.debug.DebugEvent
 import rsv.squitv.core.debug.DebugLogger
-import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,12 +51,15 @@ fun DebugConsoleScreen(
         }.reversed()
     }
 
+    val chooserTitle = stringResource(R.string.export_chooser_title)
+    val errorMsgFormat = stringResource(R.string.export_error_toast)
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text("SquiTV Diagnóstico & Telemetria", style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.debug_console_title), style = MaterialTheme.typography.titleMedium)
                         Text(
                             "Session: ${DebugLogger.sessionId}",
                             style = MaterialTheme.typography.bodySmall,
@@ -68,13 +72,13 @@ fun DebugConsoleScreen(
                         DebugLogger.takeSnapshot("USER_MANUAL_SNAPSHOT")
                         events = DebugLogger.getRecentEvents()
                     }) {
-                        Text("Snapshot")
+                        Text(stringResource(R.string.debug_snapshot_button))
                     }
                     TextButton(onClick = {
                         DebugLogger.clearBuffer()
                         events = emptyList()
                     }) {
-                        Text("Limpar")
+                        Text(stringResource(R.string.debug_clear_button))
                     }
                     TextButton(onClick = {
                         val logFile = DebugLogger.getLogFile()
@@ -90,16 +94,17 @@ fun DebugConsoleScreen(
                                     putExtra(Intent.EXTRA_STREAM, uri)
                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
-                                context.startActivity(Intent.createChooser(shareIntent, "Exportar Logs Debug"))
+                                context.startActivity(Intent.createChooser(shareIntent, chooserTitle))
                             } catch (e: Exception) {
-                                android.widget.Toast.makeText(context, "Erro ao exportar: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                                val errorMsg = String.format(errorMsgFormat, e.message ?: "")
+                                android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_LONG).show()
                             }
                         }
                     }) {
-                        Text("Exportar Logs")
+                        Text(stringResource(R.string.debug_export_button))
                     }
                     TextButton(onClick = onNavigateBack) {
-                        Text("Voltar")
+                        Text(stringResource(R.string.back_content_desc))
                     }
                 }
             )
@@ -139,7 +144,7 @@ fun DebugConsoleScreen(
                 OutlinedTextField(
                     value = searchText,
                     onValueChange = { searchText = it },
-                    placeholder = { Text("Pesquisar evento...") },
+                    placeholder = { Text(stringResource(R.string.debug_search_placeholder)) },
                     modifier = Modifier.weight(1f),
                     singleLine = true
                 )
@@ -183,49 +188,40 @@ private fun LogItemRow(e: DebugEvent) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "[${e.level}][${e.category}] ${e.event}",
+                text = "[${e.level}] ${e.category}",
                 color = levelColor,
                 fontWeight = FontWeight.Bold,
-                fontSize = 12.sp
-            )
-            Text(
-                text = e.timestamp.takeLast(12),
-                color = Color.LightGray,
-                fontSize = 10.sp
-            )
-        }
-
-        val details = StringBuilder()
-        if (e.channelSwitchId != null) details.append("cs=${e.channelSwitchId} ")
-        if (e.operationId != null) details.append("op=${e.operationId} ")
-        if (e.channelId != null) details.append("channel=${e.channelId} ")
-        if (e.durationMs != null) details.append("dur=${e.durationMs}ms ")
-        if (e.result != null) details.append("res=${e.result} ")
-
-        if (details.isNotEmpty()) {
-            Text(
-                text = details.toString(),
-                color = Color(0xFFBBDEFB),
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace
             )
-        }
-
-        if (e.context != null && e.context.isNotEmpty()) {
             Text(
-                text = "ctx: ${e.context}",
-                color = Color.LightGray,
+                text = e.timestamp,
+                color = Color.Gray,
                 fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace
             )
         }
-
-        if (e.error != null) {
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = e.event,
+            color = Color.White,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace
+        )
+        if (!e.context.isNullOrEmpty()) {
             Text(
-                text = "ERROR: ${e.error}",
-                color = Color(0xFFFF8A80),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold
+                text = "Ctx: ${e.context}",
+                color = Color(0xFFB0BEC5),
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+        if (!e.error.isNullOrEmpty()) {
+            Text(
+                text = "Err: ${e.error}",
+                color = Color(0xFFEF9A9A),
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace
             )
         }
     }

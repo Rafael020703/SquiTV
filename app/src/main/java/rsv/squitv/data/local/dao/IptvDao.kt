@@ -242,6 +242,14 @@ interface IptvDao {
     @Query("SELECT COUNT(*) FROM iptv_streams WHERE streamType = 'SERIES'")
     suspend fun getSeriesCount(): Int
 
+    data class CategoryCountDto(
+        @androidx.room.ColumnInfo(name = "categoryId") val categoryId: String,
+        @androidx.room.ColumnInfo(name = "count") val count: Int
+    )
+
+    @Query("SELECT categoryId, COUNT(*) as count FROM iptv_streams WHERE streamType = :type GROUP BY categoryId")
+    suspend fun getCategoryCounts(type: String): List<CategoryCountDto>
+
     @Query("SELECT * FROM iptv_streams WHERE streamType = 'VOD' AND added > :timestamp")
     suspend fun getNewMovies(timestamp: String): List<IptvStreamEntity>
 

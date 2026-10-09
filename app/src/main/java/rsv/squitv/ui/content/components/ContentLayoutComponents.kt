@@ -28,8 +28,9 @@ import rsv.squitv.core.ui.components.common.adaptiveFocus
 @Composable
 fun CategoryListItem(
     name: String, 
+    modifier: Modifier = Modifier,
+    count: Int? = null,
     isSelected: Boolean, 
-    modifier: Modifier = Modifier, 
     onClick: () -> Unit,
     onFocus: () -> Unit = {}
 ) {
@@ -50,6 +51,10 @@ fun CategoryListItem(
         label = "bgColor"
     )
 
+    val displayText = remember(name, count) {
+        if (count != null) "$name ($count)" else name
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -68,7 +73,7 @@ fun CategoryListItem(
             .padding(vertical = responsive.dp(tokens.spacing.medium), horizontal = responsive.dp(tokens.spacing.large))
     ) {
         Text(
-            text = name.uppercase(),
+            text = displayText.uppercase(),
             color = textColor,
             style = tokens.typography.label.copy(fontSize = responsive.sp(tokens.typography.label.fontSize)),
             fontWeight = if (isFocused || isSelected) FontWeight.Black else FontWeight.Bold,

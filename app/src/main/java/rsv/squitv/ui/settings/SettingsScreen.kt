@@ -3,9 +3,12 @@
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Logout
@@ -38,10 +41,8 @@ import rsv.squitv.ui.viewmodel.MainViewModel
 import rsv.squitv.ui.viewmodel.library.LibraryViewModel
 import rsv.squitv.ui.viewmodel.settings.SettingsViewModel
 import rsv.squitv.util.AppVersionProvider
-import rsv.squitv.util.NetworkDiagnostics
 import rsv.squitv.util.rememberWindowInfo
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * CONFIGURAÇÕES - REESTRUTURAÇÃO VISUAL PÁGINA ÚNICA
@@ -67,8 +68,7 @@ enum class SettingsCategory(val labelRes: Int, val icon: ImageVector) {
     APP_UPDATES(R.string.app_updates_title, Icons.Rounded.SystemUpdate),
     DNS_TESTER(R.string.dns_tester_title, Icons.Rounded.Dns),
     CLEAR_CACHE(R.string.clear_cache_label, Icons.Rounded.Brush),
-    CLEAR_CATALOG(R.string.reset_database_label, Icons.Rounded.DeleteSweep),
-    SPEED_TEST(R.string.test_now_button, Icons.Rounded.Speed)
+    CLEAR_CATALOG(R.string.reset_database_label, Icons.Rounded.DeleteSweep)
 }
 
 @UnstableApi
@@ -87,8 +87,6 @@ fun SettingsScreen(
     val credentials = mainViewModel.credentials
     val windowInfo = rememberWindowInfo()
     val tokens = AppDesignSystem
-    val scope = rememberCoroutineScope()
-
     var detailCategory by remember { mutableStateOf<SettingsCategory?>(null) }
     var showResetDialog by remember { mutableStateOf(false) }
 
@@ -144,35 +142,64 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // --- GRADE HORIZONTAL RESPONSIVA (SEM SIDEBAR, ORDEM ALFABÉTICA) ---
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = if (windowInfo.screenWidth < 600.dp) 130.dp else 165.dp),
+            // --- SEÇÕES CATEGORIZADAS DE CONFIGURAÇÕES ---
+            val settingsGroups = remember {
+                listOf(
+                    "CONTA E PREFERÊNCIAS" to listOf(SettingsCategory.ACCOUNT, SettingsCategory.SIGN_OUT, SettingsCategory.LANGUAGE, SettingsCategory.THEME, SettingsCategory.ZOOM),
+                    "REPRODUÇÃO" to listOf(SettingsCategory.PLAYER_ENGINE, SettingsCategory.BUFFER, SettingsCategory.AUTO_PLAY, SettingsCategory.BACKGROUND_PLAYBACK),
+                    "SEGURANÇA E CATÁLOGO" to listOf(SettingsCategory.PARENTAL, SettingsCategory.HIDE_LOCKED, SettingsCategory.CLEAR_CATALOG),
+                    "ATUALIZAÇÃO E MANUTENÇÃO" to listOf(SettingsCategory.UPDATE, SettingsCategory.APP_UPDATES, SettingsCategory.CLEAR_CACHE),
+                    "DIAGNÓSTICO AVANÇADO" to listOf(SettingsCategory.DIAGNOSTICS, SettingsCategory.DNS_TESTER)
+                )
+            }
+
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                itemsIndexed(sortedCategories, key = { _, item -> item.name }) { index, category ->
-                    SettingsGridCard(
-                        label = stringResource(category.labelRes),
-                        icon = category.icon,
-                        isDestructive = category == SettingsCategory.SIGN_OUT || category == SettingsCategory.CLEAR_CATALOG,
-                        modifier = if (index == 0) Modifier.focusRequester(contentFocusRequester) else Modifier,
-                        onClick = {
-                            when (category) {
-                                SettingsCategory.ACCOUNT -> onNavigateToAccount()
-                                SettingsCategory.SIGN_OUT -> mainViewModel.logout()
-                                SettingsCategory.UPDATE -> mainViewModel.loadData(force = true)
-                                SettingsCategory.APP_UPDATES -> onNavigateToUpdates()
-                                SettingsCategory.DNS_TESTER -> onNavigateToDnsTester()
-                                SettingsCategory.CLEAR_CACHE -> mainViewModel.clearCache()
-                                SettingsCategory.CLEAR_CATALOG -> showResetDialog = true
-                                else -> detailCategory = category
+                settingsGroups.forEach { (groupTitle, categories) ->
+                    item(key = groupTitle) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = groupTitle,
+                                style = tokens.typography.label.copy(fontSize = 11.sp, fontWeight = FontWeight.Black),
+                                color = tokens.colors.primary,
+                                letterSpacing = 1.5.sp,
+                                modifier = Modifier.padding(horizontal = 4.dp)
+                            )
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp)
+                            ) {
+                                itemsIndexed(categories, key = { _, item -> item.name }) { index, category ->
+                                    val cardWidth = if (windowInfo.screenWidth < 600.dp) 130.dp else 165.dp
+                                    Box(modifier = Modifier.width(cardWidth)) {
+                                        SettingsGridCard(
+                                            label = stringResource(category.labelRes),
+                                            icon = category.icon,
+                                            isDestructive = category == SettingsCategory.SIGN_OUT || category == SettingsCategory.CLEAR_CATALOG,
+                                            modifier = if (groupTitle == "CONTA E PREFERÊNCIAS" && index == 0) Modifier.focusRequester(contentFocusRequester) else Modifier,
+                                            onClick = {
+                                                when (category) {
+                                                    SettingsCategory.ACCOUNT -> onNavigateToAccount()
+                                                    SettingsCategory.SIGN_OUT -> mainViewModel.logout()
+                                                    SettingsCategory.UPDATE -> mainViewModel.loadData(force = true)
+                                                    SettingsCategory.APP_UPDATES -> onNavigateToUpdates()
+                                                    SettingsCategory.DNS_TESTER -> onNavigateToDnsTester()
+                                                    SettingsCategory.CLEAR_CACHE -> mainViewModel.clearCache()
+                                                    SettingsCategory.CLEAR_CATALOG -> showResetDialog = true
+                                                    else -> detailCategory = category
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
                             }
                         }
-                    )
+                    }
                 }
             }
 
@@ -300,12 +327,17 @@ fun SettingsScreen(
                             )
                         }
                         SettingsCategory.LANGUAGE -> {
-                            val codes = mapOf("pt" to "PORTUGUÊS", "en" to "ENGLISH", "es" to "ESPAÑOL")
+                            val codes = mapOf(
+                                "auto" to stringResource(R.string.lang_auto),
+                                "pt" to stringResource(R.string.lang_portuguese),
+                                "en" to stringResource(R.string.lang_english),
+                                "es" to stringResource(R.string.lang_spanish)
+                            )
                             codes.forEach { (code, name) ->
                                 SettingsActionItem(
                                     label = name,
                                     onClick = { settingsViewModel.updateLanguage(code); detailCategory = null },
-                                    trailingText = if (settings.language == code) "ATIVO" else null
+                                    trailingText = if (settings.language == code || (code == "auto" && settings.language.isBlank())) "ATIVO" else null
                                 )
                             }
                         }
@@ -401,38 +433,6 @@ fun SettingsScreen(
                                 description = "Categorias protegidas por PIN não aparecerão no catálogo.",
                                 onCheckedChange = { settingsViewModel.updateHideBlockedCategories(it) }
                             )
-                        }
-                        SettingsCategory.SPEED_TEST -> {
-                            var testResult by remember { mutableStateOf<String?>(null) }
-                            var testing by remember { mutableStateOf(false) }
-                            if (testing) {
-                                LoadingState(message = "ANALISANDO CONEXÃO...")
-                            } else {
-                                testResult?.let {
-                                    Text(
-                                        text = it,
-                                        color = tokens.colors.primary,
-                                        style = tokens.typography.title,
-                                        fontWeight = FontWeight.Black,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                                Spacer(Modifier.height(12.dp))
-                                AppButton(
-                                    text = "INICIAR TESTE",
-                                    onClick = {
-                                        testing = true
-                                        scope.launch {
-                                            val ping = credentials?.let { NetworkDiagnostics.measurePing(it.baseUrl) } ?: -1
-                                            val speed = credentials?.let { NetworkDiagnostics.measureDownloadSpeed(it.baseUrl) } ?: 0.0
-                                            testResult = "PING: ${ping}MS\nVELOCIDADE: %.2f MBPS".format(speed)
-                                            testing = false
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
                         }
                         else -> {}
                     }

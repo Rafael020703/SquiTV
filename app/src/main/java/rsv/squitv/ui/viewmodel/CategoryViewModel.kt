@@ -58,6 +58,9 @@ class CategoryViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _categoryCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val categoryCounts: StateFlow<Map<String, Int>> = _categoryCounts.asStateFlow()
+
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
     }

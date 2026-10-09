@@ -143,7 +143,7 @@ class SettingsRepository @Inject constructor(
         val useOledTheme: Boolean = true,
         val dataSaverMode: Boolean = false,
         val uiZoom: Float = 1.0f,
-        val language: String = "pt",
+        val language: String = "auto",
         val lastSyncTimestamp: Long,
         val syncIntervalHours: Int,
         val appPin: String? = null,
@@ -197,7 +197,7 @@ class SettingsRepository @Inject constructor(
         val oledTheme = preferences[PreferencesKeys.USE_OLED_THEME] ?: true
         val dataSaver = preferences[PreferencesKeys.DATA_SAVER_MODE] ?: false
         val zoom = preferences[PreferencesKeys.UI_ZOOM] ?: 1.0f
-        val language = preferences[PreferencesKeys.LANGUAGE] ?: "pt"
+        val language = preferences[PreferencesKeys.LANGUAGE] ?: "auto"
         val downloadWifiOnly = preferences[PreferencesKeys.DOWNLOAD_WIFI_ONLY] ?: true
         val smartDownloads = preferences[PreferencesKeys.SMART_DOWNLOADS_ENABLED] ?: true
 

@@ -18,6 +18,7 @@ fun <T> AppSidebar(
     items: List<T>,
     selectedItemPredicate: (T) -> Boolean,
     itemLabel: @Composable (T) -> String,
+    itemCount: ((T) -> Int?)? = null,
     onItemClick: (T) -> Unit,
     onItemFocus: (T) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -46,8 +47,10 @@ fun <T> AppSidebar(
         ) {
             itemsIndexed(items) { index, item ->
                 val isSelected = selectedItemPredicate(item)
+                val count = itemCount?.invoke(item)
                 CategoryListItem(
                     name = itemLabel(item),
+                    count = count,
                     isSelected = isSelected,
                     modifier = Modifier.then(
                         if (isSelected || (index == 0 && items.isNotEmpty())) {
