@@ -41,7 +41,8 @@ fun LiveChannelsScreen(
     onNavigateToSearch: () -> Unit
 ) {
     val contentRows by categoryViewModel.currentContentRows.collectAsStateWithLifecycle()
-    val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val categoriesFlow = remember(viewModel) { viewModel.getCustomizedCategoriesFlow("live") }
+    val categories by categoriesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val categoryCounts by categoryViewModel.categoryCounts.collectAsStateWithLifecycle()
     val isLoading by categoryViewModel.isLoading.collectAsStateWithLifecycle()
     val sortOrder by categoryViewModel.sortOrder.collectAsStateWithLifecycle()
@@ -77,7 +78,7 @@ fun LiveChannelsScreen(
         if (categories.isNotEmpty()) {
             val savedCat = settings.lastLiveCategory
             val isSavedValid = savedCat != null && (savedCat == "RECENTS" || savedCat == "FAVORITES" || categories.any { it.categoryId == savedCat })
-            if (!isSavedValid && savedCat != null) {
+            if (!isSavedValid) {
                 val fallbackCatId = categories.firstOrNull()?.categoryId ?: "RECENTS"
                 if (selectedCategoryId != fallbackCatId) {
                     selectedCategoryId = fallbackCatId

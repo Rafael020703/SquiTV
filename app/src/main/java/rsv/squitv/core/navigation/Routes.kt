@@ -45,6 +45,9 @@ sealed interface Route {
     data object Settings : Route
 
     @Serializable
+    data object ContentCustomization : Route
+
+    @Serializable
     data object Updates : Route
 
     @Serializable

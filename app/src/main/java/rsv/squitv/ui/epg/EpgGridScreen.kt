@@ -1,5 +1,7 @@
-﻿@file:OptIn(ExperimentalMaterial3Api::class, UnstableApi::class)
-package rsv.squitv.ui.epg
+﻿package rsv.squitv.ui.epg
+
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -31,7 +33,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.media3.common.util.UnstableApi
 import coil.compose.AsyncImage
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import rsv.squitv.R
@@ -52,6 +53,7 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 
+@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun EpgGridScreen(
     mainViewModel: MainViewModel,
@@ -162,7 +164,7 @@ fun EpgGridContent(
                 .padding(vertical = tokens.spacing.small)
         ) {
             Spacer(modifier = Modifier.width(channelColumnWidth))
-            val timeFormatter = SimpleDateFormat("HH:mm", Locale.getDefault())
+            val timeFormatter = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
             val startCal = Calendar.getInstance().apply { timeInMillis = timeRange.first * 1000 }
             repeat(7) {
                 Text(

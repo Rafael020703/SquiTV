@@ -32,11 +32,13 @@ import rsv.squitv.core.ui.components.common.adaptiveFocus
 import rsv.squitv.ui.dashboard.PortalBackground
 import rsv.squitv.ui.viewmodel.MainViewModel
 import rsv.squitv.ui.viewmodel.library.LibraryViewModel
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import androidx.hilt.navigation.compose.hiltViewModel
 import rsv.squitv.util.rememberWindowInfo
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadsScreen(
     viewModel: MainViewModel,

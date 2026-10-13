@@ -96,7 +96,8 @@ fun CinematicActionCard(
                             ),
                             start = Offset(0f, 0f),
                             end = Offset(1000f, 1000f)
-                        )
+                        ),
+                        shape = tokens.shapes.large
                     )
             )
 
@@ -120,7 +121,8 @@ fun CinematicActionCard(
                                 Color(0xFF07090D).copy(alpha = 0.95f)
                             ),
                             startY = 0f
-                        )
+                        ),
+                        shape = tokens.shapes.large
                     )
             )
             
@@ -134,7 +136,8 @@ fun CinematicActionCard(
                                 colors = listOf(themeColor.copy(alpha = 0.18f), Color.Transparent),
                                 center = Offset(0.5f, 0.5f),
                                 radius = 900f
-                            )
+                            ),
+                            shape = tokens.shapes.large
                         )
                 )
             }

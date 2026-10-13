@@ -61,6 +61,27 @@ class CategoryViewModel @Inject constructor(
     private val _categoryCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
     val categoryCounts: StateFlow<Map<String, Int>> = _categoryCounts.asStateFlow()
 
+    private val _availableGenres = MutableStateFlow<List<String>>(emptyList())
+    val availableGenres: StateFlow<List<String>> = _availableGenres.asStateFlow()
+
+    private val _selectedGenre = MutableStateFlow<String?>(null)
+    val selectedGenre: StateFlow<String?> = _selectedGenre.asStateFlow()
+
+    fun loadGenres(type: String) {
+        viewModelScope.launch {
+            try {
+                _availableGenres.value = catalogRepository.getAvailableGenres(type)
+            } catch (_: Exception) {
+                _availableGenres.value = emptyList()
+            }
+        }
+    }
+
+    fun selectGenre(type: String, genre: String?, categoryId: String? = null, blockedIds: Set<String> = emptySet()) {
+        _selectedGenre.value = genre
+        loadContent(type, categoryId, blockedIds, genre = genre)
+    }
+
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
     }
@@ -78,7 +99,13 @@ class CategoryViewModel @Inject constructor(
 
     private var loadJob: Job? = null
 
-    fun loadContent(type: String, categoryId: String? = null, blockedIds: Set<String> = emptySet(), favorites: List<IptvItem> = emptyList()) {
+    fun loadContent(
+        type: String, 
+        categoryId: String? = null, 
+        blockedIds: Set<String> = emptySet(), 
+        favorites: List<IptvItem> = emptyList(),
+        genre: String? = null
+    ) {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             val credentials = settingsRepository.settingsFlow.first().credentials ?: return@launch
@@ -129,7 +156,7 @@ class CategoryViewModel @Inject constructor(
                     return@launch
                 }
 
-                val categories = when (type) {
+                val rawCategories = when (type) {
                     "live" -> catalogRepository.getLiveCategories(credentials)
                     "movie" -> catalogRepository.getVodCategories(credentials)
                     "series" -> catalogRepository.getSeriesCategories(credentials)
@@ -137,6 +164,22 @@ class CategoryViewModel @Inject constructor(
                     "actor" -> emptyList() // Handled below
                     else -> emptyList()
                 }.filter { it.id !in blockedIds }
+
+                val currentSettings = settingsRepository.settingsFlow.first()
+                val simpleUser = credentials.username.trim().lowercase()
+                val cleanUrl = credentials.baseUrl.trim().lowercase().removeSuffix("/")
+                val accountKey = if (cleanUrl.isNotBlank()) "$cleanUrl#$simpleUser" else simpleUser
+                val normType = if (type == "movie") "vod" else type.lowercase()
+                val typeKey = "${accountKey}_${normType}"
+
+                val customOrder = currentSettings.categoryOrderMap[typeKey]
+                val hiddenCategories = currentSettings.hiddenCategoriesMap[typeKey]
+
+                val categories = catalogRepository.applyCategoryCustomization(
+                    categories = rawCategories,
+                    customOrder = customOrder,
+                    hiddenCategories = hiddenCategories
+                )
 
                 val rows = mutableListOf<DashboardRow>()
 
@@ -179,10 +222,20 @@ class CategoryViewModel @Inject constructor(
                     }
                     _rawRows.value = rows
                 }
-                _rawRows.value = rows
+                
+                if (!genre.isNullOrBlank()) {
+                    val filteredRows = _rawRows.value.map { row ->
+                        val filteredItems = row.items.filter { 
+                            it.genre?.contains(genre, ignoreCase = true) == true || 
+                            it.name.contains(genre, ignoreCase = true) 
+                        }
+                        row.copy(items = filteredItems)
+                    }.filter { it.items.isNotEmpty() }
+                    _rawRows.value = filteredRows
+                }
                 
                 // Prefetch visible rows
-                rows.take(5).forEach { row ->
+                _rawRows.value.take(5).forEach { row ->
                     prefetchRowImages(row.items)
                 }
             } catch (e: Exception) {

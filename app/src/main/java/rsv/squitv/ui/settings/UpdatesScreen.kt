@@ -70,7 +70,8 @@ fun UpdatesScreen(
             AppHeader(
                 title = stringResource(R.string.app_updates_title),
                 subtitle = stringResource(R.string.app_updates_subtitle),
-                onBack = onBack
+                onBack = onBack,
+                showBackButton = true
             )
 
             Box(

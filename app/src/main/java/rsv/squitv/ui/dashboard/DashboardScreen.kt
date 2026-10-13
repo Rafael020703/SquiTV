@@ -73,6 +73,8 @@ fun DashboardScreen(
     val newlyAdded by viewModel.newlyAdded.collectAsStateWithLifecycle()
     val watchProgress by libraryViewModel.watchProgress.collectAsStateWithLifecycle()
     val availableUpdatePrompt by viewModel.availableUpdatePrompt.collectAsStateWithLifecycle()
+    val customDisplayName by viewModel.customDisplayName.collectAsStateWithLifecycle()
+    val hiddenSections by viewModel.hiddenSections.collectAsStateWithLifecycle()
     val credentials = viewModel.credentials
 
     LaunchedEffect(Unit) {
@@ -114,6 +116,8 @@ fun DashboardScreen(
             activeProfile = activeProfile,
             accountInfo = accountInfo,
             credentials = credentials,
+            customDisplayName = customDisplayName,
+            hiddenSections = hiddenSections,
             expDate = expDateFormatted,
             actions = dashboardActions
         )
@@ -160,6 +164,8 @@ fun DashboardContent(
     activeProfile: UserProfile?,
     accountInfo: UserInfo?,
     credentials: XtreamCredentials?,
+    customDisplayName: String? = null,
+    hiddenSections: Set<String> = emptySet(),
     expDate: String,
     actions: DashboardActions
 ) {
@@ -220,8 +226,9 @@ fun DashboardContent(
                     }
                     Spacer(Modifier.width(responsive.dp(tokens.spacing.large)))
                     Column {
+                        val nameToDisplay = customDisplayName?.takeIf { it.isNotBlank() } ?: accountInfo?.username ?: credentials?.username ?: activeProfile?.name ?: "USUÁRIO"
                         Text(
-                            text = "OLÁ, ${accountInfo?.username?.uppercase() ?: credentials?.username?.uppercase() ?: activeProfile?.name?.uppercase() ?: "USUÁRIO"}",
+                            text = "OLÁ, ${nameToDisplay.uppercase()}",
                             style = tokens.typography.display.copy(fontSize = titleSize),
                             fontWeight = FontWeight.Black,
                             color = tokens.colors.textPrimary
@@ -277,88 +284,97 @@ fun DashboardContent(
         }
 
         // --- LINE 1: MAIN CATEGORIES (Adaptive Flow/Row) ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(itemSpacing)
-        ) {
-            val mainCards = listOf(
-                Triple(stringResource(R.string.live_tv_title), stringResource(R.string.live_tv_desc), ThemeLive),
-                Triple(stringResource(R.string.movies_title), stringResource(R.string.movies_desc), ThemeMovies),
-                Triple(stringResource(R.string.series_title), stringResource(R.string.series_desc), ThemeSeries)
-            )
-            
-            mainCards.forEachIndexed { index, (title, desc, color) ->
-                CinematicActionCard(
-                    title = title,
-                    description = if (isNarrow) "" else desc,
-                    icon = when(index) {
-                        0 -> Icons.Rounded.Monitor
-                        1 -> Icons.Rounded.Movie
-                        else -> Icons.Rounded.VideoLibrary
-                    },
-                    cardType = when(index) {
-                        0 -> HomeCardType.LIVE_TV
-                        1 -> HomeCardType.MOVIES
-                        else -> HomeCardType.SERIES
-                    },
-                    themeColor = color,
-                    isLarge = true,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(mainCardHeight)
-                        .then(if (index == 0) Modifier.focusRequester(firstItemFocusRequester) else Modifier),
-                    onClick = { 
-                        when(index) {
-                            0 -> actions.onNavigateToCategory("live", null)
-                            1 -> actions.onNavigateToCategory("movie", null)
-                            else -> actions.onNavigateToCategory("series", null)
+        val allMainCards = listOf(
+            Triple("LIVE_TV", stringResource(R.string.live_tv_title), stringResource(R.string.live_tv_desc) to ThemeLive),
+            Triple("MOVIES", stringResource(R.string.movies_title), stringResource(R.string.movies_desc) to ThemeMovies),
+            Triple("SERIES", stringResource(R.string.series_title), stringResource(R.string.series_desc) to ThemeSeries)
+        )
+        val mainCards = allMainCards.filter { (key, _, _) -> key !in hiddenSections }
+
+        if (mainCards.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(itemSpacing)
+            ) {
+                mainCards.forEachIndexed { index, (key, title, descColor) ->
+                    val (desc, color) = descColor
+                    CinematicActionCard(
+                        title = title,
+                        description = if (isNarrow) "" else desc,
+                        icon = when(key) {
+                            "LIVE_TV" -> Icons.Rounded.Monitor
+                            "MOVIES" -> Icons.Rounded.Movie
+                            else -> Icons.Rounded.VideoLibrary
+                        },
+                        cardType = when(key) {
+                            "LIVE_TV" -> HomeCardType.LIVE_TV
+                            "MOVIES" -> HomeCardType.MOVIES
+                            else -> HomeCardType.SERIES
+                        },
+                        themeColor = color,
+                        isLarge = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(mainCardHeight)
+                            .then(if (index == 0) Modifier.focusRequester(firstItemFocusRequester) else Modifier),
+                        onClick = { 
+                            when(key) {
+                                "LIVE_TV" -> actions.onNavigateToCategory("live", null)
+                                "MOVIES" -> actions.onNavigateToCategory("movie", null)
+                                else -> actions.onNavigateToCategory("series", null)
+                            }
                         }
-                    }
-                )
+                    )
+                }
             }
         }
 
         // --- LINE 2: SECONDARY TOOLS (Adaptive Grid) ---
-    val downloadsLabel = stringResource(R.string.downloads_label)
-    val favoritesLabel = stringResource(R.string.favorites_label)
+        val downloadsLabel = stringResource(R.string.downloads_label)
+        val favoritesLabel = stringResource(R.string.favorites_label)
 
-    val secondaryCards = listOf(
-        Triple("EPG", Icons.AutoMirrored.Rounded.ListAlt, ThemeEPG),
-        Triple("MULTI-VIEW", Icons.Rounded.GridView, ThemeMultiView),
-        Triple(downloadsLabel, Icons.Rounded.Download, ThemeDownloads),
-        Triple(favoritesLabel, Icons.Rounded.Favorite, ThemeFavorites)
-    )
+        val allSecondaryCards = listOf(
+            Triple("EPG", "EPG", Icons.AutoMirrored.Rounded.ListAlt to ThemeEPG),
+            Triple("MULTI_VIEW", "MULTI-VIEW", Icons.Rounded.GridView to ThemeMultiView),
+            Triple("DOWNLOADS", downloadsLabel, Icons.Rounded.Download to ThemeDownloads),
+            Triple("FAVORITES", favoritesLabel, Icons.Rounded.Favorite to ThemeFavorites)
+        )
+        val secondaryCards = allSecondaryCards.filter { (key, _, _) -> key !in hiddenSections }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(itemSpacing)
-    ) {
-        secondaryCards.forEach { (title, icon, color) ->
-            CinematicActionCard(
-                title = title,
-                description = "",
-                icon = icon,
-                cardType = when(title) {
-                    "EPG" -> HomeCardType.EPG
-                    "MULTI-VIEW" -> HomeCardType.MULTI_VIEW
-                    downloadsLabel -> HomeCardType.DOWNLOADS
-                    else -> HomeCardType.FAVORITES
-                },
-                themeColor = color,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(secondaryCardHeight),
-                onClick = {
-                    when(title) {
-                        "EPG" -> actions.onNavigateToEpgGrid()
-                        "MULTI-VIEW" -> actions.onNavigateToMultiView()
-                        downloadsLabel -> actions.onNavigateToDownloads()
-                        else -> actions.onNavigateToCategory("favorites", null)
-                    }
+        if (secondaryCards.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(itemSpacing)
+            ) {
+                secondaryCards.forEachIndexed { index, (key, title, iconColor) ->
+                    val (icon, color) = iconColor
+                    CinematicActionCard(
+                        title = title,
+                        description = "",
+                        icon = icon,
+                        cardType = when(key) {
+                            "EPG" -> HomeCardType.EPG
+                            "MULTI_VIEW" -> HomeCardType.MULTI_VIEW
+                            "DOWNLOADS" -> HomeCardType.DOWNLOADS
+                            else -> HomeCardType.FAVORITES
+                        },
+                        themeColor = color,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(secondaryCardHeight)
+                            .then(if (mainCards.isEmpty() && index == 0) Modifier.focusRequester(firstItemFocusRequester) else Modifier),
+                        onClick = {
+                            when(key) {
+                                "EPG" -> actions.onNavigateToEpgGrid()
+                                "MULTI_VIEW" -> actions.onNavigateToMultiView()
+                                "DOWNLOADS" -> actions.onNavigateToDownloads()
+                                else -> actions.onNavigateToCategory("favorites", null)
+                            }
+                        }
+                    )
                 }
-            )
+            }
         }
-    }
         
         Spacer(Modifier.height(responsive.dp(tokens.spacing.small)))
     }

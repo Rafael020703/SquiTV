@@ -67,7 +67,6 @@ fun ActorAvatar(
 ) {
     val tokens = AppDesignSystem
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (isFocused) 1.1f else 1.0f, animationSpec = tween(300))
     val avatarColor = remember(name) {
         val hash = name.hashCode()
         val h = (hash and 0xFFFF) % 360
@@ -78,18 +77,13 @@ fun ActorAvatar(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
             .width(if (isExpanded) 120.dp else 90.dp)
-            .scale(scale)
             .appFocus(shape = CircleShape, onFocus = { isFocused = it })
             .clickable { onClick() }
     ) {
         Surface(
             modifier = Modifier.size(if (isExpanded) 90.dp else 70.dp),
             shape = CircleShape,
-            color = avatarColor.copy(alpha = 0.2f),
-            border = BorderStroke(
-                width = if (isFocused) tokens.dimensions.focusBorderWidth else tokens.dimensions.standardBorderWidth,
-                color = if (isFocused) tokens.colors.primary else tokens.colors.surfaceVariant.copy(alpha = 0.3f)
-            )
+            color = avatarColor.copy(alpha = 0.2f)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Text(
@@ -243,8 +237,8 @@ fun SeasonListItem(
 ) {
     val tokens = AppDesignSystem
     var isFocused by remember { mutableStateOf(false) }
-    val textColor by animateColorAsState(if (isFocused) Color.Black else if (isSelected) tokens.colors.primary else tokens.colors.textSecondary)
-    val bgColor by animateColorAsState(if (isFocused) tokens.colors.primary else if (isSelected) tokens.colors.primary.copy(alpha = 0.1f) else Color.Transparent)
+    val textColor by animateColorAsState(if (isFocused || isSelected) tokens.colors.primary else tokens.colors.textSecondary)
+    val bgColor by animateColorAsState(if (isFocused) tokens.colors.primary.copy(alpha = 0.25f) else if (isSelected) tokens.colors.primary.copy(alpha = 0.12f) else Color.Transparent)
 
     Box(
         modifier = modifier

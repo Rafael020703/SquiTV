@@ -1,5 +1,7 @@
-﻿@file:OptIn(ExperimentalMaterial3Api::class, UnstableApi::class)
-package rsv.squitv.ui.series
+﻿package rsv.squitv.ui.series
+
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,7 +26,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.media3.common.util.UnstableApi
 import coil.compose.AsyncImage
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
@@ -59,6 +60,7 @@ import rsv.squitv.data.local.entities.SeasonEntity
 import rsv.squitv.data.model.XtreamCredentials
 import rsv.squitv.data.model.XtreamSeries
 
+@OptIn(UnstableApi::class)
 @Composable
 fun SeriesDetailScreen(
     viewModel: SeriesDetailViewModel,
@@ -125,7 +127,7 @@ fun SeriesDetailScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun SeriesDetailContent(
     seriesId: Int,
@@ -195,6 +197,7 @@ fun SeriesDetailContent(
             AppHeader(
                 title = "",
                 onBack = onBack,
+                showBackButton = true,
                 actions = {
                     AppIconButton(
                         icon = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,

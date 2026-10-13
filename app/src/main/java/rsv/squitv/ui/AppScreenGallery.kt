@@ -1,6 +1,6 @@
-﻿@file:OptIn(UnstableApi::class)
-package rsv.squitv.ui
+﻿package rsv.squitv.ui
 
+import androidx.annotation.OptIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,6 +38,7 @@ import rsv.squitv.ui.viewmodel.settings.SettingsViewModel
  * as telas principais (SettingsScreen e LiveChannelsScreen) em múltiplos
  * formatos de tela (Compacto 640x360dp, Intermediário 800x450dp, Amplo 1280x720dp e Full HD).
  */
+@OptIn(UnstableApi::class)
 @Composable
 fun AppGalleryScreen(
     onBack: (() -> Unit)? = null,

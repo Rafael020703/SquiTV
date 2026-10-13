@@ -41,23 +41,26 @@ fun ContentGrid(
         else -> if (isLive) 2 else 2
     }
 
-    val gridSpacing = responsive.dp(tokens.spacing.extraLarge)
+    val gridSpacing = responsive.dp(tokens.spacing.large)
     val gridState = rememberLazyGridState()
 
-    val targetIndex = remember(items, targetItemId) {
+    val currentItemsKey = remember(items.firstOrNull()?.id, items.size, targetItemId) {
+        (items.firstOrNull()?.id ?: "") to (targetItemId ?: "")
+    }
+
+    val targetIndex = remember(targetItemId, items.size) {
         val idx = items.indexOfFirst { it.id == targetItemId }
         if (idx != -1) idx else 0
     }
 
     val targetFocusRequester = remember { FocusRequester() }
 
-    androidx.compose.runtime.LaunchedEffect(targetIndex, items) {
+    LaunchedEffect(currentItemsKey) {
         if (items.isNotEmpty() && targetIndex in items.indices) {
             gridState.scrollToItem(targetIndex)
-            kotlinx.coroutines.delay(50)
+            kotlinx.coroutines.delay(80)
             try {
                 targetFocusRequester.requestFocus()
-                gridFocusRequester.requestFocus()
             } catch (_: Exception) {}
         }
     }
@@ -68,7 +71,10 @@ fun ContentGrid(
         modifier = Modifier
             .fillMaxSize()
             .focusProperties { left = sidebarFocusRequester },
-        contentPadding = PaddingValues(gridSpacing),
+        contentPadding = PaddingValues(
+            horizontal = responsive.dp(tokens.spacing.extraLarge),
+            vertical = responsive.dp(tokens.spacing.large)
+        ),
         verticalArrangement = Arrangement.spacedBy(gridSpacing),
         horizontalArrangement = Arrangement.spacedBy(gridSpacing)
     ) {
@@ -99,3 +105,4 @@ fun ContentGrid(
         }
     }
 }
+

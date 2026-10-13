@@ -468,4 +468,5 @@
     <string name="auth_expired_error">Your IPTV account has expired. Contact your provider.</string>
     <string name="server_offline_error">IPTV server is offline. Using local data.</string>
     <string name="stream_playback_error">Could not play this content. The server may be unavailable.</string>
+    <string name="nav_customization_label">Customize Navigation/Tabs</string>
 </resources>

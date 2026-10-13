@@ -1,5 +1,7 @@
-﻿@file:OptIn(UnstableApi::class)
-package rsv.squitv
+﻿package rsv.squitv
+
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 
 import android.Manifest
 import android.app.PictureInPictureParams
@@ -22,7 +24,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.media3.common.util.UnstableApi
 import androidx.navigationevent.NavigationEventDispatcher
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import rsv.squitv.appfunctions.AppFunctionActionBus
@@ -41,6 +42,7 @@ import rsv.squitv.ui.viewmodel.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
+@OptIn(UnstableApi::class)
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
     private var canEnterPip = false

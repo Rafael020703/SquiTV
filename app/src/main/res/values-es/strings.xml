@@ -468,4 +468,5 @@
     <string name="auth_expired_error">Su cuenta IPTV ha expirado. Contacte a su proveedor.</string>
     <string name="server_offline_error">El servidor IPTV está desconectado. Usando datos locales.</string>
     <string name="stream_playback_error">No se pudo reproducir este contenido. El servidor puede no estar disponible.</string>
+    <string name="nav_customization_label">Personalizar Pestañas/Navegación</string>
 </resources>

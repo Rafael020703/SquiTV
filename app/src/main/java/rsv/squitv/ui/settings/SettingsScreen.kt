@@ -54,6 +54,7 @@ import kotlinx.coroutines.delay
 enum class SettingsCategory(val labelRes: Int, val icon: ImageVector) {
     ACCOUNT(R.string.account_label, Icons.Rounded.ManageAccounts),
     SIGN_OUT(R.string.logout_label, Icons.AutoMirrored.Rounded.Logout),
+    NAV_CUSTOMIZATION(R.string.nav_customization_label, Icons.Rounded.DashboardCustomize),
     LANGUAGE(R.string.language_label, Icons.Rounded.Language),
     THEME(R.string.oled_theme_label, Icons.Rounded.DarkMode),
     ZOOM(R.string.ui_zoom_label, Icons.Rounded.ZoomIn),
@@ -80,7 +81,8 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onNavigateToAccount: () -> Unit,
     onNavigateToDnsTester: () -> Unit = {},
-    onNavigateToUpdates: () -> Unit = {}
+    onNavigateToUpdates: () -> Unit = {},
+    onNavigateToContentCustomization: () -> Unit = {}
 ) {
     val settings by settingsViewModel.settings.collectAsState()
     val dbStats by mainViewModel.dbStats.collectAsState()
@@ -145,7 +147,7 @@ fun SettingsScreen(
             // --- SEÇÕES CATEGORIZADAS DE CONFIGURAÇÕES ---
             val settingsGroups = remember {
                 listOf(
-                    "CONTA E PREFERÊNCIAS" to listOf(SettingsCategory.ACCOUNT, SettingsCategory.SIGN_OUT, SettingsCategory.LANGUAGE, SettingsCategory.THEME, SettingsCategory.ZOOM),
+                    "CONTA E PREFERÊNCIAS" to listOf(SettingsCategory.ACCOUNT, SettingsCategory.NAV_CUSTOMIZATION, SettingsCategory.SIGN_OUT, SettingsCategory.LANGUAGE, SettingsCategory.THEME, SettingsCategory.ZOOM),
                     "REPRODUÇÃO" to listOf(SettingsCategory.PLAYER_ENGINE, SettingsCategory.BUFFER, SettingsCategory.AUTO_PLAY, SettingsCategory.BACKGROUND_PLAYBACK),
                     "SEGURANÇA E CATÁLOGO" to listOf(SettingsCategory.PARENTAL, SettingsCategory.HIDE_LOCKED, SettingsCategory.CLEAR_CATALOG),
                     "ATUALIZAÇÃO E MANUTENÇÃO" to listOf(SettingsCategory.UPDATE, SettingsCategory.APP_UPDATES, SettingsCategory.CLEAR_CACHE),
@@ -185,6 +187,7 @@ fun SettingsScreen(
                                             onClick = {
                                                 when (category) {
                                                     SettingsCategory.ACCOUNT -> onNavigateToAccount()
+                                                    SettingsCategory.NAV_CUSTOMIZATION -> onNavigateToContentCustomization()
                                                     SettingsCategory.SIGN_OUT -> mainViewModel.logout()
                                                     SettingsCategory.UPDATE -> mainViewModel.loadData(force = true)
                                                     SettingsCategory.APP_UPDATES -> onNavigateToUpdates()
@@ -325,6 +328,45 @@ fun SettingsScreen(
                                 icon = Icons.Rounded.People,
                                 onClick = onNavigateToAccount
                             )
+                        }
+                        SettingsCategory.NAV_CUSTOMIZATION -> {
+                            val hiddenSections by mainViewModel.hiddenSections.collectAsState()
+                            val sections = listOf(
+                                "LIVE_TV" to "TV Ao Vivo",
+                                "MOVIES" to "Filmes",
+                                "SERIES" to "Séries",
+                                "EPG" to "Guia TV (EPG)",
+                                "MULTI_VIEW" to "Multi-View",
+                                "DOWNLOADS" to "Downloads",
+                                "FAVORITES" to "Favoritos"
+                            )
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Oculte seções que você não utiliza na tela inicial.",
+                                    style = tokens.typography.caption,
+                                    color = tokens.colors.textSecondary
+                                )
+                                sections.forEach { (key, title) ->
+                                    val isVisible = key !in hiddenSections
+                                    SettingsToggle(
+                                        label = title,
+                                        checked = isVisible,
+                                        onCheckedChange = { _ -> mainViewModel.toggleSectionVisibility(key) }
+                                    )
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Button(
+                                    onClick = { mainViewModel.restoreDefaultSections() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = tokens.colors.primary.copy(alpha = 0.2f), contentColor = tokens.colors.primary),
+                                    shape = tokens.shapes.medium,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("RESTAURAR PADRÃO", fontWeight = FontWeight.Black)
+                                }
+                            }
                         }
                         SettingsCategory.LANGUAGE -> {
                             val codes = mapOf(

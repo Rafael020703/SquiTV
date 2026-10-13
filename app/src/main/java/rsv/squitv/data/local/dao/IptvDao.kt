@@ -265,8 +265,14 @@ interface IptvDao {
     @Query("SELECT DISTINCT genre FROM iptv_streams WHERE streamType = 'SERIES' AND genre IS NOT NULL AND genre != ''")
     suspend fun getAvailableGenres(): List<String>
 
+    @Query("SELECT DISTINCT genre FROM iptv_streams WHERE streamType = :type AND genre IS NOT NULL AND genre != ''")
+    suspend fun getAvailableGenresByType(type: String): List<String>
+
     @Query("SELECT * FROM iptv_streams WHERE genre LIKE '%' || :genre || '%' LIMIT :limit")
     suspend fun getStreamsByGenre(genre: String, limit: Int): List<IptvStreamEntity>
+
+    @Query("SELECT * FROM iptv_streams WHERE streamType = :type AND genre LIKE '%' || :genre || '%' ORDER BY name ASC")
+    suspend fun getStreamsByGenreType(type: String, genre: String): List<IptvStreamEntity>
 
     @Update
     suspend fun updateStream(stream: IptvStreamEntity)

@@ -126,6 +126,12 @@ class SettingsRepository @Inject constructor(
         val LAST_AVAILABLE_VERSION = stringPreferencesKey("last_available_version")
         val LAST_NOTIFIED_VERSION = stringPreferencesKey("last_notified_version")
         val IGNORED_VERSION = stringPreferencesKey("ignored_version")
+
+        // Customization
+        val DISPLAY_NAMES_MAP = stringPreferencesKey("display_names_map")
+        val HIDDEN_SECTIONS = stringSetPreferencesKey("hidden_sections")
+        val CATEGORY_ORDER_MAP = stringPreferencesKey("category_order_map")
+        val HIDDEN_CATEGORIES_MAP = stringPreferencesKey("hidden_categories_map")
     }
 
     data class AppSettings(
@@ -171,8 +177,15 @@ class SettingsRepository @Inject constructor(
         val lastUpdateCheckTimestamp: Long = 0L,
         val lastAvailableVersion: String? = null,
         val lastNotifiedVersion: String? = null,
-        val ignoredVersion: String? = null
-    )
+        val ignoredVersion: String? = null,
+        val displayNamesMap: Map<String, String> = emptyMap(),
+        val hiddenSections: Set<String> = emptySet(),
+        val categoryOrderMap: Map<String, List<String>> = emptyMap(),
+        val hiddenCategoriesMap: Map<String, Set<String>> = emptyMap()
+    ) {
+        val currentDisplayName: String?
+            get() = credentials?.username?.lowercase()?.let { displayNamesMap[it] }
+    }
 
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { preferences ->
         val accountsJson = preferences[PreferencesKeys.ACCOUNTS]
@@ -256,6 +269,22 @@ class SettingsRepository @Inject constructor(
         val lastNotifiedVersion = preferences[PreferencesKeys.LAST_NOTIFIED_VERSION]
         val ignoredVersion = preferences[PreferencesKeys.IGNORED_VERSION]
 
+        val displayNamesJson = preferences[PreferencesKeys.DISPLAY_NAMES_MAP]
+        val displayNamesMap = try {
+            if (displayNamesJson != null) Json.decodeFromString<Map<String, String>>(displayNamesJson) else emptyMap()
+        } catch (_: Exception) { emptyMap() }
+        val hiddenSections = preferences[PreferencesKeys.HIDDEN_SECTIONS] ?: emptySet()
+
+        val categoryOrderJson = preferences[PreferencesKeys.CATEGORY_ORDER_MAP]
+        val categoryOrderMap = try {
+            if (categoryOrderJson != null) Json.decodeFromString<Map<String, List<String>>>(categoryOrderJson) else emptyMap()
+        } catch (_: Exception) { emptyMap() }
+
+        val hiddenCategoriesJson = preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP]
+        val hiddenCategoriesMap = try {
+            if (hiddenCategoriesJson != null) Json.decodeFromString<Map<String, Set<String>>>(hiddenCategoriesJson) else emptyMap()
+        } catch (_: Exception) { emptyMap() }
+
         val creds = if (username != null && password != null && baseUrl != null) {
             XtreamCredentials(username, password, baseUrl)
         } else if (accounts.isNotEmpty() && currentIndex >= 0 && currentIndex < accounts.size) {
@@ -307,7 +336,11 @@ class SettingsRepository @Inject constructor(
             lastUpdateCheckTimestamp = lastUpdateCheck,
             lastAvailableVersion = lastAvailableVersion,
             lastNotifiedVersion = lastNotifiedVersion,
-            ignoredVersion = ignoredVersion
+            ignoredVersion = ignoredVersion,
+            displayNamesMap = displayNamesMap,
+            hiddenSections = hiddenSections,
+            categoryOrderMap = categoryOrderMap,
+            hiddenCategoriesMap = hiddenCategoriesMap
         )
     }
 
@@ -420,6 +453,12 @@ class SettingsRepository @Inject constructor(
                 preferences[PreferencesKeys.PASSWORD] = creds.password
                 preferences[PreferencesKeys.BASE_URL] = creds.baseUrl
                 preferences.remove(PreferencesKeys.LAST_SYNC_TIMESTAMP)
+                
+                // Clear stale account metadata from previous session
+                preferences.remove(PreferencesKeys.ACCOUNT_STATUS)
+                preferences.remove(PreferencesKeys.ACCOUNT_EXP_DATE)
+                preferences.remove(PreferencesKeys.ACCOUNT_ACTIVE_CONS)
+                preferences.remove(PreferencesKeys.ACCOUNT_MAX_CONNECTIONS)
             }
         }
     }
@@ -690,6 +729,87 @@ class SettingsRepository @Inject constructor(
             } else {
                 preferences[PreferencesKeys.IGNORED_VERSION] = version
             }
+        }
+    }
+
+    suspend fun updateCustomDisplayName(username: String, baseUrl: String? = null, name: String?) {
+        context.dataStore.edit { preferences ->
+            val mapJson = preferences[PreferencesKeys.DISPLAY_NAMES_MAP]
+            val map = try {
+                if (mapJson != null) Json.decodeFromString<MutableMap<String, String>>(mapJson) else mutableMapOf()
+            } catch (_: Exception) { mutableMapOf() }
+            
+            val simpleKey = username.trim().lowercase()
+            val cleanUrl = baseUrl?.trim()?.lowercase()?.removeSuffix("/")
+            val accountKey = if (!cleanUrl.isNullOrBlank()) "$cleanUrl#$simpleKey" else simpleKey
+            
+            val trimmedValue = name?.trim()
+            if (trimmedValue.isNullOrBlank()) {
+                map.remove(accountKey)
+                if (accountKey == simpleKey) {
+                    map.remove(simpleKey)
+                }
+            } else {
+                map[accountKey] = trimmedValue
+            }
+            preferences[PreferencesKeys.DISPLAY_NAMES_MAP] = Json.encodeToString(map)
+        }
+    }
+
+    suspend fun updateHiddenSections(hidden: Set<String>) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.HIDDEN_SECTIONS] = hidden
+        }
+    }
+
+    suspend fun resetHiddenSections() {
+        context.dataStore.edit { preferences ->
+            preferences.remove(PreferencesKeys.HIDDEN_SECTIONS)
+        }
+    }
+
+    suspend fun updateCategoryOrder(accountKey: String, contentType: String, order: List<String>) {
+        context.dataStore.edit { preferences ->
+            val mapJson = preferences[PreferencesKeys.CATEGORY_ORDER_MAP]
+            val map = try {
+                if (mapJson != null) Json.decodeFromString<MutableMap<String, List<String>>>(mapJson) else mutableMapOf()
+            } catch (_: Exception) { mutableMapOf() }
+            val key = "${accountKey.lowercase().trim()}_${contentType.lowercase().trim()}"
+            map[key] = order
+            preferences[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(map)
+        }
+    }
+
+    suspend fun updateHiddenCategories(accountKey: String, contentType: String, hiddenSet: Set<String>) {
+        context.dataStore.edit { preferences ->
+            val mapJson = preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP]
+            val map = try {
+                if (mapJson != null) Json.decodeFromString<MutableMap<String, Set<String>>>(mapJson) else mutableMapOf()
+            } catch (_: Exception) { mutableMapOf() }
+            val key = "${accountKey.lowercase().trim()}_${contentType.lowercase().trim()}"
+            map[key] = hiddenSet
+            preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP] = Json.encodeToString(map)
+        }
+    }
+
+    suspend fun resetCategoryCustomization(accountKey: String, contentType: String) {
+        context.dataStore.edit { preferences ->
+            val orderMapJson = preferences[PreferencesKeys.CATEGORY_ORDER_MAP]
+            val orderMap = try {
+                if (orderMapJson != null) Json.decodeFromString<MutableMap<String, List<String>>>(orderMapJson) else mutableMapOf()
+            } catch (_: Exception) { mutableMapOf() }
+
+            val hiddenMapJson = preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP]
+            val hiddenMap = try {
+                if (hiddenMapJson != null) Json.decodeFromString<MutableMap<String, Set<String>>>(hiddenMapJson) else mutableMapOf()
+            } catch (_: Exception) { mutableMapOf() }
+
+            val key = "${accountKey.lowercase().trim()}_${contentType.lowercase().trim()}"
+            orderMap.remove(key)
+            hiddenMap.remove(key)
+
+            preferences[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(orderMap)
+            preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP] = Json.encodeToString(hiddenMap)
         }
     }
 }

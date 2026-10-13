@@ -223,6 +223,7 @@ fun VodDetailContent(
                 AppHeader(
                     title = "",
                     onBack = onBack,
+                    showBackButton = true,
                     actions = {
                         AppIconButton(
                             icon = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,

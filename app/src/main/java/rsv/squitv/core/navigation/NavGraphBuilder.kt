@@ -312,7 +312,15 @@ fun NavGraphBuilder.appNavGraph(
             onBack = { appController.goBack() },
             onNavigateToAccount = { appController.navigate(Route.Account) },
             onNavigateToDnsTester = { appController.navigate(Route.DnsTester) },
-            onNavigateToUpdates = { appController.navigate(Route.Updates) }
+            onNavigateToUpdates = { appController.navigate(Route.Updates) },
+            onNavigateToContentCustomization = { appController.navigate(Route.ContentCustomization) }
+        )
+    }
+
+    composable<Route.ContentCustomization> {
+        rsv.squitv.ui.settings.ContentCustomizationScreen(
+            mainViewModel = mainViewModel,
+            onBack = { appController.goBack() }
         )
     }
 

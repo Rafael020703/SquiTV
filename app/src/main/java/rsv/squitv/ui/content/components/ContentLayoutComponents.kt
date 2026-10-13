@@ -39,14 +39,14 @@ fun CategoryListItem(
     var isFocused by remember { mutableStateOf(false) }
     
     val textColor by animateColorAsState(
-        targetValue = if (isFocused) Color.Black 
+        targetValue = if (isFocused) tokens.colors.primary 
                     else if (isSelected) tokens.colors.primary 
                     else tokens.colors.textSecondary,
         label = "textColor"
     )
     val backgroundColor by animateColorAsState(
-        targetValue = if (isFocused) tokens.colors.primary 
-                    else if (isSelected) tokens.colors.primary.copy(alpha = 0.15f) 
+        targetValue = if (isFocused) tokens.colors.primary.copy(alpha = 0.25f) 
+                    else if (isSelected) tokens.colors.primary.copy(alpha = 0.12f) 
                     else Color.Transparent,
         label = "bgColor"
     )

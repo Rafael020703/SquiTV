@@ -1,6 +1,6 @@
-﻿@file:OptIn(ExperimentalMaterial3Api::class, UnstableApi::class)
-package rsv.squitv.ui.content
+﻿package rsv.squitv.ui.content
 
+import androidx.annotation.OptIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.util.UnstableApi
+import androidx.hilt.navigation.compose.hiltViewModel
 import rsv.squitv.R
 import rsv.squitv.domain.model.ContentType
 import rsv.squitv.core.ui.components.navigation.AppHeader
@@ -29,12 +31,10 @@ import rsv.squitv.core.ui.theme.*
 import rsv.squitv.ui.dashboard.PortalBackground
 import rsv.squitv.ui.viewmodel.library.LibraryViewModel
 import rsv.squitv.util.rememberWindowInfo
-import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.media3.common.util.UnstableApi
 import rsv.squitv.ui.dashboard.ContentRow
 import rsv.squitv.ui.viewmodel.CategoryViewModel
 
-@UnstableApi
+@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ActorDetailScreen(
     actorName: String,
@@ -68,6 +68,7 @@ fun ActorDetailScreen(
                 title = sanitizedActorName,
                 subtitle = if (totalWorks > 0) "$totalWorks obras encontradas" else stringResource(R.string.local_filmography),
                 onBack = onBack,
+                showBackButton = true,
                 actions = {
                     AppIconButton(Icons.AutoMirrored.Rounded.Sort, { showSortMenu = true })
                 }

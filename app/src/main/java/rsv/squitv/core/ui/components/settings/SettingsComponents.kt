@@ -46,17 +46,14 @@ fun SettingsGridCard(
             .adaptiveFocus(
                 shape = tokens.shapes.extraLarge,
                 glowColor = baseColor,
-                focusedScale = 1.06f,
+                focusedScale = 1.05f,
                 onFocus = { isFocused = it }
             )
             .clickable { onClick() },
         color = if (isFocused) baseColor.copy(alpha = 0.18f) else Color(0xFF0D1322).copy(alpha = 0.82f),
         shape = tokens.shapes.extraLarge,
-        border = BorderStroke(
-            1.5.dp,
-            if (isFocused) baseColor else tokens.colors.border.copy(alpha = 0.22f)
-        ),
-        shadowElevation = if (isFocused) 16.dp else 6.dp
+        border = if (!isFocused) BorderStroke(1.dp, tokens.colors.border.copy(alpha = 0.22f)) else null,
+        shadowElevation = 0.dp
     ) {
         Column(
             modifier = Modifier
@@ -114,13 +111,13 @@ fun SettingsToggle(
     val bodySize = responsive.sp(tokens.typography.body.fontSize)
 
     Surface(
-        onClick = { onCheckedChange(!checked) },
         modifier = modifier
             .fillMaxWidth()
             .adaptiveFocus(
                 shape = tokens.shapes.medium,
                 onFocus = { isFocused = it }
-            ),
+            )
+            .clickable { onCheckedChange(!checked) },
         color = if (isFocused) tokens.colors.surfaceElevated else Color.Transparent,
         shape = tokens.shapes.medium
     ) {
@@ -179,13 +176,13 @@ fun SettingsActionItem(
     val iconSize = responsive.dp(24.dp)
 
     Surface(
-        onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
             .adaptiveFocus(
                 shape = tokens.shapes.medium,
                 onFocus = { isFocused = it }
-            ),
+            )
+            .clickable { onClick() },
         color = if (isFocused) tokens.colors.surfaceElevated else Color.Transparent,
         shape = tokens.shapes.medium
     ) {

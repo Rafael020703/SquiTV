@@ -395,4 +395,35 @@ class CatalogRepository @Inject constructor(
             IptvItem(main.streamId.toString(), baseName.lowercase().split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }, main.streamIcon, ContentType.LIVE, main.epgChannelId, qualities = qualities, categoryId = main.categoryId)
         }
     }
+
+    suspend fun getAvailableGenres(type: String): List<String> = withContext(Dispatchers.IO) {
+        val streamType = if (type == "movie") "VOD" else type.uppercase()
+        val rawList = iptvDao.getAvailableGenresByType(streamType)
+        rawList.flatMap { it.split(",", "/", "|") }
+            .map { it.trim().lowercase().replaceFirstChar { c -> c.uppercase() } }
+            .filter { it.isNotBlank() && it.length > 2 }
+            .distinct()
+            .sorted()
+    }
+
+    suspend fun getStreamsByGenreType(type: String, genre: String): List<IptvStreamEntity> = withContext(Dispatchers.IO) {
+        val streamType = if (type == "movie") "VOD" else type.uppercase()
+        iptvDao.getStreamsByGenreType(streamType, genre)
+    }
+
+    fun applyCategoryCustomization(
+        categories: List<IptvCategoryEntity>,
+        customOrder: List<String>? = null,
+        hiddenCategories: Set<String>? = null
+    ): List<IptvCategoryEntity> {
+        var result = categories
+        if (!hiddenCategories.isNullOrEmpty()) {
+            result = result.filter { it.id !in hiddenCategories }
+        }
+        if (!customOrder.isNullOrEmpty()) {
+            val orderMap = customOrder.withIndex().associate { it.value to it.index }
+            result = result.sortedWith(compareBy { orderMap[it.id] ?: Int.MAX_VALUE })
+        }
+        return result
+    }
 }

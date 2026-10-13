@@ -73,6 +73,18 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.updateBackgroundPlaybackEnabled(enabled) }
     }
 
+    fun saveCustomDisplayName(username: String, baseUrl: String? = null, name: String?) {
+        viewModelScope.launch { settingsRepository.updateCustomDisplayName(username, baseUrl, name) }
+    }
+
+    fun updateHiddenSections(hidden: Set<String>) {
+        viewModelScope.launch { settingsRepository.updateHiddenSections(hidden) }
+    }
+
+    fun resetHiddenSections() {
+        viewModelScope.launch { settingsRepository.resetHiddenSections() }
+    }
+
     fun updateProfilePicture(url: String) {
         viewModelScope.launch {
             firebaseRepository.updateProfilePicture(url)

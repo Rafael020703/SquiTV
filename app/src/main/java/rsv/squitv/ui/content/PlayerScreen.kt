@@ -1,5 +1,6 @@
-﻿@file:OptIn(ExperimentalMaterial3Api::class, UnstableApi::class)
-package rsv.squitv.ui.content
+﻿package rsv.squitv.ui.content
+
+import androidx.annotation.OptIn
 
 import android.app.Activity
 import androidx.compose.animation.*
@@ -55,6 +56,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.seconds
 
+@OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerScreen(
     viewModel: PlayerViewModel,
@@ -244,6 +246,7 @@ fun PlayerScreen(
     }
 }
 
+@OptIn(UnstableApi::class)
 @Composable
 fun PlayerContent(
     streamName: String,

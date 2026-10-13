@@ -34,7 +34,7 @@ import javax.inject.Inject
 @UnstableApi
 class MainViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val catalogRepository: CatalogRepository,
+    val catalogRepository: CatalogRepository,
     private val userRepository: UserRepository,
     private val settingsRepository: SettingsRepository,
     private val updateRepository: UpdateRepository,
@@ -85,6 +85,183 @@ class MainViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = SettingsRepository.AppSettings(null, lastSyncTimestamp = 0L, syncIntervalHours = 24)
     )
+
+    val customDisplayName: StateFlow<String?> = combine(
+        appSettings,
+        accountInfo
+    ) { settings, accInfo ->
+        val creds = settings.credentials
+        val username = creds?.username ?: accInfo?.username
+        val baseUrl = creds?.baseUrl
+        if (!username.isNullOrBlank()) {
+            val simpleKey = username.trim().lowercase()
+            val cleanUrl = baseUrl?.trim()?.lowercase()?.removeSuffix("/")
+            val accountKey = if (!cleanUrl.isNullOrBlank()) "$cleanUrl#$simpleKey" else simpleKey
+            val map = settings.displayNamesMap
+            map[accountKey] ?: map[simpleKey]
+        } else null
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val hiddenSections: StateFlow<Set<String>> = appSettings.map { it.hiddenSections }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    fun saveCustomDisplayName(name: String) {
+        val creds = credentials ?: appSettings.value.credentials
+        val username = creds?.username ?: accountInfo.value?.username
+        val baseUrl = creds?.baseUrl
+        if (!username.isNullOrBlank()) {
+            val trimmedName = name.trim()
+            viewModelScope.launch {
+                settingsRepository.updateCustomDisplayName(username, baseUrl, if (trimmedName.isBlank()) null else trimmedName)
+            }
+        }
+    }
+
+    fun clearCustomDisplayName() {
+        val creds = credentials ?: appSettings.value.credentials
+        val username = creds?.username ?: accountInfo.value?.username
+        val baseUrl = creds?.baseUrl
+        if (!username.isNullOrBlank()) {
+            viewModelScope.launch {
+                settingsRepository.updateCustomDisplayName(username, baseUrl, null)
+            }
+        }
+    }
+
+    fun toggleSectionVisibility(sectionKey: String) {
+        viewModelScope.launch {
+            val current = appSettings.value.hiddenSections.toMutableSet()
+            if (current.contains(sectionKey)) {
+                current.remove(sectionKey)
+            } else {
+                current.add(sectionKey)
+            }
+            settingsRepository.updateHiddenSections(current)
+        }
+    }
+
+    fun restoreDefaultSections() {
+        viewModelScope.launch {
+            settingsRepository.resetHiddenSections()
+        }
+    }
+
+    fun getCustomizedCategoriesFlow(contentType: String): Flow<List<XtreamCategory>> {
+        val normType = if (contentType == "movie") "vod" else contentType.lowercase()
+        return combine(
+            appSettings,
+            blockedCategoryIds
+        ) { settings, blocked ->
+            val creds = settings.credentials ?: return@combine emptyList()
+            val rawEntities = try {
+                when (normType) {
+                    "live" -> catalogRepository.getLiveCategories(creds)
+                    "vod" -> catalogRepository.getVodCategories(creds)
+                    "series" -> catalogRepository.getSeriesCategories(creds)
+                    else -> emptyList()
+                }
+            } catch (_: Exception) { emptyList() }
+
+            val simpleUser = creds.username.trim().lowercase()
+            val cleanUrl = creds.baseUrl.trim().lowercase().removeSuffix("/")
+            val accountKey = if (cleanUrl.isNotBlank()) "$cleanUrl#$simpleUser" else simpleUser
+            val typeKey = "${accountKey}_${normType}"
+
+            val customOrder = settings.categoryOrderMap[typeKey]
+            val hiddenCategories = settings.hiddenCategoriesMap[typeKey]
+
+            val filteredBlocked = rawEntities.filter { it.id !in blocked }
+            val customized = catalogRepository.applyCategoryCustomization(
+                categories = filteredBlocked,
+                customOrder = customOrder,
+                hiddenCategories = hiddenCategories
+            )
+
+            customized.map { XtreamCategory(categoryId = it.id, categoryName = it.name) }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    fun moveCategoryUp(contentType: String, categoryId: String, currentCategories: List<rsv.squitv.data.local.entities.IptvCategoryEntity>) {
+        val idx = currentCategories.indexOfFirst { it.id == categoryId }
+        if (idx > 0) {
+            val newList = currentCategories.map { it.id }.toMutableList()
+            val item = newList.removeAt(idx)
+            newList.add(idx - 1, item)
+            
+            val creds = credentials ?: appSettings.value.credentials ?: return
+            val simpleUser = creds.username.trim().lowercase()
+            val cleanUrl = creds.baseUrl.trim().lowercase().removeSuffix("/")
+            val accountKey = if (cleanUrl.isNotBlank()) "$cleanUrl#$simpleUser" else simpleUser
+            val normType = if (contentType == "movie") "vod" else contentType.lowercase()
+            
+            viewModelScope.launch {
+                settingsRepository.updateCategoryOrder(accountKey, normType, newList)
+            }
+        }
+    }
+
+    fun moveCategoryDown(contentType: String, categoryId: String, currentCategories: List<rsv.squitv.data.local.entities.IptvCategoryEntity>) {
+        val idx = currentCategories.indexOfFirst { it.id == categoryId }
+        if (idx != -1 && idx < currentCategories.size - 1) {
+            val newList = currentCategories.map { it.id }.toMutableList()
+            val item = newList.removeAt(idx)
+            newList.add(idx + 1, item)
+            
+            val creds = credentials ?: appSettings.value.credentials ?: return
+            val simpleUser = creds.username.trim().lowercase()
+            val cleanUrl = creds.baseUrl.trim().lowercase().removeSuffix("/")
+            val accountKey = if (cleanUrl.isNotBlank()) "$cleanUrl#$simpleUser" else simpleUser
+            val normType = if (contentType == "movie") "vod" else contentType.lowercase()
+            
+            viewModelScope.launch {
+                settingsRepository.updateCategoryOrder(accountKey, normType, newList)
+            }
+        }
+    }
+
+    fun toggleCategoryVisibility(contentType: String, categoryId: String) {
+        val creds = credentials ?: appSettings.value.credentials ?: return
+        val simpleUser = creds.username.trim().lowercase()
+        val cleanUrl = creds.baseUrl.trim().lowercase().removeSuffix("/")
+        val accountKey = if (cleanUrl.isNotBlank()) "$cleanUrl#$simpleUser" else simpleUser
+        val normType = if (contentType == "movie") "vod" else contentType.lowercase()
+        val typeKey = "${accountKey}_${normType}"
+
+        val hiddenSet = appSettings.value.hiddenCategoriesMap[typeKey]?.toMutableSet() ?: mutableSetOf()
+        if (hiddenSet.contains(categoryId)) {
+            hiddenSet.remove(categoryId)
+        } else {
+            hiddenSet.add(categoryId)
+        }
+
+        viewModelScope.launch {
+            settingsRepository.updateHiddenCategories(accountKey, normType, hiddenSet)
+        }
+    }
+
+    fun resetCategoryCustomization(contentType: String) {
+        val creds = credentials ?: appSettings.value.credentials ?: return
+        val simpleUser = creds.username.trim().lowercase()
+        val cleanUrl = creds.baseUrl.trim().lowercase().removeSuffix("/")
+        val accountKey = if (cleanUrl.isNotBlank()) "$cleanUrl#$simpleUser" else simpleUser
+        val normType = if (contentType == "movie") "vod" else contentType.lowercase()
+
+        viewModelScope.launch {
+            settingsRepository.resetCategoryCustomization(accountKey, normType)
+        }
+    }
+
+    fun showAllCategories(contentType: String) {
+        val creds = credentials ?: appSettings.value.credentials ?: return
+        val simpleUser = creds.username.trim().lowercase()
+        val cleanUrl = creds.baseUrl.trim().lowercase().removeSuffix("/")
+        val accountKey = if (cleanUrl.isNotBlank()) "$cleanUrl#$simpleUser" else simpleUser
+        val normType = if (contentType == "movie") "vod" else contentType.lowercase()
+
+        viewModelScope.launch {
+            settingsRepository.updateHiddenCategories(accountKey, normType, emptySet())
+        }
+    }
 
     // Dashboard/Info specific (To be moved in Phase 5)
     private val _dbStats = MutableStateFlow<Triple<Int, Int, Int>>(Triple(0, 0, 0))

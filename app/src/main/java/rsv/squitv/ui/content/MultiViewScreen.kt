@@ -1,5 +1,6 @@
-﻿@file:OptIn(UnstableApi::class)
-package rsv.squitv.ui.content
+﻿package rsv.squitv.ui.content
+
+import androidx.annotation.OptIn
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -42,6 +43,7 @@ import rsv.squitv.ui.content.player.QuickSwitchSidebar
 import rsv.squitv.ui.dashboard.PortalBackground
 import rsv.squitv.core.ui.components.common.adaptiveFocus
 
+@OptIn(UnstableApi::class)
 @Composable
 fun MultiViewScreen(
     mainViewModel: MainViewModel,
@@ -118,6 +120,7 @@ fun MultiViewScreen(
     }
 }
 
+@OptIn(UnstableApi::class)
 @Composable
 fun PlayerSlot(
     index: Int,

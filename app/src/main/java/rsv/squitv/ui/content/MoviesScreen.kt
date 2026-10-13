@@ -11,6 +11,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
+import androidx.compose.ui.unit.dp
 import rsv.squitv.R
 import rsv.squitv.core.ui.components.buttons.AppIconButton
 import rsv.squitv.core.ui.components.navigation.AppHeader
@@ -43,7 +44,8 @@ fun MoviesScreen(
     onNavigateToSearch: () -> Unit
 ) {
     val contentRows by categoryViewModel.currentContentRows.collectAsStateWithLifecycle()
-    val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val categoriesFlow = remember(viewModel) { viewModel.getCustomizedCategoriesFlow("movie") }
+    val categories by categoriesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val categoryCounts by categoryViewModel.categoryCounts.collectAsStateWithLifecycle()
     val isLoading by categoryViewModel.isLoading.collectAsStateWithLifecycle()
     val sortOrder by categoryViewModel.sortOrder.collectAsStateWithLifecycle()
@@ -51,6 +53,8 @@ fun MoviesScreen(
     val watchProgress by libraryViewModel.watchProgress.collectAsStateWithLifecycle()
     val blockedIds by viewModel.blockedCategoryIds.collectAsStateWithLifecycle()
     val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+    val availableGenres by categoryViewModel.availableGenres.collectAsStateWithLifecycle()
+    val selectedGenre by categoryViewModel.selectedGenre.collectAsStateWithLifecycle()
     
     var showSortMenu by remember { mutableStateOf(false) }
     var pendingCategoryToUnlock by remember { mutableStateOf<String?>(null) }
@@ -61,11 +65,30 @@ fun MoviesScreen(
     val sidebarFocusRequester = remember { FocusRequester() }
     val gridFocusRequester = remember { FocusRequester() }
 
+    LaunchedEffect(Unit) {
+        categoryViewModel.loadGenres("movie")
+    }
+
     val ids = remember(settings.hideBlockedCategories, blockedIds) {
         if (settings.hideBlockedCategories) blockedIds else emptySet()
     }
 
     var selectedCategoryId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(categories, settings.lastMovieCategory) {
+        if (categories.isNotEmpty()) {
+            val savedCat = settings.lastMovieCategory
+            val isSavedValid = savedCat != null && (savedCat == "RECENTS" || savedCat == "FAVORITES" || categories.any { it.categoryId == savedCat })
+            if (!isSavedValid) {
+                val fallbackCatId = categories.firstOrNull()?.categoryId ?: "RECENTS"
+                if (selectedCategoryId != fallbackCatId) {
+                    selectedCategoryId = fallbackCatId
+                    viewModel.saveLastCategory("movie", fallbackCatId)
+                    categoryViewModel.selectGenre("movie", null, fallbackCatId, ids)
+                }
+            }
+        }
+    }
 
     LaunchedEffect(contentRows) {
         val loadedCatId = contentRows.firstOrNull()?.catId
@@ -90,7 +113,7 @@ fun MoviesScreen(
         } else {
             selectedCategoryId = catId
             viewModel.saveLastCategory("movie", catId)
-            categoryViewModel.loadContent("movie", catId, ids)
+            categoryViewModel.selectGenre("movie", null, catId, ids)
         }
     }
 
@@ -107,6 +130,15 @@ fun MoviesScreen(
                     AppIconButton(Icons.AutoMirrored.Rounded.Sort, { showSortMenu = true })
                     AppIconButton(Icons.Rounded.Search, onNavigateToSearch)
                 }
+            )
+
+            rsv.squitv.ui.content.components.GenreFilterBar(
+                genres = availableGenres,
+                selectedGenre = selectedGenre,
+                onGenreSelect = { genre ->
+                    categoryViewModel.selectGenre("movie", genre, selectedCategoryId, ids)
+                },
+                modifier = Modifier.padding(vertical = 4.dp)
             )
 
             Row(modifier = Modifier.fillMaxSize()) {

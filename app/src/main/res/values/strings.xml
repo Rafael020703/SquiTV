@@ -470,4 +470,5 @@
     <string name="network_stats_desc">Exibir velocidade e buffer durante a reprodução.</string>
     <string name="hide_locked_label">OCULTAR BLOQUEADOS</string>
     <string name="hide_locked_desc">Categorias protegidas por PIN não aparecerão no catálogo.</string>
+    <string name="nav_customization_label">Personalizar Abas/Seções</string>
 </resources>

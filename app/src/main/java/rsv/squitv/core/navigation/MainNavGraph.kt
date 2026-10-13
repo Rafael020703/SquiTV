@@ -71,12 +71,15 @@ fun MainNavigation(
                         return@collect
                     }
 
-                    val result = navController.popBackStack()
-                    if (!result) {
+                    if (navController.previousBackStackEntry != null) {
+                        showExitDialog = false
+                        navController.popBackStack()
+                    } else {
                         showExitDialog = true
                     }
                 }
                 is AppAction.Navigate -> {
+                    showExitDialog = false
                     navController.navigate(action.route) {
                         action.popUpToRoute?.let { popRoute ->
                             popUpTo(popRoute) { inclusive = action.inclusive }
@@ -85,6 +88,7 @@ fun MainNavigation(
                     }
                 }
                 is AppAction.ExitApp -> {
+                    showExitDialog = false
                     (context as? Activity)?.finish()
                 }
             }
