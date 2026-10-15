@@ -177,7 +177,14 @@ class MainViewModel @Inject constructor(
                 hiddenCategories = hiddenCategories
             )
 
-            customized.map { XtreamCategory(categoryId = it.id, categoryName = it.name) }
+            val resultList = mutableListOf<XtreamCategory>()
+            if (normType != "live") {
+                resultList.add(XtreamCategory(categoryId = "CONTINUE_WATCHING", categoryName = "Continuar Assistindo"))
+            }
+            resultList.add(XtreamCategory(categoryId = "FAVORITES", categoryName = "Favoritos"))
+            resultList.add(XtreamCategory(categoryId = "RECENTS", categoryName = "Adicionados Recentemente"))
+            customized.mapTo(resultList) { XtreamCategory(categoryId = it.id, categoryName = it.name) }
+            resultList
         }.flowOn(Dispatchers.IO)
     }
 

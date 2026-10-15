@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -20,6 +21,14 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import rsv.squitv.core.ui.theme.AppDimensions
 import rsv.squitv.core.ui.theme.AppShapes
 import rsv.squitv.core.ui.theme.FocusGlowCyan
@@ -92,4 +101,6 @@ fun Modifier.adaptiveFocus(
             } else Modifier
         )
 }
+
+
 

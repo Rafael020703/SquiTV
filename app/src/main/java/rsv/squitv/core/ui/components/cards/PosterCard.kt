@@ -2,6 +2,7 @@
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -31,8 +32,7 @@ fun PosterCard(
     item: IptvItem,
     modifier: Modifier = Modifier,
     progress: Float? = null,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit = {}
+    onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
     val tokens = AppDesignSystem
@@ -50,7 +50,7 @@ fun PosterCard(
                 shape = tokens.shapes.card,
                 onFocus = { isFocused = it }
             )
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
@@ -97,9 +97,10 @@ fun PosterCard(
                 )
             }
 
-            if (progress != null && progress > 0.01f) {
+            val displayProgress = progress ?: item.progress
+            if (displayProgress != null && displayProgress > 0.01f) {
                 LinearProgressIndicator(
-                    progress = { progress.coerceIn(0f, 1f) },
+                    progress = { displayProgress.coerceIn(0f, 1f) },
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(responsive.dp(tokens.spacing.micro)),
                     color = tokens.colors.primary,
                     trackColor = Color.White.copy(alpha = 0.2f)

@@ -52,11 +52,17 @@ fun <T> AppSidebar(
                     name = itemLabel(item),
                     count = count,
                     isSelected = isSelected,
-                    modifier = Modifier.then(
-                        if (isSelected || (index == 0 && items.isNotEmpty())) {
-                            Modifier.focusRequester(focusRequester)
-                        } else Modifier
-                    ),
+                    modifier = Modifier
+                        .then(
+                            if (isSelected || (index == 0 && items.isNotEmpty())) {
+                                Modifier.focusRequester(focusRequester)
+                            } else Modifier
+                        )
+                        .then(
+                            if (nextFocusRequester != null) {
+                                Modifier.focusProperties { right = nextFocusRequester }
+                            } else Modifier
+                        ),
                     onClick = { onItemClick(item) },
                     onFocus = { onItemFocus(item) }
                 )

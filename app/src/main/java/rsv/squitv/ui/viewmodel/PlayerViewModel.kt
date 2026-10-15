@@ -15,6 +15,7 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
 import rsv.squitv.core.data.repository.CatalogRepository
 import rsv.squitv.core.data.repository.StreamRepository
+import rsv.squitv.core.data.repository.UserRepository
 import rsv.squitv.core.domain.interactor.PlaybackManager
 import rsv.squitv.core.domain.interactor.PlaybackWatchdog
 import rsv.squitv.data.model.EpgProgramme
@@ -29,6 +30,7 @@ import rsv.squitv.domain.usecase.SmartDownloadUseCase
 import rsv.squitv.domain.usecase.SyncWatchProgressUseCase
 import rsv.squitv.domain.usecase.ToggleFavoriteUseCase
 import rsv.squitv.appfunctions.AppFunctionActionBus
+import rsv.squitv.core.data.mapper.toIptvItem
 import rsv.squitv.domain.model.ContentType
 import rsv.squitv.domain.model.IptvItem
 import rsv.squitv.core.debug.*
@@ -90,6 +92,7 @@ class PlayerViewModel @Inject constructor(
     private val application: Application,
     private val catalogRepository: CatalogRepository,
     private val streamRepository: StreamRepository,
+    private val userRepository: UserRepository,
     private val settingsRepository: SettingsRepository,
     private val syncWatchProgressUseCase: SyncWatchProgressUseCase,
     private val getPlayerEpgUseCase: GetPlayerEpgUseCase,
@@ -165,6 +168,22 @@ class PlayerViewModel @Inject constructor(
                 }
             }
         }
+
+        viewModelScope.launch {
+            userRepository.getFavoritesListFlow().collect { favList ->
+                val type = currentType
+                val streamId = currentStreamId
+                if (streamId != null && streamId > 0) {
+                    val targetId = if (type == ContentType.SERIES) (currentSeriesId ?: streamId) else streamId
+                    val fav = isFavoriteInList(favList, targetId, type)
+                    currentIsFavorite = fav
+                    val state = _uiState.value
+                    if (state is PlayerUiState.Playing && state.isFavorite != fav) {
+                        _uiState.value = state.copy(isFavorite = fav)
+                    }
+                }
+            }
+        }
     }
 
     private fun initializeController() {
@@ -226,6 +245,7 @@ class PlayerViewModel @Inject constructor(
                 isReconnecting = false,
                 contentType = currentType,
                 isLive = isLive,
+                isFavorite = currentIsFavorite,
                 name = currentState.name,
                 streamIcon = resolvedIcon,
                 nextEpisodeStreamId = nextEpisodeStreamId,
@@ -247,6 +267,7 @@ class PlayerViewModel @Inject constructor(
                 isPlaying = p.playWhenReady,
                 contentType = currentType,
                 isLive = isLive,
+                isFavorite = currentIsFavorite,
                 name = currentDisplayName ?: currentState.name,
                 streamIcon = resolvedIcon,
                 nextEpisodeStreamId = nextEpisodeStreamId,
@@ -333,6 +354,14 @@ class PlayerViewModel @Inject constructor(
                         val readyLat = now - zapStartTimeMs
                         Timber.d("[ZAP_LATENCY][session=$currentSession][stream=$currentStreamId] STATE_READY em ${readyLat}ms")
                         stopWatchdog("STATE_READY_REACHED")
+
+                        // Safety check: Restore position if initial seek was not applied by player during loading
+                        val savedPos = savedProgressPosition
+                        if (savedPos != null && savedPos >= 5000L && p.currentPosition < 1000L && currentType != ContentType.LIVE) {
+                            Timber.tag("SquiTV_E2E").i("[PLAYBACK_RESUME] STATE_READY fallback seek to $savedPos ms for stream $currentStreamId (current: ${p.currentPosition}ms)")
+                            p.seekTo(savedPos)
+                        }
+
                         if (p.currentPosition > 1000) {
                             recoveryCount = 0
                             consecutiveStallCount = 0
@@ -344,6 +373,20 @@ class PlayerViewModel @Inject constructor(
                         stopWatchdog("STATE_ENDED_REACHED")
                         viewModelScope.launch {
                             if (!isPlaybackEventValid(currentSession, eventMediaId)) return@launch
+
+                            if (currentStreamId != null && currentType != ContentType.LIVE) {
+                                val dur = p.duration.coerceAtLeast(0L)
+                                syncWatchProgressUseCase(
+                                    streamId = currentStreamId!!,
+                                    type = currentType.toString(),
+                                    position = dur,
+                                    duration = dur,
+                                    seriesId = currentSeriesId,
+                                    forceSync = true,
+                                    isEndedEvent = true
+                                )
+                            }
+
                             val settings = settingsRepository.settingsFlow.first()
                             if (settings.autoPlayEnabled && currentType == ContentType.SERIES && nextEpisodeStreamId != null) {
                                 startNextEpisodeCountdown()
@@ -562,6 +605,20 @@ class PlayerViewModel @Inject constructor(
     private var nextEpisodeName: String? = null
     private var savedProgressPosition: Long? = null
     private var lastQualities: Map<String, Int> = emptyMap()
+    private var currentIsFavorite: Boolean = false
+
+    private fun isFavoriteInList(
+        favList: List<rsv.squitv.data.local.entities.FavoriteEntity>,
+        targetId: Int,
+        type: ContentType
+    ): Boolean {
+        return when (type) {
+            ContentType.LIVE -> favList.any { it.streamId == targetId && it.streamType.equals("LIVE", ignoreCase = true) }
+            ContentType.MOVIE -> favList.any { it.streamId == targetId && (it.streamType.equals("MOVIE", ignoreCase = true) || it.streamType.equals("VOD", ignoreCase = true)) }
+            ContentType.SERIES -> favList.any { it.streamId == targetId && it.streamType.equals("SERIES", ignoreCase = true) }
+            else -> false
+        }
+    }
 
     private var rebufferingCount = 0
     private var lastSignalCheck = System.currentTimeMillis()
@@ -750,13 +807,52 @@ class PlayerViewModel @Inject constructor(
                 val actualName = displayName ?: "Carregando..."
                 val actualIcon = streamIcon
 
-                val tStreamStart = System.currentTimeMillis()
-                Timber.d("[MEDIA_NEW_STREAM_START] session=$currentSession stream=$streamId name='$actualName' timestamp=$tStreamStart")
+                Timber.tag("SquiTV_E2E").i("[PLAY_STREAM] streamId=$streamId type=$type seriesId=$seriesId season=$seasonNumber name='$actualName'")
                 
                 // Get URL immediately (fast)
                 val url = streamRepository.getStreamUrl(credentials, streamId, type.toString(), container)
                 zapUrlReadyMs = System.currentTimeMillis()
                 
+                // Load saved watch progress for Movies or Episodes if available
+                var initialSeekPos = 0L
+                if (type != ContentType.LIVE && streamId > 0) {
+                    try {
+                        val progress = userRepository.getWatchProgress(streamId)
+                        if (progress != null && progress.position >= 5000L && !rsv.squitv.domain.usecase.WatchProgressUtils.isVideoCompleted(progress.position, progress.duration)) {
+                            initialSeekPos = progress.position
+                            savedProgressPosition = progress.position
+                            Timber.tag("SquiTV_E2E").i("[PLAYBACK_RESUME] Restoring saved position for stream $streamId: ${progress.position}ms (duration: ${progress.duration}ms)")
+                        } else {
+                            savedProgressPosition = null
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "Error loading saved watch progress for stream $streamId")
+                        savedProgressPosition = null
+                    }
+                } else {
+                    savedProgressPosition = null
+                }
+
+                // Check initial favorite status from Room DB before player starts
+                try {
+                    val favList = userRepository.getFavoritesListFlow().first()
+                    val targetFavId = if (type == ContentType.SERIES) {
+                        val parentSeriesId = seriesId ?: run {
+                            val ep = userRepository.getEpisodeByStreamId(streamId)
+                            ep?.seriesId
+                        }
+                        if (parentSeriesId != null) {
+                            currentSeriesId = parentSeriesId
+                            parentSeriesId
+                        } else streamId
+                    } else streamId
+
+                    currentIsFavorite = isFavoriteInList(favList, targetFavId, type)
+                    Timber.tag("SquiTV_E2E").i("[PLAYBACK_FAVORITE_CHECK] streamId=$streamId targetFavId=$targetFavId type=$type -> isFavorite=$currentIsFavorite")
+                } catch (e: Exception) {
+                    Timber.e(e, "Error checking initial favorite state")
+                }
+
                 ensurePlayer()
                 
                 withContext(Dispatchers.Main) {
@@ -794,8 +890,15 @@ class PlayerViewModel @Inject constructor(
                         )
                         .build()
 
-                    playbackManager.setMediaItem(mediaItem)
+                    if (initialSeekPos > 0L) {
+                        playbackManager.setMediaItem(mediaItem, initialSeekPos)
+                    } else {
+                        playbackManager.setMediaItem(mediaItem)
+                    }
                     playbackManager.prepare()
+                    if (initialSeekPos > 0L) {
+                        playbackManager.seekTo(initialSeekPos)
+                    }
                     playbackManager.play()
                     zapPreparedMs = System.currentTimeMillis()
                     
@@ -813,13 +916,53 @@ class PlayerViewModel @Inject constructor(
 
                 // Background tasks after starting playback
                 backgroundJob = launch(Dispatchers.IO) {
-                    if (type == ContentType.LIVE && isPlaybackEventValid(currentSession, streamId.toString())) {
-                        val streams = catalogRepository.getStreamsByIds(listOf(streamId))
-                        if (!isPlaybackEventValid(currentSession, streamId.toString())) return@launch
-                        val stream = streams.firstOrNull { it.streamType == type.toString().uppercase() }
-                        val isFav = stream?.isFavorite ?: false
-                        val dbName = stream?.name ?: actualName
-                        val dbIcon = stream?.logo ?: actualIcon
+                    if (isPlaybackEventValid(currentSession, streamId.toString())) {
+                        var isFav = false
+                        var dbName = actualName
+                        var dbIcon = actualIcon
+
+                        if (type == ContentType.SERIES) {
+                            val parentSeriesId = seriesId ?: run {
+                                val ep = userRepository.getEpisodeByStreamId(streamId)
+                                ep?.seriesId
+                            }
+                            if (parentSeriesId != null) {
+                                currentSeriesId = parentSeriesId
+                                val seriesStreams = catalogRepository.getStreamsByIds(listOf(parentSeriesId))
+                                val sStream = seriesStreams.firstOrNull { it.id == parentSeriesId && it.streamType == "SERIES" }
+                                val favList = userRepository.getFavoritesListFlow().first()
+                                isFav = favList.any { it.streamId == parentSeriesId && it.streamType == "SERIES" }
+                                if (sStream != null) {
+                                    dbName = sStream.name
+                                    dbIcon = sStream.logo
+                                }
+                            }
+                        } else {
+                            val targetTypeStr = if (type == ContentType.LIVE) "LIVE" else "VOD"
+                            val streams = catalogRepository.getStreamsByIds(listOf(streamId))
+                            val stream = streams.firstOrNull { it.streamType == targetTypeStr }
+                            val favList = userRepository.getFavoritesListFlow().first()
+                            isFav = favList.any { it.streamId == streamId && it.streamType == targetTypeStr } || (stream?.isFavorite == true)
+                            if (stream != null) {
+                                dbName = stream.name
+                                dbIcon = stream.logo
+                            }
+
+                            if (type == ContentType.LIVE && stream != null && isPlaybackEventValid(currentSession, streamId.toString())) {
+                                withContext(Dispatchers.Main) {
+                                    if (isPlaybackEventValid(currentSession, streamId.toString())) {
+                                        addToRecentChannels(XtreamStream(
+                                            streamId = stream.id,
+                                            name = stream.name,
+                                            streamIcon = stream.logo,
+                                            epgChannelId = stream.url,
+                                            categoryId = stream.categoryId,
+                                            streamType = stream.streamType
+                                        ))
+                                    }
+                                }
+                            }
+                        }
 
                         withContext(Dispatchers.Main) {
                             if (isPlaybackEventValid(currentSession, streamId.toString())) {
@@ -834,21 +977,7 @@ class PlayerViewModel @Inject constructor(
                             }
                         }
 
-                        if (stream != null && isPlaybackEventValid(currentSession, streamId.toString())) {
-                            withContext(Dispatchers.Main) {
-                                if (isPlaybackEventValid(currentSession, streamId.toString())) {
-                                    addToRecentChannels(XtreamStream(
-                                        streamId = stream.id,
-                                        name = stream.name,
-                                        streamIcon = stream.logo,
-                                        epgChannelId = stream.url,
-                                        categoryId = stream.categoryId,
-                                        streamType = stream.streamType
-                                    ))
-                                }
-                            }
-                        }
-                        if (isPlaybackEventValid(currentSession, streamId.toString())) {
+                        if (type == ContentType.LIVE && isPlaybackEventValid(currentSession, streamId.toString())) {
                             loadEpg(streamId)
                             if (_quickSwitchStreams.value.isEmpty() || lastLoadedCategoryId != categoryId) {
                                 lastLoadedCategoryId = categoryId
@@ -926,19 +1055,42 @@ class PlayerViewModel @Inject constructor(
         _subtitleSize.value = size
     }
 
+    private var nextEpisodeSeasonNumber: Int? = null
+
     private fun checkNextEpisode(seriesId: Int, seasonNumber: Int, streamId: Int) {
         viewModelScope.launch {
             try {
                 val credentials = settingsRepository.settingsFlow.first().credentials ?: return@launch
-                val (_, episodesMap) = catalogRepository.getSeriesInfo(credentials, seriesId)
-                val episodes = episodesMap[seasonNumber] ?: emptyList()
-                val currentIndex = episodes.indexOfFirst { it.streamId == streamId }
-                val nextEpisode = if (currentIndex != -1 && currentIndex < episodes.size - 1) {
-                    episodes[currentIndex + 1]
-                } else null
+                val (seasonsList, episodesMap) = catalogRepository.getSeriesInfo(credentials, seriesId)
+                val sortedSeasons = seasonsList.sortedWith(compareBy({ if (it.seasonNumber == 0) 1 else 0 }, { it.seasonNumber }))
                 
-                nextEpisodeStreamId = nextEpisode?.streamId
-                nextEpisodeName = nextEpisode?.title
+                var foundNext: rsv.squitv.data.local.entities.EpisodeEntity? = null
+                var foundSeasonNum: Int? = null
+
+                val currentSeasonEpisodes = (episodesMap[seasonNumber] ?: emptyList())
+                    .sortedWith(compareBy({ it.episodeNum }, { it.episodeId }))
+
+                val currentIndex = currentSeasonEpisodes.indexOfFirst { it.streamId == streamId }
+
+                if (currentIndex != -1 && currentIndex < currentSeasonEpisodes.size - 1) {
+                    foundNext = currentSeasonEpisodes[currentIndex + 1]
+                    foundSeasonNum = seasonNumber
+                } else {
+                    val currentSeasonIdx = sortedSeasons.indexOfFirst { it.seasonNumber == seasonNumber }
+                    if (currentSeasonIdx != -1 && currentSeasonIdx < sortedSeasons.size - 1) {
+                        val nextSeasonObj = sortedSeasons[currentSeasonIdx + 1]
+                        val nextSeasonEpisodes = (episodesMap[nextSeasonObj.seasonNumber] ?: emptyList())
+                            .sortedWith(compareBy({ it.episodeNum }, { it.episodeId }))
+                        if (nextSeasonEpisodes.isNotEmpty()) {
+                            foundNext = nextSeasonEpisodes.first()
+                            foundSeasonNum = nextSeasonObj.seasonNumber
+                        }
+                    }
+                }
+
+                nextEpisodeStreamId = foundNext?.streamId
+                nextEpisodeName = foundNext?.title
+                nextEpisodeSeasonNumber = foundSeasonNum
 
                 val currentState = _uiState.value
                 if (currentState is PlayerUiState.Playing) {
@@ -947,7 +1099,9 @@ class PlayerViewModel @Inject constructor(
                         nextEpisodeName = nextEpisodeName
                     )
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Timber.e(e, "Erro ao verificar próximo episódio")
+            }
         }
     }
 
@@ -965,13 +1119,16 @@ class PlayerViewModel @Inject constructor(
                         val currentPos = p.currentPosition
                         val duration = p.duration
                         if (currentType != ContentType.LIVE && currentStreamId != null && duration > 0) {
-                            syncWatchProgressUseCase(
-                                streamId = currentStreamId!!,
-                                type = currentType.toString(),
-                                position = currentPos,
-                                duration = duration,
-                                seriesId = currentSeriesId
-                            )
+                            val savedPos = savedProgressPosition
+                            if (savedPos == null || currentPos >= 1000L || p.playbackState == Player.STATE_READY) {
+                                syncWatchProgressUseCase(
+                                    streamId = currentStreamId!!,
+                                    type = currentType.toString(),
+                                    position = currentPos,
+                                    duration = duration,
+                                    seriesId = currentSeriesId
+                                )
+                            }
                         }
                         
                         val bandwidth = bandwidthMeter.bitrateEstimate / 1_000_000.0
@@ -1174,44 +1331,91 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun playNextEpisode() {
-        val currentState = _uiState.value as? PlayerUiState.Playing
-        val nextId = currentState?.nextEpisodeStreamId ?: return
-        val nextName = currentState.nextEpisodeName ?: "Next Episode"
-        viewModelScope.launch {
-            _navigationEvent.emit(NavigationEvent.NavigateToPlayer(nextId, nextName, currentType, currentContainer))
-        }
+        val currentState = _uiState.value as? PlayerUiState.Playing ?: return
+        val nextId = currentState.nextEpisodeStreamId ?: return
+        val nextName = currentState.nextEpisodeName ?: "Próximo Episódio"
+        val seriesId = currentSeriesId ?: return
+        val nextSeason = nextEpisodeSeasonNumber ?: currentSeasonNumber
+
+        playStream(
+            streamId = nextId,
+            type = ContentType.SERIES,
+            container = currentContainer,
+            epgId = currentEpgId,
+            seriesId = seriesId,
+            seasonNumber = nextSeason,
+            qualities = lastQualities,
+            categoryId = currentCategoryId,
+            displayName = nextName
+        )
     }
 
     fun toggleFavorite() {
         val streamId = currentStreamId ?: return
         val currentState = _uiState.value as? PlayerUiState.Playing ?: return
         val newFav = !currentState.isFavorite
-        viewModelScope.launch {
+        Timber.tag("SquiTV_E2E").i("[TOGGLE_FAVORITE_CLICKED] streamId=$streamId currentType=$currentType newFav=$newFav")
+        viewModelScope.launch(Dispatchers.IO) {
             try {
-                val streams = catalogRepository.getStreamsByIds(listOf(streamId))
-                val stream = streams.firstOrNull { it.streamType == currentType.toString().uppercase() }
-                if (stream != null) {
-                    val item = IptvItem(
-                        id = stream.id.toString(),
-                        name = stream.name,
-                        icon = stream.logo,
-                        type = currentType,
-                        epgId = stream.url,
-                        rating = stream.rating,
-                        releaseDate = stream.releaseDate,
-                        containerExtension = stream.containerExtension,
-                        categoryId = stream.categoryId
-                    )
+                val settings = settingsRepository.settingsFlow.first()
+                val profileId = settings.activeProfileId
+                val hash = settings.credentials?.providerHash
+
+                if (currentType == ContentType.SERIES) {
+                    val parentSeriesId = currentSeriesId ?: run {
+                        val ep = userRepository.getEpisodeByStreamId(streamId)
+                        ep?.seriesId
+                    }
+                    if (parentSeriesId != null) {
+                        currentSeriesId = parentSeriesId
+                        val seriesStreams = catalogRepository.getStreamsByIds(listOf(parentSeriesId))
+                        val seriesStream = seriesStreams.firstOrNull { it.id == parentSeriesId && it.streamType == "SERIES" }
+                        
+                        val item = if (seriesStream != null) {
+                            seriesStream.toIptvItem().copy(type = ContentType.SERIES)
+                        } else {
+                            IptvItem(
+                                id = parentSeriesId.toString(),
+                                name = currentDisplayName ?: "Série",
+                                icon = currentStreamIcon,
+                                type = ContentType.SERIES
+                            )
+                        }
+                        
+                        toggleFavoriteUseCase(item, newFav, profileId, hash)
+                    } else {
+                        Timber.w("Não foi possível resolver o ID da série pai para o episódio $streamId")
+                        return@launch
+                    }
+                } else {
+                    val targetTypeStr = if (currentType == ContentType.LIVE) "LIVE" else "VOD"
+                    val streams = catalogRepository.getStreamsByIds(listOf(streamId))
+                    val stream = streams.firstOrNull { it.streamType == targetTypeStr }
                     
-                    val settings = settingsRepository.settingsFlow.first()
-                    val profileId = settings.activeProfileId
-                    val hash = settings.credentials?.providerHash
+                    val item = if (stream != null) {
+                        stream.toIptvItem().copy(type = currentType)
+                    } else {
+                        IptvItem(
+                            id = streamId.toString(),
+                            name = currentDisplayName ?: "",
+                            icon = currentStreamIcon,
+                            type = currentType,
+                            epgId = currentEpgId,
+                            categoryId = currentCategoryId
+                        )
+                    }
                     
                     toggleFavoriteUseCase(item, newFav, profileId, hash)
-                    _uiState.value = currentState.copy(isFavorite = newFav)
+                }
+
+                withContext(Dispatchers.Main) {
+                    val stateNow = _uiState.value
+                    if (stateNow is PlayerUiState.Playing) {
+                        _uiState.value = stateNow.copy(isFavorite = newFav)
+                    }
                 }
             } catch (e: Exception) {
-                Timber.e(e, "Erro ao favoritar")
+                Timber.e(e, "Erro ao alterar favorito")
             }
         }
     }
@@ -1254,15 +1458,20 @@ class PlayerViewModel @Inject constructor(
         val duration = p.duration
         val streamId = currentStreamId
         if (currentType != ContentType.LIVE && streamId != null && duration > 0) {
-            viewModelScope.launch {
-                syncWatchProgressUseCase(
-                    streamId = streamId,
-                    type = currentType.toString(),
-                    position = currentPos,
-                    duration = duration,
-                    seriesId = currentSeriesId,
-                    forceSync = true
-                )
+            val nonCancellableScope = CoroutineScope(Dispatchers.IO + NonCancellable)
+            nonCancellableScope.launch {
+                try {
+                    syncWatchProgressUseCase(
+                        streamId = streamId,
+                        type = currentType.toString(),
+                        position = currentPos,
+                        duration = duration,
+                        seriesId = currentSeriesId,
+                        forceSync = true
+                    )
+                } catch (e: Exception) {
+                    Timber.e(e, "Error saving final watch progress for stream $streamId")
+                }
             }
         }
     }

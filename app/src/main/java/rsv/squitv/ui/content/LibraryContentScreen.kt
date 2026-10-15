@@ -84,8 +84,7 @@ fun LibraryContentScreen(
                             } else {
                                 onSeriesClick(item.id.toInt(), item.name, item.icon)
                             }
-                        },
-                        onItemLongClick = { item, isFav -> libraryViewModel.toggleFavorite(item, !isFav) }
+                        }
                     )
                 }
             }

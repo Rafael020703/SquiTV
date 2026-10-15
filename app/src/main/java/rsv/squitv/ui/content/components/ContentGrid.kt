@@ -26,8 +26,7 @@ fun ContentGrid(
     favorites: List<IptvItem> = emptyList(),
     watchProgress: Map<Int, Float> = emptyMap(),
     targetItemId: String? = null,
-    onItemClick: (IptvItem) -> Unit,
-    onItemLongClick: (IptvItem, Boolean) -> Unit = { _, _ -> }
+    onItemClick: (IptvItem) -> Unit
 ) {
     val tokens = AppDesignSystem
     val responsive = tokens.responsive
@@ -98,8 +97,7 @@ fun ContentGrid(
                     item = item.copy(isFavorite = isFav),
                     progress = progress,
                     modifier = itemModifier,
-                    onClick = { onItemClick(item) },
-                    onLongClick = { onItemLongClick(item, isFav) }
+                    onClick = { onItemClick(item) }
                 )
             }
         }

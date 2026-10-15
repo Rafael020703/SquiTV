@@ -457,11 +457,9 @@ fun PlayerContent(
                         currentProgram = currentProgram,
                         isControlsVisible = isControlsVisible,
                         isReconnecting = state.isReconnecting,
-                        onShowSettings = { setSettingsInitialTab(0); setShowSettings(true) },
-                        onToggleResize = onToggleResizeMode,
-                        onShowAudio = { setSettingsInitialTab(1); setShowSettings(true) },
-                        onShowSubtitles = { setSettingsInitialTab(2); setShowSettings(true) },
-                        onShowQuality = { setSettingsInitialTab(0); setShowSettings(true) }
+                        isFavorite = state.isFavorite,
+                        onToggleFavorite = onToggleFavorite,
+                        onShowSettings = { setSettingsInitialTab(0); setShowSettings(true) }
                     )
 
                     AnimatedVisibility(
@@ -559,7 +557,8 @@ fun PlayerContent(
                     onClearOverride = onClearTrackOverride,
                     onSetSleepTimer = onSetSleepTimer,
                     onSetSubtitleSize = onSetSubtitleSize,
-                    onSetSpeed = onSetSpeed
+                    onSetSpeed = onSetSpeed,
+                    onToggleResizeMode = onToggleResizeMode
                 ) 
             }
 

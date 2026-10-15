@@ -7,15 +7,19 @@ import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
 
+import timber.log.Timber
+
 @Singleton
 class UserRepository @Inject constructor(
     private val iptvDao: IptvDao
 ) {
     suspend fun updateFavorite(item: IptvItem, isFav: Boolean) {
         val streamType = item.type.name
+        val sId = item.id.toIntOrNull() ?: 0
+        Timber.tag("SquiTV_E2E").i("[FAVORITE_ROOM] updateFavorite streamId=$sId streamType=$streamType name='${item.name}' isFav=$isFav")
         if (isFav) {
             iptvDao.insertFavorite(FavoriteEntity(
-                streamId = item.id.toIntOrNull() ?: 0,
+                streamId = sId,
                 streamType = streamType,
                 name = item.name,
                 logo = item.icon,
@@ -26,7 +30,7 @@ class UserRepository @Inject constructor(
                 categoryId = item.categoryId
             ))
         } else {
-            iptvDao.deleteFavorite(item.id.toIntOrNull() ?: 0, streamType)
+            iptvDao.deleteFavorite(sId, streamType)
         }
     }
 
@@ -40,14 +44,24 @@ class UserRepository @Inject constructor(
         seriesId: Int? = null,
         timestamp: Long = System.currentTimeMillis()
     ) {
+        Timber.tag("SquiTV_E2E").i("[PROGRESS_ROOM_SAVE] streamId=$streamId type=$type position=${position}ms duration=${duration}ms seriesId=$seriesId")
         iptvDao.insertWatchProgress(WatchProgressEntity(streamId, type, position, duration, timestamp, seriesId))
     }
 
-    suspend fun getWatchProgress(streamId: Int): WatchProgressEntity? = iptvDao.getWatchProgress(streamId)
+    suspend fun getWatchProgress(streamId: Int): WatchProgressEntity? {
+        val res = iptvDao.getWatchProgress(streamId)
+        Timber.tag("SquiTV_E2E").d("[PROGRESS_ROOM_GET] streamId=$streamId -> pos=${res?.position}ms dur=${res?.duration}ms seriesId=${res?.seriesId}")
+        return res
+    }
+    
+    suspend fun getEpisodeByStreamId(streamId: Int): EpisodeEntity? = iptvDao.getEpisodeByStreamId(streamId)
     
     fun getAllWatchProgressFlow(): Flow<List<WatchProgressEntity>> = iptvDao.getAllWatchProgressFlow()
     
-    suspend fun deleteWatchProgress(streamId: Int) = iptvDao.deleteWatchProgress(streamId)
+    suspend fun deleteWatchProgress(streamId: Int) {
+        Timber.tag("SquiTV_E2E").i("[PROGRESS_ROOM_DELETE] streamId=$streamId")
+        iptvDao.deleteWatchProgress(streamId)
+    }
     
     suspend fun clearAllWatchProgress() = iptvDao.clearAllWatchProgress()
 

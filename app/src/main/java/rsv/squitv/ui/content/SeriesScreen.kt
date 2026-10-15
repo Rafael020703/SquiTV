@@ -181,8 +181,7 @@ fun SeriesScreen(
                             sidebarFocusRequester = sidebarFocusRequester,
                             favorites = favorites,
                             watchProgress = watchProgress,
-                            onItemClick = { item -> onSeriesClick(item.id.toInt(), item.name, item.icon) },
-                            onItemLongClick = { item, isFav -> libraryViewModel.toggleFavorite(item, !isFav) }
+                            onItemClick = { item -> onSeriesClick(item.id.toInt(), item.name, item.icon) }
                         )
                     }
                 }

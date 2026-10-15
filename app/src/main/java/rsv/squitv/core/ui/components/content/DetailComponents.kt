@@ -188,6 +188,18 @@ fun EpisodeCard(
                     ) {
                         Icon(Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(24.dp))
                     }
+
+                    if (progress != null && progress > 0.0f) {
+                        LinearProgressIndicator(
+                            progress = { progress.coerceIn(0f, 1f) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .align(Alignment.BottomCenter),
+                            color = tokens.colors.primary,
+                            trackColor = Color.Black.copy(alpha = 0.5f)
+                        )
+                    }
                 }
                 
                 Spacer(modifier = Modifier.width(tokens.spacing.medium))
@@ -209,10 +221,14 @@ fun EpisodeCard(
                         overflow = TextOverflow.Ellipsis,
                         lineHeight = 18.sp
                     )
-                    if (progress != null && progress > 0.05f) {
+                    if (progress != null && progress > 0.0f) {
                         LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.fillMaxWidth().height(tokens.spacing.micro).padding(top = tokens.spacing.small).clip(CircleShape),
+                            progress = { progress.coerceIn(0f, 1f) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .padding(top = tokens.spacing.small)
+                                .clip(CircleShape),
                             color = tokens.colors.primary,
                             trackColor = tokens.colors.surfaceVariant.copy(alpha = 0.2f)
                         )

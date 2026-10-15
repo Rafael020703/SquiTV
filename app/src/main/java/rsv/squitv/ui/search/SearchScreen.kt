@@ -48,16 +48,21 @@ import rsv.squitv.util.rememberWindowInfo
 import kotlinx.coroutines.delay
 import java.util.*
 
+import androidx.hilt.navigation.compose.hiltViewModel
+import rsv.squitv.ui.viewmodel.library.LibraryViewModel
+
 @UnstableApi
 @Composable
 fun SearchScreen(
     viewModel: SearchViewModel,
+    libraryViewModel: LibraryViewModel = hiltViewModel(),
     onNavigateBack: () -> Unit,
     onItemClick: (id: Int, name: String, type: String, container: String?, seriesId: Int?, seasonNumber: Int?, icon: String?) -> Unit
 ) {
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedType by viewModel.selectedType.collectAsStateWithLifecycle()
     val results by viewModel.searchResults.collectAsStateWithLifecycle()
+    val favorites by libraryViewModel.favorites.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val windowInfo = rememberWindowInfo()
 
@@ -90,6 +95,7 @@ fun SearchScreen(
             query = query,
             selectedType = selectedType,
             results = results,
+            favorites = favorites,
             isLoading = isLoading,
             onQueryChanged = { viewModel.onQueryChanged(it) },
             onTypeChanged = { viewModel.onTypeChanged(it) },
@@ -107,6 +113,7 @@ fun SearchScreenContent(
     query: String,
     selectedType: String,
     results: List<SearchResult>,
+    favorites: List<IptvItem> = emptyList(),
     isLoading: Boolean,
     onQueryChanged: (String) -> Unit,
     onTypeChanged: (String) -> Unit,
@@ -245,12 +252,13 @@ fun SearchScreenContent(
                             )
                         }
 
+                        val isFav = favorites.any { it.id == item.id && it.type == item.type }
                         val itemModifier = if (index == 0) Modifier.focusRequester(gridFocusRequester) else Modifier
                         
                         if (item.type == ContentType.LIVE) {
                             val sId = (result as? SearchResult.Stream)?.stream?.id ?: 0
                             ChannelCard(
-                                item = item,
+                                item = item.copy(isFavorite = isFav),
                                 modifier = itemModifier,
                                 onClick = {
                                     onItemClick(sId, item.name, "live", null, null, null, item.icon)
@@ -258,7 +266,7 @@ fun SearchScreenContent(
                             )
                         } else {
                             PosterCard(
-                                item = item,
+                                item = item.copy(isFavorite = isFav),
                                 modifier = itemModifier,
                                 onClick = {
                                     when (result) {

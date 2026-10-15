@@ -99,7 +99,6 @@ class LoginViewModel @Inject constructor(
 
     init {
         testAllDns()
-        autoRestoreIfNeeded()
         checkForUpdates()
         
         // DEBUG ONLY: Pre-fill test credentials for local development testing
@@ -107,15 +106,6 @@ class LoginViewModel @Inject constructor(
             if (_username.value.isEmpty() && _password.value.isEmpty()) {
                 _username.value = "565185685"
                 _password.value = "069600716"
-            }
-        }
-    }
-
-    private fun autoRestoreIfNeeded() {
-        viewModelScope.launch {
-            val settings = settingsRepository.settingsFlow.first()
-            if (settings.credentials == null) {
-                restoreBackup(isAuto = true)
             }
         }
     }
@@ -252,32 +242,6 @@ class LoginViewModel @Inject constructor(
                 _state.value = LoginState.ERROR
             } finally {
                 _isLoading.value = false
-            }
-        }
-    }
-
-    fun restoreBackup(isAuto: Boolean = false) {
-        viewModelScope.launch {
-            if (!isAuto) _isLoading.value = true
-            if (isAuto) Timber.d("Tentando recuperação automática de login...")
-            else _errorMessage.value = "Buscando backup..."
-            
-            try {
-                val deviceId = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID)
-                val credentials = firebaseRepository.getBackupCredentials(deviceId)
-                if (credentials != null) {
-                    _username.value = credentials.username
-                    _password.value = credentials.password
-                    _url.value = credentials.baseUrl
-                    if (!isAuto) _errorMessage.value = "Dados restaurados!"
-                    else Timber.i("Login recuperado automaticamente do Firebase")
-                } else {
-                    if (!isAuto) _errorMessage.value = "Nenhum backup encontrado para este dispositivo."
-                }
-            } catch (e: Exception) {
-                if (!isAuto) _errorMessage.value = "Erro ao restaurar: ${e.message}"
-            } finally {
-                if (!isAuto) _isLoading.value = false
             }
         }
     }

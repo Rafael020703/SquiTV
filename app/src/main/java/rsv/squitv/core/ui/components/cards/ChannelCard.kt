@@ -55,7 +55,7 @@ fun ChannelCard(
                 shape = tokens.shapes.card,
                 onFocus = { isFocused = it }
             )
-            .clickable { onClick() }
+            .clickable(onClick = onClick)
     ) {
         Box(
             modifier = Modifier

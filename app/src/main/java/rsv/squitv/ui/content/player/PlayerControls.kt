@@ -152,18 +152,9 @@ fun PlayerControlOverlay(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (!isLive) {
-                    // Audio / Subtitles
-                    PlayerActionIcon(Icons.Rounded.ClosedCaption, onShowSettings, isTv, contentDescription = "Áudio e Legendas")
-                    Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
-
                     // Rewind -10s
                     PlayerActionIcon(Icons.Rounded.Replay10, onSeekBack, isTv, contentDescription = "Voltar 10s")
                     Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
-                } else {
-                    PlayerActionIcon(Icons.Rounded.ClosedCaption, onShowSettings, isTv, contentDescription = "Legendas")
-                    Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
-                    PlayerActionIcon(Icons.Rounded.InterpreterMode, onShowSettings, isTv, contentDescription = "Áudio")
-                    Spacer(Modifier.width(if (isTv) tokens.spacing.xxl else tokens.spacing.large))
                 }
 
                 // Play/Pause Center
@@ -192,17 +183,11 @@ fun PlayerControlOverlay(
                     PlayerActionIcon(Icons.Rounded.Forward10, onSeekForward, isTv, contentDescription = "Avançar 10s")
                     Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
 
-                    // Speed Selector
-                    PlayerActionIcon(Icons.Rounded.Speed, onShowSpeed, isTv, contentDescription = "Velocidade")
-                    Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
-
                     // Next Episode (if available)
                     if (uiState.nextEpisodeStreamId != null) {
                         PlayerActionIcon(Icons.Rounded.SkipNext, onNextEpisode, isTv, contentDescription = "Próximo Episódio")
                         Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
                     }
-                } else {
-                    Spacer(Modifier.width(if (isTv) tokens.spacing.xxl else tokens.spacing.large))
                 }
 
                 // Favorite

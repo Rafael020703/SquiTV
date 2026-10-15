@@ -75,11 +75,9 @@ fun BoxScope.LiveBottomOverlay(
     currentProgram: EpgProgramme?,
     isControlsVisible: Boolean,
     isReconnecting: Boolean = false,
-    onShowSettings: () -> Unit,
-    onToggleResize: () -> Unit,
-    onShowAudio: () -> Unit,
-    onShowSubtitles: () -> Unit,
-    onShowQuality: () -> Unit = {}
+    isFavorite: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
+    onShowSettings: () -> Unit
 ) {
     val tokens = AppDesignSystem
     val windowInfo = rememberWindowInfo()
@@ -161,25 +159,11 @@ fun BoxScope.LiveBottomOverlay(
                 // Controls
                 Row(horizontalArrangement = Arrangement.spacedBy(tokens.spacing.medium)) {
                     ControlIconButton(
-                        icon = Icons.Rounded.ClosedCaption,
-                        onClick = onShowSubtitles,
-                        contentDescription = "Legendas",
+                        icon = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                        onClick = onToggleFavorite,
+                        contentDescription = "Favorito",
+                        tint = if (isFavorite) tokens.colors.error else Color.White,
                         modifier = Modifier.focusRequester(firstBtnFocusRequester)
-                    )
-                    ControlIconButton(
-                        icon = Icons.Rounded.VideoSettings,
-                        onClick = onShowQuality,
-                        contentDescription = "Qualidade"
-                    )
-                    ControlIconButton(
-                        icon = Icons.Rounded.InterpreterMode,
-                        onClick = onShowAudio,
-                        contentDescription = "Áudio"
-                    )
-                    ControlIconButton(
-                        icon = Icons.Rounded.AspectRatio,
-                        onClick = onToggleResize,
-                        contentDescription = "Proporção"
                     )
                     ControlIconButton(
                         icon = Icons.Rounded.Settings,
@@ -202,6 +186,7 @@ fun ControlIconButton(
     icon: ImageVector,
     onClick: () -> Unit,
     contentDescription: String? = null,
+    tint: Color? = null,
     modifier: Modifier = Modifier
 ) {
     var isFocused by remember { mutableStateOf(false) }
@@ -212,7 +197,7 @@ fun ControlIconButton(
         label = "btnBg"
     )
     val iconColor by animateColorAsState(
-        if (isFocused) Color.Black else Color.White,
+        if (isFocused) Color.Black else (tint ?: Color.White),
         label = "btnIcon"
     )
 
@@ -228,7 +213,7 @@ fun ControlIconButton(
             .size(52.dp)
             .adaptiveFocus(
                 shape = CircleShape,
-                focusedScale = 1.18f,
+                focusedScale = 1.12f,
                 onFocus = { isFocused = it }
             )
     ) {

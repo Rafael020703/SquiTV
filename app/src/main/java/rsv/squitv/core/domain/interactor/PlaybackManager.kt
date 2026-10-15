@@ -233,10 +233,14 @@ class PlaybackManager @Inject constructor(
         Timber.d("[PLAYBACK_STOP_END] instance=$instanceId previousMediaId=$previousMediaId totalStopDur=${tEnd - t0}ms timestamp=$tEnd")
     }
 
-    fun setMediaItem(item: MediaItem) {
+    fun setMediaItem(item: MediaItem, startPositionMs: Long = 0L) {
         debugPlayerLogger.logPlayerCommand("SET_MEDIA_ITEM", item.mediaId)
-        Timber.d("[PLAYBACK_MANAGER][instance=$instanceId] setMediaItem -> mediaId=${item.mediaId}")
-        _player?.setMediaItem(item)
+        Timber.d("[PLAYBACK_MANAGER][instance=$instanceId] setMediaItem -> mediaId=${item.mediaId}, startPositionMs=$startPositionMs")
+        if (startPositionMs > 0L) {
+            _player?.setMediaItem(item, startPositionMs)
+        } else {
+            _player?.setMediaItem(item)
+        }
     }
 
     fun prepare() {

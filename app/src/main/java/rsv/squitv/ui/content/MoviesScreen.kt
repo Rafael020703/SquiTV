@@ -181,8 +181,7 @@ fun MoviesScreen(
                             sidebarFocusRequester = sidebarFocusRequester,
                             favorites = favorites,
                             watchProgress = watchProgress,
-                            onItemClick = { item -> onVodClick(item.id.toInt(), item.name, item.icon) },
-                            onItemLongClick = { item, isFav -> libraryViewModel.toggleFavorite(item, !isFav) }
+                            onItemClick = { item -> onVodClick(item.id.toInt(), item.name, item.icon) }
                         )
                     }
                 }

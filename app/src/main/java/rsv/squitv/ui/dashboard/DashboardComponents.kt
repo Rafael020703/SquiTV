@@ -129,6 +129,7 @@ fun ContentRow(
     items: List<IptvItem>,
     modifier: Modifier = Modifier,
     watchProgress: Map<Int, Float> = emptyMap(),
+    favorites: List<IptvItem> = emptyList(),
     onItemClick: (IptvItem) -> Unit
 ) {
     val tokens = AppDesignSystem
@@ -147,6 +148,7 @@ fun ContentRow(
             horizontalArrangement = Arrangement.spacedBy(responsive.dp(tokens.spacing.large))
         ) {
             items(items, key = { it.id + it.type.toString() }) { item ->
+                val isFav = favorites.any { it.id == item.id && it.type == item.type }
                 val progressValue = watchProgress[item.id.toIntOrNull() ?: -1]
                 
                 val itemWidth = responsive.dp(if (item.type == ContentType.LIVE) 260.dp else 160.dp)
@@ -154,12 +156,12 @@ fun ContentRow(
                 Box(modifier = Modifier.width(itemWidth)) {
                     if (item.type == ContentType.LIVE) {
                         ChannelCard(
-                            item = item,
+                            item = item.copy(isFavorite = isFav),
                             onClick = { onItemClick(item) }
                         )
                     } else {
                         PosterCard(
-                            item = item,
+                            item = item.copy(isFavorite = isFav),
                             progress = progressValue,
                             onClick = { onItemClick(item) }
                         )

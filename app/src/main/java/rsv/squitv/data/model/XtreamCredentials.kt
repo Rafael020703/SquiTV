@@ -14,4 +14,8 @@ data class XtreamCredentials(val username: String, val password: String, val bas
                 // We avoid using password here for privacy.
                 UUID.nameUUIDFromBytes(url.toByteArray()).toString().take(8)
             }
+
+    override fun toString(): String {
+        return "XtreamCredentials(username='$username', password='[REDACTED]', baseUrl='$baseUrl')"
+    }
 }

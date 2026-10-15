@@ -131,6 +131,45 @@ class CategoryViewModel @Inject constructor(
                     return@launch
                 }
 
+                if (categoryId == "CONTINUE_WATCHING") {
+                    val progressList = userRepository.getAllWatchProgressFlow().first()
+                    val validProgress = progressList.filter { wp ->
+                        rsv.squitv.domain.usecase.WatchProgressUtils.isPendingWatchProgress(wp.position, wp.duration)
+                    }.sortedByDescending { it.lastWatched }
+
+                    val normType = if (type == "movie") "vod" else type.lowercase()
+                    val filteredProgress = if (normType == "vod") {
+                        validProgress.filter { it.type.lowercase() == "vod" || it.type.lowercase() == "movie" }
+                    } else if (normType == "series") {
+                        validProgress.filter { it.type.lowercase() == "series" }
+                    } else {
+                        validProgress
+                    }
+
+                    val targetStreamIds = filteredProgress.map { wp ->
+                        if (wp.type.equals("series", ignoreCase = true) && wp.seriesId != null) wp.seriesId else wp.streamId
+                    }.distinct()
+
+                    val streams = catalogRepository.getStreamsByIds(targetStreamIds)
+                    val items = mutableListOf<IptvItem>()
+                    val seenSeriesIds = mutableSetOf<Int>()
+
+                    for (wp in filteredProgress) {
+                        val lookupId = if (wp.type.equals("series", ignoreCase = true) && wp.seriesId != null) wp.seriesId else wp.streamId
+                        if (wp.type.equals("series", ignoreCase = true)) {
+                            if (!seenSeriesIds.add(lookupId)) continue
+                        }
+                        val stream = streams.firstOrNull { s -> s.id == lookupId }
+                        if (stream != null) {
+                            val prog = wp.position.toFloat() / wp.duration.coerceAtLeast(1L).toFloat()
+                            items.add(stream.toIptvItem().copy(progress = prog))
+                        }
+                    }
+
+                    _rawRows.value = listOf(DashboardRow("Continuar Assistindo", items, catId = "CONTINUE_WATCHING"))
+                    return@launch
+                }
+
                 if (categoryId == "RECENTS") {
                     val filteredItems = when (type) {
                         "live" -> catalogRepository.getRecentLiveStreams(limit = 100)
@@ -225,9 +264,8 @@ class CategoryViewModel @Inject constructor(
                 
                 if (!genre.isNullOrBlank()) {
                     val filteredRows = _rawRows.value.map { row ->
-                        val filteredItems = row.items.filter { 
-                            it.genre?.contains(genre, ignoreCase = true) == true || 
-                            it.name.contains(genre, ignoreCase = true) 
+                        val filteredItems = row.items.filter { item ->
+                            rsv.squitv.domain.usecase.GenreUtils.matchesGenre(item.genre, genre)
                         }
                         row.copy(items = filteredItems)
                     }.filter { it.items.isNotEmpty() }

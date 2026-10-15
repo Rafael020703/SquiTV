@@ -46,7 +46,8 @@ fun PlayerSettingsDialog(
     onClearOverride: (Int) -> Unit,
     onSetSleepTimer: (Int?) -> Unit,
     onSetSubtitleSize: (Float) -> Unit,
-    onSetSpeed: (Float) -> Unit = {}
+    onSetSpeed: (Float) -> Unit = {},
+    onToggleResizeMode: () -> Unit = {}
 ) {
     val tokens = AppDesignSystem
     var selectedTab by remember { mutableStateOf(initialTab) }
@@ -163,7 +164,8 @@ fun PlayerSettingsDialog(
                             0 -> VideoQualitySettingsSection(
                                 tracks = tracks,
                                 onSelectTrack = onSelectTrack,
-                                onClearOverride = onClearOverride
+                                onClearOverride = onClearOverride,
+                                onToggleResizeMode = onToggleResizeMode
                             )
                             1 -> AudioTrackSettingsSection(
                                 tracks = tracks,
@@ -257,13 +259,14 @@ private fun SettingsCategoryTab(
 private fun VideoQualitySettingsSection(
     tracks: Tracks?,
     onSelectTrack: (Int, Int, Int) -> Unit,
-    onClearOverride: (Int) -> Unit
+    onClearOverride: (Int) -> Unit,
+    onToggleResizeMode: () -> Unit = {}
 ) {
     val tokens = AppDesignSystem
     
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
-            text = "QUALIDADE DE VÍDEO",
+            text = "QUALIDADE DE VÍDEO & TELA",
             style = tokens.typography.title,
             color = tokens.colors.primary,
             fontWeight = FontWeight.Black,
@@ -271,18 +274,22 @@ private fun VideoQualitySettingsSection(
         )
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (tracks == null) {
-            NoOptionsPlaceholder()
-            return
-        }
-
-        val videoGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO }
+        val videoGroups = tracks?.groups?.filter { it.type == C.TRACK_TYPE_VIDEO } ?: emptyList()
         val isAutoSelected = videoGroups.none { it.isSelected }
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            item {
+                TvOptionRowItem(
+                    label = "PROPORÇÃO DA TELA (AJUSTAR / PREENCHER / ZOOM)",
+                    sublabel = "Alternar modo de ajuste da imagem na tela",
+                    isSelected = false,
+                    onClick = onToggleResizeMode
+                )
+            }
+
             // Option 1: AUTOMÁTICO
             item {
                 TvOptionRowItem(

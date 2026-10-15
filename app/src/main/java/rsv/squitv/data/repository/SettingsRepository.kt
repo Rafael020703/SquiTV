@@ -348,9 +348,11 @@ class SettingsRepository @Inject constructor(
 
     suspend fun saveSessionCredentials(credentials: XtreamCredentials) {
         context.dataStore.edit { preferences ->
-            val encryptedPassword = SecurityHelper.encrypt(credentials.password) ?: credentials.password
+            val encryptedPassword = SecurityHelper.encrypt(credentials.password)
             preferences[PreferencesKeys.USERNAME] = credentials.username
-            preferences[PreferencesKeys.PASSWORD] = encryptedPassword
+            if (encryptedPassword != null) {
+                preferences[PreferencesKeys.PASSWORD] = encryptedPassword
+            }
             preferences[PreferencesKeys.BASE_URL] = credentials.baseUrl
         }
     }

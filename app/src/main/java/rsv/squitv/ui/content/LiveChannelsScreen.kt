@@ -27,6 +27,8 @@ import rsv.squitv.ui.viewmodel.settings.SettingsViewModel
 import rsv.squitv.util.WindowSize
 import rsv.squitv.util.rememberWindowInfo
 import kotlinx.coroutines.delay
+import androidx.hilt.navigation.compose.hiltViewModel
+import rsv.squitv.ui.viewmodel.library.LibraryViewModel
 import timber.log.Timber
 
 @UnstableApi
@@ -35,12 +37,14 @@ fun LiveChannelsScreen(
     viewModel: MainViewModel,
     categoryViewModel: CategoryViewModel,
     settingsViewModel: SettingsViewModel,
+    libraryViewModel: LibraryViewModel = hiltViewModel(),
     onBack: () -> Unit,
     onPlay: (Int, String, String, String?, Map<String, Int>, String?) -> Unit,
     onCategoryClick: (String, String?) -> Unit,
     onNavigateToSearch: () -> Unit
 ) {
     val contentRows by categoryViewModel.currentContentRows.collectAsStateWithLifecycle()
+    val favorites by libraryViewModel.favorites.collectAsStateWithLifecycle()
     val categoriesFlow = remember(viewModel) { viewModel.getCustomizedCategoriesFlow("live") }
     val categories by categoriesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val categoryCounts by categoryViewModel.categoryCounts.collectAsStateWithLifecycle()
@@ -203,6 +207,7 @@ fun LiveChannelsScreen(
                             items = allItems,
                             gridFocusRequester = gridFocusRequester,
                             sidebarFocusRequester = sidebarFocusRequester,
+                            favorites = favorites,
                             targetItemId = targetChannelId,
                             onItemClick = { item ->
                                 Timber.i("PLAYBACK_REQUESTED_BY_USER: channelId=${item.id}, name=${item.name}")

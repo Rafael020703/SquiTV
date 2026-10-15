@@ -85,7 +85,6 @@ fun LoginScreen(
         onUsernameChange = viewModel::onUsernameChanged,
         onPasswordChange = viewModel::onPasswordChanged,
         onLoginClick = viewModel::login,
-        onRestoreClick = { viewModel.restoreBackup(isAuto = false) },
         onSelectSavedAccount = viewModel::selectSavedAccount,
         onRemoveSavedAccount = viewModel::removeSavedAccount,
         onOpenLocalLogin = onOpenLocalLogin,
@@ -156,7 +155,6 @@ fun LoginContent(
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
-    onRestoreClick: () -> Unit,
     onSelectSavedAccount: (XtreamCredentials) -> Unit = {},
     onRemoveSavedAccount: (Int) -> Unit = {},
     onOpenLocalLogin: (() -> Unit)? = null,
@@ -186,7 +184,6 @@ fun LoginContent(
                 onUsernameChange = onUsernameChange,
                 onPasswordChange = onPasswordChange,
                 onLoginClick = onLoginClick,
-                onRestoreClick = onRestoreClick,
                 onSelectSavedAccount = onSelectSavedAccount,
                 onRemoveSavedAccount = onRemoveSavedAccount,
                 onOpenLocalLogin = onOpenLocalLogin,
@@ -204,7 +201,6 @@ fun LoginContent(
                 onUsernameChange = onUsernameChange,
                 onPasswordChange = onPasswordChange,
                 onLoginClick = onLoginClick,
-                onRestoreClick = onRestoreClick,
                 onSelectSavedAccount = onSelectSavedAccount,
                 onRemoveSavedAccount = onRemoveSavedAccount,
                 onOpenLocalLogin = onOpenLocalLogin,
@@ -280,7 +276,6 @@ private fun CompactLoginLayout(
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
-    onRestoreClick: () -> Unit,
     onSelectSavedAccount: (XtreamCredentials) -> Unit = {},
     onRemoveSavedAccount: (Int) -> Unit = {},
     onOpenLocalLogin: (() -> Unit)? = null,
@@ -477,8 +472,7 @@ private fun CompactLoginLayout(
                             )
                         },
                         imeAction = ImeAction.Next,
-                        keyboardActions = KeyboardActions(onNext = { passwordFocusRequester.requestFocus() }),
-                        requireClickToEdit = true
+                        keyboardActions = KeyboardActions(onNext = { passwordFocusRequester.requestFocus() })
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -501,8 +495,7 @@ private fun CompactLoginLayout(
                             )
                         },
                         imeAction = ImeAction.Go,
-                        keyboardActions = KeyboardActions(onGo = { if (!isLoading) onLoginClick() }),
-                        requireClickToEdit = true
+                        keyboardActions = KeyboardActions(onGo = { if (!isLoading) onLoginClick() })
                     )
 
                     if (errorMessage != null) {
@@ -590,7 +583,6 @@ private fun ExpandedLoginLayout(
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
-    onRestoreClick: () -> Unit,
     onSelectSavedAccount: (XtreamCredentials) -> Unit = {},
     onRemoveSavedAccount: (Int) -> Unit = {},
     onOpenLocalLogin: (() -> Unit)? = null,
@@ -810,8 +802,7 @@ private fun ExpandedLoginLayout(
                             )
                         },
                         imeAction = ImeAction.Next,
-                        keyboardActions = KeyboardActions(onNext = { passwordFocusRequester.requestFocus() }),
-                        requireClickToEdit = true
+                        keyboardActions = KeyboardActions(onNext = { passwordFocusRequester.requestFocus() })
                     )
 
                     Spacer(modifier = Modifier.height(if (isVeryCompactHeight) 6.dp else 10.dp))
@@ -834,8 +825,7 @@ private fun ExpandedLoginLayout(
                             )
                         },
                         imeAction = ImeAction.Go,
-                        keyboardActions = KeyboardActions(onGo = { if (!isLoading) onLoginClick() }),
-                        requireClickToEdit = true
+                        keyboardActions = KeyboardActions(onGo = { if (!isLoading) onLoginClick() })
                     )
 
                     if (errorMessage != null) {

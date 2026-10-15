@@ -65,6 +65,13 @@
 -keep class androidx.media3.session.** { *; }
 -dontwarn androidx.media3.**
 
+# Application Domain and Data Models
+-keep class rsv.squitv.data.model.** { *; }
+-keep class rsv.squitv.data.local.entities.** { *; }
+-keep class rsv.squitv.domain.model.** { *; }
+-keep class rsv.squitv.core.domain.state.** { *; }
+-keep class rsv.squitv.core.navigation.Route** { *; }
+
 # AppFunctions
 -keep class androidx.appfunctions.** { *; }
 -keep @androidx.appfunctions.AppFunction class * { *; }

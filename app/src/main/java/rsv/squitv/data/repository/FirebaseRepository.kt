@@ -486,41 +486,12 @@ class FirebaseRepository @Inject constructor() {
     }
 
     suspend fun backupCredentials(deviceId: String, credentials: XtreamCredentials) {
-        if (shouldSkipFirebase()) return
-        try {
-            val uid = getUserId() ?: return
-            // Storing password in plain text as requested for recovery purposes
-            val data = mapOf(
-                "username" to credentials.username,
-                "password" to credentials.password,
-                "baseUrl" to credentials.baseUrl,
-                "timestamp" to System.currentTimeMillis()
-            )
-            withTimeoutOrNull(FIREBASE_TIMEOUT) {
-                firestore.collection("backups").document(deviceId).set(data, SetOptions.merge()).await()
-            }
-        } catch (e: Exception) {
-            handleFirebaseError(e, "backing up credentials")
-        }
+        // Disabled: Credentials are maintained exclusively on local encrypted storage (DataStore)
     }
 
     suspend fun getBackupCredentials(deviceId: String): XtreamCredentials? {
-        return try {
-            val uid = getUserId() ?: return null
-            val doc = withTimeoutOrNull(FIREBASE_TIMEOUT) {
-                firestore.collection("backups").document(deviceId).get().await()
-            }
-            if (doc?.exists() == true) {
-                XtreamCredentials(
-                    username = doc.getString("username") ?: return null,
-                    password = doc.getString("password") ?: "",
-                    baseUrl = doc.getString("baseUrl") ?: return null
-                )
-            } else null
-        } catch (e: Exception) {
-            handleFirebaseError(e, "getting backup credentials")
-            null
-        }
+        // Disabled: Credentials are maintained exclusively on local encrypted storage (DataStore)
+        return null
     }
 
     suspend fun updateProfilePicture(url: String) {

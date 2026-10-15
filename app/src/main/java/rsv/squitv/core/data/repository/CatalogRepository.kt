@@ -201,7 +201,28 @@ class CatalogRepository @Inject constructor(
     }
 
     suspend fun getVodInfo(credentials: XtreamCredentials, vodId: Int): XtreamVodInfo {
-        return xtreamService.getVodInfo(credentials.username, credentials.password, vodId = vodId)
+        val info = xtreamService.getVodInfo(credentials.username, credentials.password, vodId = vodId)
+        val details = info.info
+        if (details != null) {
+            withContext(Dispatchers.IO) {
+                try {
+                    iptvDao.updateDetailedStreamMetadata(
+                        id = vodId,
+                        type = "VOD",
+                        genre = details.genre,
+                        cast = details.cast,
+                        director = details.director,
+                        plot = details.plot,
+                        duration = details.duration,
+                        backdrop = details.backdropPath?.firstOrNull(),
+                        trailer = details.youtubeTrailer
+                    )
+                } catch (e: Exception) {
+                    Timber.e(e, "Error updating VOD metadata in Room for ID $vodId")
+                }
+            }
+        }
+        return info
     }
 
     suspend fun getSeriesMetadata(credentials: XtreamCredentials, seriesId: Int): XtreamSeries? {
@@ -262,8 +283,8 @@ class CatalogRepository @Inject constructor(
         iptvDao.updateStreamMetadata(id, type, cast, director)
     }
 
-    suspend fun updateDetailedStreamMetadata(id: Int, type: String, cast: String?, director: String?, plot: String?, duration: String?, backdrop: String?, trailer: String?) {
-        iptvDao.updateDetailedStreamMetadata(id, type, cast, director, plot, duration, backdrop, trailer)
+    suspend fun updateDetailedStreamMetadata(id: Int, type: String, genre: String? = null, cast: String? = null, director: String? = null, plot: String? = null, duration: String? = null, backdrop: String? = null, trailer: String? = null) {
+        iptvDao.updateDetailedStreamMetadata(id, type, genre, cast, director, plot, duration, backdrop, trailer)
     }
 
     suspend fun updateCategoryLock(id: String, type: String, locked: Boolean) = iptvDao.updateCategoryLock(id, type, locked)
@@ -399,9 +420,7 @@ class CatalogRepository @Inject constructor(
     suspend fun getAvailableGenres(type: String): List<String> = withContext(Dispatchers.IO) {
         val streamType = if (type == "movie") "VOD" else type.uppercase()
         val rawList = iptvDao.getAvailableGenresByType(streamType)
-        rawList.flatMap { it.split(",", "/", "|") }
-            .map { it.trim().lowercase().replaceFirstChar { c -> c.uppercase() } }
-            .filter { it.isNotBlank() && it.length > 2 }
+        rawList.flatMap { rsv.squitv.domain.usecase.GenreUtils.extractNormalizedGenres(it) }
             .distinct()
             .sorted()
     }

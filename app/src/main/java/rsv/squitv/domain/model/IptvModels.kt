@@ -22,7 +22,8 @@ data class IptvItem(
     val director: String? = null,
     val added: String? = null,
     val qualities: Map<String, Int> = emptyMap(),
-    val categoryId: String? = null
+    val categoryId: String? = null,
+    val progress: Float? = null
 )
 
 @Immutable

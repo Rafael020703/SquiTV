@@ -182,6 +182,9 @@ interface IptvDao {
     @Query("SELECT * FROM episodes WHERE seriesId = :seriesId AND seasonNumber = :seasonNumber ORDER BY episodeNum ASC, episodeId ASC")
     suspend fun getEpisodes(seriesId: Int, seasonNumber: Int): List<EpisodeEntity>
 
+    @Query("SELECT * FROM episodes WHERE streamId = :streamId LIMIT 1")
+    suspend fun getEpisodeByStreamId(streamId: Int): EpisodeEntity?
+
     @Query("DELETE FROM seasons WHERE seriesId = :seriesId")
     suspend fun deleteSeasons(seriesId: Int)
 
@@ -265,20 +268,20 @@ interface IptvDao {
     @Query("SELECT DISTINCT genre FROM iptv_streams WHERE streamType = 'SERIES' AND genre IS NOT NULL AND genre != ''")
     suspend fun getAvailableGenres(): List<String>
 
-    @Query("SELECT DISTINCT genre FROM iptv_streams WHERE streamType = :type AND genre IS NOT NULL AND genre != ''")
+    @Query("SELECT DISTINCT genre FROM iptv_streams WHERE (UPPER(streamType) = UPPER(:type) OR (:type = 'VOD' AND UPPER(streamType) = 'MOVIE') OR (:type = 'MOVIE' AND UPPER(streamType) = 'VOD')) AND genre IS NOT NULL AND genre != ''")
     suspend fun getAvailableGenresByType(type: String): List<String>
 
     @Query("SELECT * FROM iptv_streams WHERE genre LIKE '%' || :genre || '%' LIMIT :limit")
     suspend fun getStreamsByGenre(genre: String, limit: Int): List<IptvStreamEntity>
 
-    @Query("SELECT * FROM iptv_streams WHERE streamType = :type AND genre LIKE '%' || :genre || '%' ORDER BY name ASC")
+    @Query("SELECT * FROM iptv_streams WHERE (UPPER(streamType) = UPPER(:type) OR (:type = 'VOD' AND UPPER(streamType) = 'MOVIE') OR (:type = 'MOVIE' AND UPPER(streamType) = 'VOD')) AND genre LIKE '%' || :genre || '%' ORDER BY name ASC")
     suspend fun getStreamsByGenreType(type: String, genre: String): List<IptvStreamEntity>
 
     @Update
     suspend fun updateStream(stream: IptvStreamEntity)
 
-    @Query("UPDATE iptv_streams SET `cast` = :cast, director = :director, plot = :plot, duration = :duration, backdrop = :backdrop, youtubeTrailer = :trailer WHERE id = :id AND streamType = :type")
-    suspend fun updateDetailedStreamMetadata(id: Int, type: String, cast: String?, director: String?, plot: String?, duration: String?, backdrop: String?, trailer: String?)
+    @Query("UPDATE iptv_streams SET genre = COALESCE(:genre, genre), `cast` = :cast, director = :director, plot = :plot, duration = :duration, backdrop = :backdrop, youtubeTrailer = :trailer WHERE id = :id AND (UPPER(streamType) = UPPER(:type) OR (UPPER(:type) = 'VOD' AND UPPER(streamType) = 'MOVIE') OR (UPPER(:type) = 'MOVIE' AND UPPER(streamType) = 'VOD'))")
+    suspend fun updateDetailedStreamMetadata(id: Int, type: String, genre: String?, cast: String?, director: String?, plot: String?, duration: String?, backdrop: String?, trailer: String?)
 
     @Query("UPDATE iptv_streams SET `cast` = :cast, director = :director WHERE id = :id AND streamType = :type")
     suspend fun updateStreamMetadata(id: Int, type: String, cast: String?, director: String?)

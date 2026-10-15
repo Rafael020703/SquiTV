@@ -37,13 +37,22 @@ class SyncWatchProgressUseCase @Inject constructor(
         position: Long,
         duration: Long,
         seriesId: Int?,
-        forceSync: Boolean = false
+        forceSync: Boolean = false,
+        isEndedEvent: Boolean = false
     ) {
         val timestamp = System.currentTimeMillis()
         
-        // Always save locally
+        // Centralized completion check via WatchProgressUtils
+        val isCompleted = WatchProgressUtils.isVideoCompleted(position, duration, isEndedEvent)
+        Timber.tag("SquiTV_E2E").i("[SYNC_WATCH_PROGRESS] streamId=$streamId type=$type position=${position}ms duration=${duration}ms isCompleted=$isCompleted isEndedEvent=$isEndedEvent forceSync=$forceSync")
+
+        // Local save or delete if completed
         try {
-            userRepository.saveWatchProgress(streamId, type, position, duration, seriesId, timestamp)
+            if (isCompleted) {
+                userRepository.deleteWatchProgress(streamId)
+            } else if (position >= 5000L) {
+                userRepository.saveWatchProgress(streamId, type, position, duration, seriesId, timestamp)
+            }
         } catch (e: Exception) {
             Timber.e(e, "Failed to save local watch progress")
         }

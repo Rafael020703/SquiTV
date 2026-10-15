@@ -47,14 +47,11 @@ fun AppTextField(
     val labelSize = responsive.sp(tokens.typography.label.fontSize)
 
     var isFocused by remember { mutableStateOf(false) }
-    var isEditing by remember { mutableStateOf(false) }
     var passwordVisible by remember { mutableStateOf(false) }
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    val isReadOnly = requireClickToEdit && !isEditing
-
-    LaunchedEffect(isEditing, isFocused) {
-        if (isFocused && (!requireClickToEdit || isEditing)) {
+    LaunchedEffect(isFocused) {
+        if (isFocused) {
             keyboardController?.show()
         }
     }
@@ -89,32 +86,20 @@ fun AppTextField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        readOnly = isReadOnly,
+        readOnly = false,
         modifier = modifier
             .fillMaxWidth()
             .height(height)
             .onFocusChanged { 
                 isFocused = it.isFocused
-                if (!it.isFocused) {
-                    isEditing = false
-                }
-            }
-            .pointerInput(requireClickToEdit) {
-                if (requireClickToEdit) {
-                    detectTapGestures(
-                        onTap = {
-                            isEditing = true
-                        }
-                    )
+                if (it.isFocused) {
+                    keyboardController?.show()
                 }
             }
             .onKeyEvent { keyEvent ->
-                if (requireClickToEdit && isFocused && !isEditing) {
-                    if (keyEvent.type == KeyEventType.KeyDown && 
-                        (keyEvent.key == Key.DirectionCenter || keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter)) {
-                        isEditing = true
-                        return@onKeyEvent true
-                    }
+                if (isFocused && keyEvent.type == KeyEventType.KeyDown && 
+                    (keyEvent.key == Key.DirectionCenter || keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter)) {
+                    keyboardController?.show()
                 }
                 false
             }
