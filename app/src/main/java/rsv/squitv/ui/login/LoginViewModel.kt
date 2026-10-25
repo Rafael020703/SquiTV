@@ -208,16 +208,9 @@ class LoginViewModel @Inject constructor(
                         val response = authManager.login(credentials)
 
                         if (response.userInfo?.auth == 1) {
-                            settingsRepository.saveSessionCredentials(credentials)
+                            settingsRepository.saveCredentials(credentials)
                             _state.value = LoginState.SUCCESS
-
-                            val isAlreadySaved = settingsRepository.isAccountSaved(credentials)
-                            if (!isAlreadySaved) {
-                                _promptSaveAccount.value = credentials
-                            } else {
-                                settingsRepository.saveAccountToSavedList(credentials)
-                                _loginSuccess.emit(Unit)
-                            }
+                            _loginSuccess.emit(Unit)
                             success = true
                             break
                         } else {

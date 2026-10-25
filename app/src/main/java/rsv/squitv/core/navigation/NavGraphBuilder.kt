@@ -132,9 +132,9 @@ fun NavGraphBuilder.appNavGraph(
             settingsViewModel = settingsViewModel,
             onBack = { appController.goBack() },
             onNavigateToSearch = { appController.navigate(Route.Search()) },
-            onPlay = { streamId, name, type, epgId, qualities, icon ->
+            onPlay = { streamId, name, type, epgId, qualities, icon, categoryId ->
                 val qualitiesJson = Json.encodeToString(qualities)
-                appController.navigate(Route.Player(streamId, name, type, epgId = epgId, qualitiesJson = qualitiesJson, categoryId = route.categoryId ?: settings.lastLiveCategory ?: "RECENTS", streamIcon = icon))
+                appController.navigate(Route.Player(streamId, name, type, epgId = epgId, qualitiesJson = qualitiesJson, categoryId = categoryId ?: route.categoryId ?: settings.lastLiveCategory ?: "RECENTS", streamIcon = icon))
             },
             onCategoryClick = { type, catId ->
                 if (catId != null) mainViewModel.saveLastCategory(type, catId)
@@ -350,8 +350,8 @@ fun NavGraphBuilder.appNavGraph(
         EpgGridScreen(
             mainViewModel = mainViewModel,
             onBack = { appController.goBack() },
-            onChannelClick = { id, name, epgId ->
-                appController.navigate(Route.Player(id, name, "live", epgId = epgId, categoryId = null))
+            onChannelClick = { id, name, epgId, categoryId ->
+                appController.navigate(Route.Player(id, name, "live", epgId = epgId, categoryId = categoryId))
             }
         )
     }
@@ -393,7 +393,7 @@ fun NavGraphBuilder.appNavGraph(
                 val qualitiesJson = Json.encodeToString(qualities)
                 if (type == "movie") appController.navigate(Route.VodDetail(streamId, name, icon))
                 else if (type == "series") appController.navigate(Route.SeriesDetail(streamId, name, icon))
-                else appController.navigate(Route.Player(streamId, name, type, epgId = epgId, qualitiesJson = qualitiesJson, streamIcon = icon))
+                else appController.navigate(Route.Player(streamId, name, type, epgId = epgId, qualitiesJson = qualitiesJson, categoryId = "FAVORITES", streamIcon = icon))
             },
             onSeriesClick = { id, name, icon -> appController.navigate(Route.SeriesDetail(id, name, icon)) },
             onVodClick = { id, name, icon -> appController.navigate(Route.VodDetail(id, name, icon)) }
@@ -417,7 +417,7 @@ fun NavGraphBuilder.appNavGraph(
                 val qualitiesJson = Json.encodeToString(qualities)
                 if (type == "movie") appController.navigate(Route.VodDetail(streamId, name, icon))
                 else if (type == "series") appController.navigate(Route.SeriesDetail(streamId, name, icon))
-                else appController.navigate(Route.Player(streamId, name, type, epgId = epgId, qualitiesJson = qualitiesJson, streamIcon = icon))
+                else appController.navigate(Route.Player(streamId, name, type, epgId = epgId, qualitiesJson = qualitiesJson, categoryId = "HISTORY", streamIcon = icon))
             },
             onSeriesClick = { id, name, icon -> appController.navigate(Route.SeriesDetail(id, name, icon)) },
             onVodClick = { id, name, icon -> appController.navigate(Route.VodDetail(id, name, icon)) }
@@ -465,6 +465,7 @@ fun NavGraphBuilder.appNavGraph(
                             container = container,
                             seriesId = seriesId,
                             seasonNumber = seasonNumber,
+                            categoryId = "SEARCH",
                             streamIcon = icon
                         )
                     )

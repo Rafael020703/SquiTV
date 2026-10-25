@@ -39,7 +39,7 @@ fun LiveChannelsScreen(
     settingsViewModel: SettingsViewModel,
     libraryViewModel: LibraryViewModel = hiltViewModel(),
     onBack: () -> Unit,
-    onPlay: (Int, String, String, String?, Map<String, Int>, String?) -> Unit,
+    onPlay: (Int, String, String, String?, Map<String, Int>, String?, String?) -> Unit,
     onCategoryClick: (String, String?) -> Unit,
     onNavigateToSearch: () -> Unit
 ) {
@@ -212,7 +212,7 @@ fun LiveChannelsScreen(
                             onItemClick = { item ->
                                 Timber.i("PLAYBACK_REQUESTED_BY_USER: channelId=${item.id}, name=${item.name}")
                                 viewModel.saveLastChannel("live", activeCatId, item.id, item.name)
-                                onPlay(item.id.toInt(), item.name, item.type.toString(), item.epgId, item.qualities, item.icon)
+                                onPlay(item.id.toInt(), item.name, item.type.toString(), item.epgId, item.qualities, item.icon, activeCatId)
                             }
                         )
                     }

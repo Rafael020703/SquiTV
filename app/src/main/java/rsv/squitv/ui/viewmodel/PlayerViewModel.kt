@@ -1222,25 +1222,18 @@ class PlayerViewModel @Inject constructor(
     fun playNextChannel() {
         val streams = _quickSwitchStreams.value
         val currentId = currentStreamId
-        val currentIndex = if (currentId != null) streams.indexOfFirst { it.streamId == currentId } else -1
-        Timber.d("[ZAPPING_TRACE] NEXT requested -> streams.size=${streams.size}, currentStreamId=$currentId, currentIndex=$currentIndex, session=${_zappingSessionId.value}")
+        Timber.d("[ZAPPING_TRACE] NEXT requested -> streams.size=${streams.size}, currentStreamId=$currentId, categoryId=$currentCategoryId, session=${_zappingSessionId.value}")
         if (streams.isEmpty()) {
-            Timber.w("[ZAPPING] Lista de zapping vazia. Carregando canais em background...")
-            viewModelScope.launch {
-                var loaded = getQuickSwitchUseCase.getStreams(currentCategoryId)
-                if (loaded.isEmpty() && currentCategoryId != null) {
-                    loaded = getQuickSwitchUseCase.getStreams(null)
-                }
-                if (loaded.isNotEmpty()) {
-                    _quickSwitchStreams.value = loaded
-                    playNextChannel()
-                } else {
-                    Timber.e("[ZAPPING] Nenhuma stream encontrada para zapping.")
-                }
-            }
+            Timber.w("[ZAPPING] Cannot switch channel: quick switch list for category '$currentCategoryId' is empty.")
             return
         }
-        val nextIndex = if (currentIndex == -1) 0 else (currentIndex + 1) % streams.size
+        val currentIndex = if (currentId != null) streams.indexOfFirst { it.streamId == currentId } else -1
+        val nextIndex = if (currentIndex == -1) {
+            Timber.i("[ZAPPING] Current channel $currentId not found in category '$currentCategoryId' list. Starting from first channel.")
+            0
+        } else {
+            (currentIndex + 1) % streams.size
+        }
         val target = streams[nextIndex]
         
         Timber.i("[ZAPPING] NEXT -> currentId=$currentId (index $currentIndex) -> targetId=${target.streamId} '${target.name}' (index $nextIndex of ${streams.size}, Session: ${_zappingSessionId.value + 1})")
@@ -1261,25 +1254,20 @@ class PlayerViewModel @Inject constructor(
     fun playPreviousChannel() {
         val streams = _quickSwitchStreams.value
         val currentId = currentStreamId
-        val currentIndex = if (currentId != null) streams.indexOfFirst { it.streamId == currentId } else -1
-        Timber.d("[ZAPPING_TRACE] PREVIOUS requested -> streams.size=${streams.size}, currentStreamId=$currentId, currentIndex=$currentIndex, session=${_zappingSessionId.value}")
+        Timber.d("[ZAPPING_TRACE] PREVIOUS requested -> streams.size=${streams.size}, currentStreamId=$currentId, categoryId=$currentCategoryId, session=${_zappingSessionId.value}")
         if (streams.isEmpty()) {
-            Timber.w("[ZAPPING] Lista de zapping vazia. Carregando canais em background...")
-            viewModelScope.launch {
-                var loaded = getQuickSwitchUseCase.getStreams(currentCategoryId)
-                if (loaded.isEmpty() && currentCategoryId != null) {
-                    loaded = getQuickSwitchUseCase.getStreams(null)
-                }
-                if (loaded.isNotEmpty()) {
-                    _quickSwitchStreams.value = loaded
-                    playPreviousChannel()
-                } else {
-                    Timber.e("[ZAPPING] Nenhuma stream encontrada para zapping.")
-                }
-            }
+            Timber.w("[ZAPPING] Cannot switch channel: quick switch list for category '$currentCategoryId' is empty.")
             return
         }
-        val prevIndex = if (currentIndex <= 0) streams.size - 1 else currentIndex - 1
+        val currentIndex = if (currentId != null) streams.indexOfFirst { it.streamId == currentId } else -1
+        val prevIndex = if (currentIndex <= 0) {
+            if (currentIndex == -1) {
+                Timber.i("[ZAPPING] Current channel $currentId not found in category '$currentCategoryId' list. Starting from last channel.")
+            }
+            streams.size - 1
+        } else {
+            currentIndex - 1
+        }
         val target = streams[prevIndex]
         
         Timber.i("[ZAPPING] PREVIOUS -> currentId=$currentId (index $currentIndex) -> targetId=${target.streamId} '${target.name}' (index $prevIndex of ${streams.size}, Session: ${_zappingSessionId.value + 1})")
@@ -1561,11 +1549,13 @@ class PlayerViewModel @Inject constructor(
         zappingEpgJob?.cancel()
         zappingEpgJob = viewModelScope.launch {
             try {
-                var streams = getQuickSwitchUseCase.getStreams(categoryId)
-                if (streams.isEmpty() && categoryId != null) {
-                    streams = getQuickSwitchUseCase.getStreams(null)
-                }
+                val streams = getQuickSwitchUseCase.getStreams(categoryId)
                 _quickSwitchStreams.value = streams
+                if (streams.isEmpty()) {
+                    Timber.w("[ZAPPING] Quick switch list for category '$categoryId' is empty.")
+                } else {
+                    Timber.i("[ZAPPING] Quick switch loaded ${streams.size} streams for category '$categoryId'.")
+                }
                 
                 getQuickSwitchUseCase.loadZappingEpg(streams).collect { (streamId, programme) ->
                     _zappingEpg.update { current ->

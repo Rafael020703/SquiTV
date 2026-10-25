@@ -54,12 +54,10 @@ fun LoginScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val updateInfo by viewModel.updateInfo.collectAsState()
-    val promptSaveAccount by viewModel.promptSaveAccount.collectAsState()
     val savedAccounts by viewModel.savedAccounts.collectAsState()
 
     val usernameFocusRequester = remember { FocusRequester() }
     val passwordFocusRequester = remember { FocusRequester() }
-    val tokens = AppDesignSystem
 
     LaunchedEffect(Unit) {
         delay(150)
@@ -93,54 +91,6 @@ fun LoginScreen(
         usernameFocusRequester = usernameFocusRequester,
         passwordFocusRequester = passwordFocusRequester
     )
-
-    // DIÁLOGO "DESEJA SALVAR OS DADOS DESTE ACESSO?"
-    if (promptSaveAccount != null) {
-        val accountToSave = promptSaveAccount!!
-        AlertDialog(
-            onDismissRequest = { viewModel.confirmSaveAccount(accountToSave, save = false) },
-            containerColor = tokens.colors.backgroundSecondary,
-            shape = tokens.shapes.extraLarge,
-            icon = {
-                Icon(
-                    imageVector = Icons.Rounded.Key,
-                    contentDescription = null,
-                    tint = tokens.colors.primary,
-                    modifier = Modifier.size(32.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = "SALVAR CONTA",
-                    style = tokens.typography.headline.copy(fontSize = 18.sp),
-                    fontWeight = FontWeight.Black,
-                    color = tokens.colors.textPrimary
-                )
-            },
-            text = {
-                Text(
-                    text = "Deseja salvar os dados deste acesso (${accountToSave.username}) para a próxima vez?",
-                    style = tokens.typography.body.copy(fontSize = 13.sp),
-                    color = tokens.colors.textSecondary
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { viewModel.confirmSaveAccount(accountToSave, save = true) },
-                    colors = ButtonDefaults.buttonColors(containerColor = tokens.colors.primary)
-                ) {
-                    Text("SALVAR", fontWeight = FontWeight.Black, color = Color.Black)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { viewModel.confirmSaveAccount(accountToSave, save = false) }
-                ) {
-                    Text("AGORA NÃO", color = tokens.colors.textSecondary, fontWeight = FontWeight.Bold)
-                }
-            }
-        )
-    }
 }
 
 @Composable

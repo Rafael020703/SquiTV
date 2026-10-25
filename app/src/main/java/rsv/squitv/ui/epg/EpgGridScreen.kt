@@ -60,7 +60,7 @@ fun EpgGridScreen(
     epgViewModel: EpgViewModel = hiltViewModel(),
     libraryViewModel: LibraryViewModel = hiltViewModel(),
     onBack: () -> Unit,
-    onChannelClick: (Int, String, String?) -> Unit
+    onChannelClick: (Int, String, String?, String?) -> Unit
 ) {
     val epgChannels by epgViewModel.epgChannels.collectAsStateWithLifecycle()
     val epgGridData by epgViewModel.epgGridData.collectAsStateWithLifecycle()
@@ -93,7 +93,7 @@ fun EpgGridScreen(
             selectedCategoryId = selectedCategoryId,
             onCategorySelect = { selectedCategoryId = it },
             onBack = onBack,
-            onChannelClick = onChannelClick,
+            onChannelClick = { id, name, epgId -> onChannelClick(id, name, epgId, selectedCategoryId) },
             onShiftTime = epgViewModel::shiftTimeRange,
             isExpanded = windowInfo.isExpanded,
             focusRequester = focusRequester

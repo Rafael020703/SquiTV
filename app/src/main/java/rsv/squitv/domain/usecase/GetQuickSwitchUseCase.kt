@@ -2,6 +2,7 @@
 
 import rsv.squitv.core.data.repository.CatalogRepository
 import rsv.squitv.core.data.repository.EpgRepository
+import rsv.squitv.core.data.repository.UserRepository
 import rsv.squitv.data.model.EpgProgramme
 import rsv.squitv.data.model.XtreamStream
 import rsv.squitv.data.repository.SettingsRepository
@@ -21,17 +22,93 @@ import javax.inject.Inject
 class GetQuickSwitchUseCase @Inject constructor(
     private val catalogRepository: CatalogRepository,
     private val epgRepository: EpgRepository,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val userRepository: UserRepository
 ) {
     /**
-     * Fetches the list of live streams for a category (or all if null).
+     * Fetches the list of live streams for a category (or special list, or all if null).
      */
     suspend fun getStreams(categoryId: String?): List<XtreamStream> {
         val credentials = settingsRepository.settingsFlow.first().credentials ?: return emptyList()
-        return if (categoryId != null) {
-            catalogRepository.getLiveStreams(credentials, categoryId)
-        } else {
-            catalogRepository.getLiveStreams(credentials)
+        return when {
+            categoryId.equals("FAVORITES", ignoreCase = true) -> {
+                val favs = userRepository.getFavoritesListFlow().first()
+                val liveFavs = favs.filter { it.streamType.equals("LIVE", ignoreCase = true) }
+                if (liveFavs.isEmpty()) return emptyList()
+                val favIds = liveFavs.map { it.streamId }.distinct()
+                val streamEntities = catalogRepository.getStreamsByIds(favIds).associateBy { it.id }
+                liveFavs.map { fav ->
+                    val dbEntity = streamEntities[fav.streamId]
+                    XtreamStream(
+                        streamId = fav.streamId,
+                        name = fav.name.ifBlank { dbEntity?.name },
+                        categoryId = fav.categoryId ?: dbEntity?.categoryId,
+                        streamIcon = fav.logo ?: dbEntity?.logo,
+                        streamType = fav.streamType,
+                        epgChannelId = fav.url ?: dbEntity?.url
+                    )
+                }
+            }
+            categoryId.equals("RECENTS", ignoreCase = true) -> {
+                val recentItems = catalogRepository.getRecentLiveStreams(limit = 100)
+                recentItems.map { item ->
+                    XtreamStream(
+                        streamId = item.id.toIntOrNull() ?: 0,
+                        name = item.name,
+                        categoryId = item.categoryId,
+                        streamIcon = item.icon,
+                        streamType = "LIVE",
+                        epgChannelId = item.epgId
+                    )
+                }
+            }
+            categoryId.equals("HISTORY", ignoreCase = true) || categoryId.equals("CONTINUE_WATCHING", ignoreCase = true) -> {
+                val progressList = userRepository.getAllWatchProgressFlow().first()
+                val liveProgress = progressList
+                    .filter { it.type.equals("LIVE", ignoreCase = true) }
+                    .sortedByDescending { it.lastWatched }
+                val streamIds = liveProgress.map { it.streamId }.distinct()
+                if (streamIds.isNotEmpty()) {
+                    val streamEntities = catalogRepository.getStreamsByIds(streamIds)
+                    val entityMap = streamEntities.associateBy { it.id }
+                    streamIds.mapNotNull { id -> entityMap[id] }.map { entity ->
+                        XtreamStream(
+                            streamId = entity.id,
+                            name = entity.name,
+                            categoryId = entity.categoryId,
+                            streamIcon = entity.logo,
+                            streamType = entity.streamType,
+                            epgChannelId = entity.url
+                        )
+                    }
+                } else {
+                    emptyList()
+                }
+            }
+            categoryId != null && categoryId.startsWith("SEARCH:", ignoreCase = true) -> {
+                val query = categoryId.substringAfter("SEARCH:")
+                if (query.isNotBlank()) {
+                    val searchResults = catalogRepository.searchStreams(query, "LIVE")
+                    searchResults.map { entity ->
+                        XtreamStream(
+                            streamId = entity.id,
+                            name = entity.name,
+                            categoryId = entity.categoryId,
+                            streamIcon = entity.logo,
+                            streamType = entity.streamType,
+                            epgChannelId = entity.url
+                        )
+                    }
+                } else {
+                    emptyList()
+                }
+            }
+            categoryId == null || categoryId.equals("ALL", ignoreCase = true) || categoryId.equals("EPG_ALL", ignoreCase = true) -> {
+                catalogRepository.getLiveStreams(credentials)
+            }
+            else -> {
+                catalogRepository.getLiveStreams(credentials, categoryId)
+            }
         }
     }
 

@@ -220,7 +220,7 @@ fun AppGalleryScreen(
                             categoryViewModel = categoryViewModel,
                             settingsViewModel = settingsViewModel,
                             onBack = { onBack?.invoke() },
-                            onPlay = { _, _, _, _, _, _ -> },
+                            onPlay = { _, _, _, _, _, _, _ -> },
                             onCategoryClick = { _, _ -> },
                             onNavigateToSearch = {}
                         )
