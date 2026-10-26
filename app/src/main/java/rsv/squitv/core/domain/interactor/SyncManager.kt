@@ -16,6 +16,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 import kotlinx.serialization.decodeFromString
 import timber.log.Timber
@@ -34,9 +38,12 @@ class SyncManager @Inject constructor(
 ) {
     private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var syncJob: Job? = null
+    private var resetJob: Job? = null
+    private val pendingMutex = Mutex()
 
     private val _syncProgress = MutableStateFlow(AppSyncProgress())
     val syncProgress: StateFlow<AppSyncProgress> = _syncProgress.asStateFlow()
+    val catalogRevision = syncDataUseCase.catalogRevision
 
     private val _isContentReady = MutableStateFlow(false)
     val isContentReady: StateFlow<Boolean> = _isContentReady.asStateFlow()
@@ -48,6 +55,29 @@ class SyncManager @Inject constructor(
     val categories: StateFlow<List<XtreamCategory>> = _categories.asStateFlow()
 
     init {
+        managerScope.launch {
+            catalogRevision.drop(1).collect {
+                if (_allLiveStreams.value.isNotEmpty()) {
+                    _allLiveStreams.value = catalogRepository.getCachedLiveStreams()
+                }
+            }
+        }
+        managerScope.launch {
+            syncDataUseCase.progress.filterNotNull().collect { result ->
+                _syncProgress.value = AppSyncProgress(
+                    accountStatus = result.accountStatus, liveStatus = result.liveStatus,
+                    vodStatus = result.vodStatus, seriesStatus = result.seriesStatus,
+                    epgStatus = result.epgStatus, operationId = result.operationId,
+                    isRunning = !result.isComplete, isCancelled = result.isCancelled,
+                    isComplete = result.isComplete, error = result.error
+                )
+                if (result.isComplete && !result.isCancelled) {
+                    if (result.isContentReady) _isContentReady.value = true
+                    else checkContentReadiness()
+                    if (result.error == null) processPendingSyncs()
+                }
+            }
+        }
         managerScope.launch {
             // Check readiness at startup. 
             checkContentReadiness()
@@ -75,79 +105,56 @@ class SyncManager @Inject constructor(
         Timber.i("SyncManager: Readiness check -> $hasContent (Stats: Live=${stats.first}, VOD=${stats.second}, Series=${stats.third} | LastSync: $lastSync)")
     }
 
+    @Synchronized
     fun startSync(force: Boolean = false) {
-        if (syncJob?.isActive == true && !force) return
-        
-        syncJob?.cancel()
+        // A second click must observe the current run, rather than cancelling its downloads.
+        if (syncJob?.isActive == true || syncDataUseCase.progress.value?.isComplete == false) return
+        _syncProgress.value = AppSyncProgress(isRunning = true)
         Timber.d("Sync: STARTING (force=$force)")
         syncJob = managerScope.launch {
-            syncDataUseCase(force = force).collect { result ->
-                _syncProgress.value = AppSyncProgress(
-                    accountStatus = result.accountStatus,
-                    liveStatus = result.liveStatus,
-                    vodStatus = result.vodStatus,
-                    seriesStatus = result.seriesStatus,
-                    isComplete = result.isComplete,
-                    error = result.error
-                )
-                
-                if (result.isComplete) {
-                    Timber.d("Sync: COMPLETE emission received. Error: ${result.error}")
-                    // Ensure content is marked as ready if there's data, bypassing possible DataStore propagation delays
-                    val stats = catalogRepository.getStats()
-                    val hasData = stats.first > 0 || stats.second > 0 || stats.third > 0
-                    
-                    if (result.error == null && hasData) {
-                        Timber.i("Sync: SUCCESS. Marking content as ready. Stats: $stats")
-                        _isContentReady.value = true
-                    } else {
-                        // Fallback to official check if there was an error or no data
-                        checkContentReadiness()
-                    }
-                    
-                    if (result.error == null) {
-                        processPendingSyncs()
-                    }
-                }
-            }
+            syncDataUseCase(force = force).collect()
         }
     }
 
     fun processPendingSyncs() {
         managerScope.launch {
-            val pendings = userRepository.getAllPendingSyncs()
-            if (pendings.isEmpty()) return@launch
-            
-            Timber.d("Processing ${pendings.size} pending syncs...")
-            val profileId = profileManager.activeProfile.value?.id ?: "default"
-            
-            pendings.forEach { pending ->
-                val success = when (pending.type) {
-                    "FAVORITE_ADD" -> {
-                        val item = Json.decodeFromString<IptvItem>(pending.payload)
-                        firebaseRepository.addFavorite(profileId, item, pending.providerHash)
-                    }
-                    "FAVORITE_REMOVE" -> {
-                        firebaseRepository.removeFavorite(profileId, pending.contentId, pending.providerHash)
-                    }
-                    "WATCH_PROGRESS" -> {
-                        val rawData = Json.decodeFromString<Map<String, JsonElement>>(pending.payload).mapValues { 
-                            when(it.value) {
-                                is JsonPrimitive -> it.value.jsonPrimitive.content
-                                else -> it.value.toString()
+            pendingMutex.withLock {
+                val pendings = userRepository.getAllPendingSyncs()
+                if (pendings.isEmpty()) return@withLock
+                Timber.d("Processing ${pendings.size} pending syncs...")
+                val profileId = profileManager.activeProfile.value?.id ?: "default"
+                pendings.forEach { pending ->
+                    val success = try {
+                        when (pending.type) {
+                            "FAVORITE_ADD" -> {
+                                val item = Json.decodeFromString<IptvItem>(pending.payload)
+                                firebaseRepository.addFavorite(profileId, item, pending.providerHash)
                             }
+                            "FAVORITE_REMOVE" -> firebaseRepository.removeFavorite(profileId, pending.contentId, pending.providerHash)
+                            "WATCH_PROGRESS" -> {
+                                val rawData = Json.decodeFromString<Map<String, JsonElement>>(pending.payload).mapValues {
+                                    when (it.value) {
+                                        is JsonPrimitive -> it.value.jsonPrimitive.content
+                                        else -> it.value.toString()
+                                    }
+                                }
+                                firebaseRepository.syncWatchProgress(profileId, pending.contentId, rawData)
+                            }
+                            "HISTORY_ADD" -> {
+                                val item = Json.decodeFromString<IptvItem>(pending.payload)
+                                firebaseRepository.addHistory(profileId, item)
+                            }
+                            else -> false
                         }
-                        firebaseRepository.syncWatchProgress(profileId, pending.contentId, rawData)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        Timber.w(failure, "Pending user data sync failed; keeping it for retry")
+                        false
                     }
-                    "HISTORY_ADD" -> {
-                        val item = Json.decodeFromString<IptvItem>(pending.payload)
-                        firebaseRepository.addHistory(profileId, item)
+                    if (success) {
+                        userRepository.deletePendingSync(pending.type, pending.providerHash, pending.contentId)
                     }
-                    else -> true
-                }
-                
-                if (success) {
-                    userRepository.deletePendingSync(pending.type, pending.providerHash, pending.contentId)
                 }
             }
         }
@@ -193,20 +200,19 @@ class SyncManager @Inject constructor(
         }
     }
 
+    @Synchronized
     fun clearCatalogData() {
-        if (syncJob?.isActive == true) {
-            syncJob?.cancel()
-        }
-
-        _syncProgress.value = AppSyncProgress()
-        _isContentReady.value = false
-
-        managerScope.launch {
+        if (resetJob?.isActive == true) return
+        resetJob = managerScope.launch {
             try {
-                settingsRepository.clearSyncTimestamps()
-                catalogRepository.clearCatalogData()
+                syncJob?.cancelAndJoin()
+                syncDataUseCase.clearCatalogData()
+                _syncProgress.value = AppSyncProgress()
+                _isContentReady.value = false
                 Timber.i("SyncManager: Catalog data cleared and sync timestamps reset.")
                 startSync(force = true)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Timber.e(e, "Error during catalog data reset")
                 _syncProgress.value = AppSyncProgress(isComplete = true, error = e.message)

@@ -147,6 +147,7 @@ fun SyncScreen(
                     item { SyncItem(stringResource(R.string.sync_live), progress.liveStatus) }
                     item { SyncItem(stringResource(R.string.sync_movies), progress.vodStatus) }
                     item { SyncItem(stringResource(R.string.sync_series), progress.seriesStatus) }
+                    item { SyncItem(stringResource(R.string.sync_epg), progress.epgStatus) }
                 }
 
                 Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.huge)))
@@ -185,6 +186,7 @@ fun SyncItem(label: String, status: AppSyncStatus) {
     val isError = status is AppSyncStatus.Error
     
     val statusText = when (status) {
+        is AppSyncStatus.Skipped -> stringResource(R.string.sync_skipped)
         is AppSyncStatus.Pending -> stringResource(R.string.status_pending_sync)
         is AppSyncStatus.Fetching -> stringResource(R.string.status_fetching)
         is AppSyncStatus.Syncing -> stringResource(R.string.status_syncing)

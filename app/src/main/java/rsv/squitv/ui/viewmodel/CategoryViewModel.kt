@@ -48,12 +48,13 @@ class CategoryViewModel @Inject constructor(
             items = when (sort) {
                 "RECENT" -> items.sortedByDescending { it.releaseDate }
                 "RATING" -> items.sortedByDescending { it.rating?.toDoubleOrNull() ?: 0.0 }
-                else -> items.sortedBy { it.name.trim().lowercase() }
+                else -> items.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
             }
             
             row.copy(items = items)
         }.filter { it.items.isNotEmpty() }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -273,9 +274,7 @@ class CategoryViewModel @Inject constructor(
                 }
                 
                 // Prefetch visible rows
-                _rawRows.value.take(5).forEach { row ->
-                    prefetchRowImages(row.items)
-                }
+                prefetchRowImages(_rawRows.value.take(5).flatMap { it.items.take(10) })
             } catch (e: Exception) {
                 Timber.e(e, "Error loading content")
             } finally {
@@ -284,17 +283,21 @@ class CategoryViewModel @Inject constructor(
         }
     }
 
+    private var prefetchJob: Job? = null
+
     private fun prefetchRowImages(items: List<IptvItem>) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val imageLoader = ImageLoader(context)
+        prefetchJob?.cancel()
+        prefetchJob = viewModelScope.launch(Dispatchers.IO) {
+            val imageLoader = coil.Coil.imageLoader(context)
             items.take(20).forEach { item ->
                 val url = item.icon ?: return@forEach
-                // Optimized prefetch with a reasonable thumbnail size (ex: 200x300)
+                if (!isActive) return@launch
                 val request = ImageRequest.Builder(context)
                     .data(url)
                     .size(200, 300)
                     .precision(coil.size.Precision.INEXACT)
                     .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                    .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
                     .build()
                 imageLoader.enqueue(request)
             }

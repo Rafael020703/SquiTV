@@ -64,6 +64,10 @@ fun ContentGrid(
         }
     }
 
+    val favoriteKeys = remember(favorites) {
+        favorites.mapTo(HashSet(favorites.size)) { it.id to it.type }
+    }
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
         state = gridState,
@@ -78,7 +82,7 @@ fun ContentGrid(
         horizontalArrangement = Arrangement.spacedBy(gridSpacing)
     ) {
         itemsIndexed(items, key = { _, item -> item.id + item.type.toString() }) { index, item ->
-            val isFav = favorites.any { it.id == item.id && it.type == item.type }
+            val isFav = favoriteKeys.contains(item.id to item.type)
             val progress = watchProgress[item.id.toIntOrNull() ?: -1]
             val itemModifier = if (index == targetIndex) {
                 Modifier.focusRequester(targetFocusRequester).focusRequester(gridFocusRequester)

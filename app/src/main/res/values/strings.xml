@@ -222,6 +222,12 @@
     <string name="auto_play_desc">Inicia o próximo episódio automaticamente.</string>
     <string name="background_playback_label">Reprodução em Segundo Plano</string>
     <string name="background_playback_desc">Permite continuar ouvindo o áudio ao minimizar o aplicativo.</string>
+    <string name="background_and_pip_label">Segundo plano e PiP</string>
+    <string name="background_audio_label">Áudio em segundo plano</string>
+    <string name="background_audio_desc">Continua reproduzindo o áudio ao minimizar o aplicativo.</string>
+    <string name="pip_auto_minimize_label">Janela flutuante ao minimizar</string>
+    <string name="pip_auto_minimize_desc">Continua reproduzindo o vídeo em uma janela flutuante nos dispositivos compatíveis.</string>
+    <string name="pip_unsupported_dialog_msg">A janela flutuante (PiP) não está disponível neste dispositivo.</string>
     <string name="reconnecting_stream">Reconectando transmissão&#8230;</string>
     <string name="use_external_player_label">Player Externo</string>
     <string name="use_external_player_desc">Abrir streams no VLC ou MX Player.</string>
@@ -471,4 +477,16 @@
     <string name="hide_locked_label">OCULTAR BLOQUEADOS</string>
     <string name="hide_locked_desc">Categorias protegidas por PIN não aparecerão no catálogo.</string>
     <string name="nav_customization_label">Personalizar Abas/Seções</string>
+    <string name="pip_label">Janela flutuante (PiP)</string>
+    <string name="pip_auto_label">Abrir janela ao minimizar</string>
+    <string name="pip_auto_desc">Continua o vídeo em uma janela flutuante ao sair do aplicativo. O áudio em segundo plano tem uma configuração separada.</string>
+    <string name="pip_unavailable">Não foi possível abrir a janela flutuante. Verifique a permissão de PiP nas configurações do Android.</string>
+    <string name="pip_unsupported">A janela flutuante para reprodução de vídeo não está disponível neste dispositivo. Para continuar ouvindo ao minimizar, use Reprodução em Segundo Plano.</string>
+    <string name="catalog_sync_title">Sincronização do catálogo</string>
+    <string name="sync_epg">Guia de programação</string>
+    <string name="sync_skipped">Não executado ou já atualizado</string>
+    <string name="sync_cancelled">Sincronização interrompida</string>
+    <string name="sync_partial_failure">A sincronização não concluiu todas as etapas.</string>
+    <string name="catalog_sync_success">Catálogo sincronizado com sucesso.</string>
+    <string name="close">Fechar</string>
 </resources>

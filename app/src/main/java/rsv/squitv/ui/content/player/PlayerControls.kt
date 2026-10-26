@@ -67,7 +67,8 @@ fun PlayerControlOverlay(
     onShowSpeed: () -> Unit,
     onToggleResizeMode: () -> Unit,
     onToggleLock: () -> Unit,
-    onSwitchStream: (XtreamStream) -> Unit
+    onSwitchStream: (XtreamStream) -> Unit,
+    pipAvailable: Boolean = false
 ) {
     val tokens = AppDesignSystem
     val isLive = uiState.contentType == ContentType.LIVE
@@ -201,6 +202,11 @@ fun PlayerControlOverlay(
                 Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
 
                 // Settings
+                if (pipAvailable) {
+                    PlayerActionIcon(Icons.Rounded.PictureInPictureAlt, onEnterPip, isTv,
+                        contentDescription = stringResource(R.string.pip_label))
+                    Spacer(Modifier.width(tokens.spacing.medium))
+                }
                 PlayerActionIcon(Icons.Rounded.Settings, onShowSettings, isTv, contentDescription = "Configurações")
             }
         }

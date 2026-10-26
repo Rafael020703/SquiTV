@@ -9,6 +9,8 @@ import rsv.squitv.data.repository.SettingsRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CancellationException
+import rsv.squitv.domain.usecase.SyncDataUseCase
 import timber.log.Timber
 
 @HiltWorker
@@ -24,12 +26,19 @@ class EpgSyncWorker @AssistedInject constructor(
         val creds = settingsRepository.settingsFlow.first().credentials ?: return Result.failure()
         
         return try {
-            epgRepository.syncFullEpg(creds)
+            epgRepository.syncFullEpg(creds) {
+                if (settingsRepository.settingsFlow.first().credentials != creds) {
+                    throw CancellationException("Conta alterada")
+                }
+            }
+            settingsRepository.updateSyncState("epg", true)
             Timber.i("EpgSyncWorker concluído")
             Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Timber.e(e, "Falha no EpgSyncWorker")
-            Result.retry()
+            if (SyncDataUseCase.isRetryable(e) && runAttemptCount < 3) Result.retry() else Result.failure()
         }
     }
 }

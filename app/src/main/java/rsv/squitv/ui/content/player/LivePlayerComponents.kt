@@ -77,7 +77,8 @@ fun BoxScope.LiveBottomOverlay(
     isReconnecting: Boolean = false,
     isFavorite: Boolean = false,
     onToggleFavorite: () -> Unit = {},
-    onShowSettings: () -> Unit
+    onShowSettings: () -> Unit,
+    onEnterPip: (() -> Unit)? = null
 ) {
     val tokens = AppDesignSystem
     val windowInfo = rememberWindowInfo()
@@ -165,6 +166,10 @@ fun BoxScope.LiveBottomOverlay(
                         tint = if (isFavorite) tokens.colors.error else Color.White,
                         modifier = Modifier.focusRequester(firstBtnFocusRequester)
                     )
+                    if (onEnterPip != null) {
+                        ControlIconButton(icon = Icons.Rounded.PictureInPictureAlt,
+                            onClick = onEnterPip, contentDescription = stringResource(R.string.pip_label))
+                    }
                     ControlIconButton(
                         icon = Icons.Rounded.Settings,
                         onClick = onShowSettings,

@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "382546890186",
+    "firebase_url": "https://bancodedados-44c5a-default-rtdb.firebaseio.com",
+    "project_id": "bancodedados-44c5a",
+    "storage_bucket": "bancodedados-44c5a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:382546890186:android:f24d096306c8d0c8e85333",
+        "android_client_info": {
+          "package_name": "rsv.squitv.debug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD7sPwAa2DUEOAG4jz0O92BF_hS8paCeas"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

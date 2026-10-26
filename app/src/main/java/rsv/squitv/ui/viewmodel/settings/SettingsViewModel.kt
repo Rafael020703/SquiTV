@@ -73,6 +73,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.updateBackgroundPlaybackEnabled(enabled) }
     }
 
+    fun updatePipAutoEnterEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.updatePipAutoEnterEnabled(enabled) }
+    }
+
     fun saveCustomDisplayName(username: String, baseUrl: String? = null, name: String?) {
         viewModelScope.launch { settingsRepository.updateCustomDisplayName(username, baseUrl, name) }
     }

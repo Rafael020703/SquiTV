@@ -2,7 +2,7 @@
 
 import androidx.annotation.OptIn
 
-import android.app.Activity
+import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -29,9 +29,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -50,6 +47,8 @@ import rsv.squitv.ui.content.player.*
 import rsv.squitv.ui.viewmodel.PlayerUiState
 import rsv.squitv.ui.viewmodel.PlayerViewModel
 import rsv.squitv.util.DeviceType
+import rsv.squitv.util.findActivity
+import rsv.squitv.util.supportsMediaPip
 import rsv.squitv.util.rememberWindowInfo
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -134,30 +133,26 @@ fun PlayerScreen(
         }
     }
 
-    val mainActivity = context as? MainActivity
+    val mainActivity = context.findActivity() as? MainActivity
+    val isInPip = mainActivity?.isPipActive == true
+    val playbackActive = (uiState as? PlayerUiState.Playing)?.isPlaying == true && player != null
 
-    LaunchedEffect(uiState) {
-        val isPlaying = uiState is PlayerUiState.Playing
-        mainActivity?.setCanEnterPip(isPlaying)
+    LaunchedEffect(mainActivity, playbackActive) {
+        mainActivity?.setCanEnterPip(playbackActive)
     }
-
-    val isBgPlaybackEnabled = appSettings.backgroundPlaybackEnabled
-
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) {
-                val isInPip = mainActivity?.isInPictureInPictureMode == true
-                if (!isInPip && !isBgPlaybackEnabled) {
-                    viewModel.stopPlayback()
-                }
-            }
+    LaunchedEffect(isInPip) {
+        if (isInPip) {
+            hideOverlayImmediately()
+            showSettings = false
+            showQualityMenu = false
+            showSpeedMenu = false
+            isSplitView = false
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
+    }
+    DisposableEffect(mainActivity) {
         onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            val isInPip = mainActivity?.isInPictureInPictureMode == true
-            if (!isInPip) {
+            // Navigating away ends the session. Minimizing is handled only by MainActivity.
+            if (mainActivity?.isPipActive != true && mainActivity?.isChangingConfigurations != true) {
                 viewModel.stopPlayback()
             }
             mainActivity?.setCanEnterPip(false)
@@ -241,7 +236,14 @@ fun PlayerScreen(
             playerEngine = appSettings.playerEngine,
             zappingChannel = zappingChannel,
             isLiveContent = viewModel.isLiveContent,
-            showOverlayWith5sTimer = showOverlayWith5sTimer
+            showOverlayWith5sTimer = showOverlayWith5sTimer,
+            isInPip = isInPip,
+            pipAvailable = context.supportsMediaPip() && playbackActive,
+            onEnterPip = {
+                if (mainActivity?.enterMediaPip() != true) {
+                    Toast.makeText(context, R.string.pip_unavailable, Toast.LENGTH_LONG).show()
+                }
+            }
         )
     }
 }
@@ -304,13 +306,14 @@ fun PlayerContent(
     playerEngine: String,
     zappingChannel: XtreamStream?,
     isLiveContent: Boolean = true,
-    showOverlayWith5sTimer: () -> Unit = {}
+    showOverlayWith5sTimer: () -> Unit = {},
+    isInPip: Boolean = false,
+    pipAvailable: Boolean = false,
+    onEnterPip: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val tokens = AppDesignSystem
 
-    val activity = context as? Activity
-    val isInPip = activity?.isInPictureInPictureMode == true
 
     Box(
         modifier = Modifier
@@ -459,7 +462,8 @@ fun PlayerContent(
                         isReconnecting = state.isReconnecting,
                         isFavorite = state.isFavorite,
                         onToggleFavorite = onToggleFavorite,
-                        onShowSettings = { setSettingsInitialTab(0); setShowSettings(true) }
+                        onShowSettings = { setSettingsInitialTab(0); setShowSettings(true) },
+                        onEnterPip = onEnterPip.takeIf { pipAvailable }
                     )
 
                     AnimatedVisibility(
@@ -499,7 +503,8 @@ fun PlayerContent(
                             onToggleResizeMode = onToggleResizeMode,
                             onToggleLock = { onToggleLock(true) },
                             onReload = onReload,
-                            onEnterPip = { },
+                            onEnterPip = onEnterPip,
+                            pipAvailable = pipAvailable,
                             onSwitchStream = onSwitchStream
                         )
                     }

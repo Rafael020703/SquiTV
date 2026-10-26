@@ -19,8 +19,8 @@ android {
         applicationId = "rsv.squitv"
         minSdk = 24
         targetSdk = 35
-        versionCode = 17
-        versionName = "1.16"
+        versionCode = 18
+        versionName = "1.17"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -46,6 +46,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -63,6 +67,9 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
     }
     buildToolsVersion = "36.0.0"
 
@@ -145,6 +152,8 @@ dependencies {
     testImplementation(libs.androidx.core)
     testImplementation(libs.androidx.junit)
     testImplementation(libs.junit)
+    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("org.mockito:mockito-core:5.20.0")
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

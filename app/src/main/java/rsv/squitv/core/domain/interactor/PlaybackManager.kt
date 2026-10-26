@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
 import javax.inject.Inject
+import javax.inject.Singleton
 import rsv.squitv.core.debug.DebugPlayerLogger
 import rsv.squitv.core.debug.DebugLogger
 import rsv.squitv.core.debug.DebugLevel
@@ -37,6 +38,7 @@ import rsv.squitv.core.debug.DebugCategory
  * It handles connecting to the MediaPlaybackService and releasing the controller.
  */
 @UnstableApi
+@Singleton
 class PlaybackManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {

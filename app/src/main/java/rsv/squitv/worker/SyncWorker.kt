@@ -8,6 +8,7 @@ import rsv.squitv.domain.usecase.SyncDataUseCase
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.CancellationException
 import timber.log.Timber
 
 @HiltWorker
@@ -22,14 +23,25 @@ class SyncWorker @AssistedInject constructor(
         Timber.d("Iniciando SyncWorker (force=%b)", force)
         
         return try {
-            syncDataUseCase(force).collect {
-                // Podemos logar o progresso aqui se necessário
+            var finalResult: SyncDataUseCase.SyncResult? = null
+            syncDataUseCase(force,
+                syncLive = inputData.getBoolean("syncLive", true),
+                syncVod = inputData.getBoolean("syncVod", true),
+                syncSeries = inputData.getBoolean("syncSeries", true)).collect {
+                if (it.isComplete) finalResult = it
             }
-            Timber.i("SyncWorker concluído com sucesso")
-            Result.success()
+            val result = finalResult
+            when {
+                result == null || result.isCancelled -> Result.failure()
+                result.error == null -> Result.success()
+                result.retryable && runAttemptCount < 3 -> Result.retry()
+                else -> Result.failure()
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Timber.e(e, "Erro no SyncWorker")
-            Result.failure()
+            if (SyncDataUseCase.isRetryable(e) && runAttemptCount < 3) Result.retry() else Result.failure()
         }
     }
 }

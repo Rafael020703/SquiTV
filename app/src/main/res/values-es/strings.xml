@@ -223,6 +223,12 @@
     <string name="auto_play_desc">Inicia el siguiente episodio automáticamente.</string>
     <string name="background_playback_label">Reproducción en Segundo Plano</string>
     <string name="background_playback_desc">Permite continuar escuchando el audio al minimizar la aplicación.</string>
+    <string name="background_and_pip_label">Segundo plano y PiP</string>
+    <string name="background_audio_label">Audio en segundo plano</string>
+    <string name="background_audio_desc">Continúa reproduciendo el audio al minimizar la aplicación.</string>
+    <string name="pip_auto_minimize_label">Ventana flotante al minimizar</string>
+    <string name="pip_auto_minimize_desc">Continúa reproduciendo el vídeo en una ventana flotante en dispositivos compatibles.</string>
+    <string name="pip_unsupported_dialog_msg">La ventana flotante (PiP) no está disponible en este dispositivo.</string>
     <string name="reconnecting_stream">Reconectando transmisión&#8230;</string>
     <string name="use_external_player_label">Player Externo</string>
     <string name="use_external_player_desc">Abrir transmisiones en VLC o MX Player.</string>
@@ -469,4 +475,16 @@
     <string name="server_offline_error">El servidor IPTV está desconectado. Usando datos locales.</string>
     <string name="stream_playback_error">No se pudo reproducir este contenido. El servidor puede no estar disponible.</string>
     <string name="nav_customization_label">Personalizar Pestañas/Navegación</string>
+    <string name="pip_label">Ventana flotante (PiP)</string>
+    <string name="pip_auto_label">Abrir ventana al minimizar</string>
+    <string name="pip_auto_desc">Continúa el vídeo en una ventana flotante al salir de la aplicación. El audio en segundo plano tiene una configuración separada.</string>
+    <string name="pip_unavailable">No se pudo abrir la ventana flotante. Revisa el permiso de PiP en los ajustes de Android.</string>
+    <string name="pip_unsupported">La reproducción de vídeo flotante no está disponible en este dispositivo. Usa Reproducción en Segundo Plano para seguir escuchando al minimizar.</string>
+    <string name="catalog_sync_title">Sincronización del catálogo</string>
+    <string name="sync_epg">Guía de programación</string>
+    <string name="sync_skipped">No ejecutado o ya actualizado</string>
+    <string name="sync_cancelled">Sincronización interrumpida</string>
+    <string name="sync_partial_failure">No se completaron todas las etapas de sincronización.</string>
+    <string name="catalog_sync_success">Catálogo sincronizado correctamente.</string>
+    <string name="close">Cerrar</string>
 </resources>

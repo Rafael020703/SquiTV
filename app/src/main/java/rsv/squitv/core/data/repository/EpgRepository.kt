@@ -1,4 +1,4 @@
-﻿package rsv.squitv.core.data.repository
+package rsv.squitv.core.data.repository
 
 import android.util.Base64
 import rsv.squitv.data.api.XtreamService
@@ -12,6 +12,7 @@ import rsv.squitv.data.model.XtreamShortEpg
 import rsv.squitv.data.network.EpgService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -34,95 +35,107 @@ class EpgRepository @Inject constructor(
 ) {
     private val epgMutex = Mutex()
 
-    suspend fun syncFullEpg(creds: XtreamCredentials) = withContext(Dispatchers.IO) {
+    suspend fun syncFullEpg(creds: XtreamCredentials, beforePublish: suspend () -> Unit = {}): Int = withContext(Dispatchers.IO) {
         epgMutex.withLock {
             try {
                 iptvDao.clearEpgStaging()
                 val url = "${creds.baseUrl}/xmltv.php?username=${creds.username}&password=${creds.password}"
-                val responseBody = epgService.getEpg(url)
-                val inputStream = responseBody.byteStream()
+                epgService.getEpg(url).use { responseBody ->
+                    val inputStream = responseBody.byteStream()
 
-                val factory = XmlPullParserFactory.newInstance()
-                factory.isNamespaceAware = true
-                val parser = factory.newPullParser()
-                parser.setInput(inputStream, "UTF-8")
+                    val factory = XmlPullParserFactory.newInstance()
+                    factory.isNamespaceAware = true
+                    val parser = factory.newPullParser()
+                    parser.setInput(inputStream, "UTF-8")
 
-                val sdf = SimpleDateFormat("yyyyMMddHHmmss Z", Locale.US)
-                val batchSize = 1000
-                val stagingEntities = mutableListOf<EpgProgramStagingEntity>()
-                val currentTime = System.currentTimeMillis() / 1000
+                    val sdf = SimpleDateFormat("yyyyMMddHHmmss Z", Locale.US)
+                    val batchSize = 1000
+                    val stagingEntities = mutableListOf<EpgProgramStagingEntity>()
+                    val currentTime = System.currentTimeMillis() / 1000
+                    var programCount = 0
+                    var hasTvRoot = false
 
-                var eventType = parser.eventType
-                while (eventType != XmlPullParser.END_DOCUMENT) {
-                    currentCoroutineContext().ensureActive()
-                    
-                    if (eventType == XmlPullParser.START_TAG && parser.name == "programme") {
-                        val channelId = parser.getAttributeValue(null, "channel")
-                        val startStr = parser.getAttributeValue(null, "start")
-                        val stopStr = parser.getAttributeValue(null, "stop")
-                        
-                        var title: String? = null
-                        var desc: String? = null
-                        var category: String? = null
+                    var eventType = parser.eventType
+                    while (eventType != XmlPullParser.END_DOCUMENT) {
+                        currentCoroutineContext().ensureActive()
+                        if (eventType == XmlPullParser.START_TAG && parser.depth == 1) {
+                            require(parser.name == "tv") { "Resposta inválida do guia de programação" }
+                            hasTvRoot = true
+                        }
 
-                        eventType = parser.next()
-                        while (!(eventType == XmlPullParser.END_TAG && parser.name == "programme")) {
-                            if (eventType == XmlPullParser.START_TAG) {
-                                when (parser.name) {
-                                    "title" -> title = parser.nextText()
-                                    "desc" -> desc = parser.nextText()
-                                    "category" -> category = parser.nextText()
-                                }
-                            }
+                        if (eventType == XmlPullParser.START_TAG && parser.name == "programme") {
+                            val channelId = parser.getAttributeValue(null, "channel")
+                            val startStr = parser.getAttributeValue(null, "start")
+                            val stopStr = parser.getAttributeValue(null, "stop")
+
+                            var title: String? = null
+                            var desc: String? = null
+                            var category: String? = null
+
                             eventType = parser.next()
-                        }
-
-                        if (channelId != null && startStr != null && stopStr != null) {
-                            try {
-                                val start = sdf.parse(startStr)?.time?.div(1000)
-                                val stop = sdf.parse(stopStr)?.time?.div(1000)
-                                
-                                if (start != null && stop != null && stop > currentTime) {
-                                    stagingEntities.add(EpgProgramStagingEntity(
-                                        channelId = channelId,
-                                        startTime = start,
-                                        stopTime = stop,
-                                        title = title ?: "Sem título",
-                                        description = desc,
-                                        category = category
-                                    ))
+                            while (!(eventType == XmlPullParser.END_TAG && parser.name == "programme")) {
+                                if (eventType == XmlPullParser.START_TAG) {
+                                    when (parser.name) {
+                                        "title" -> title = parser.nextText()
+                                        "desc" -> desc = parser.nextText()
+                                        "category" -> category = parser.nextText()
+                                    }
                                 }
-                            } catch (_: Exception) {}
-                        }
+                                eventType = parser.next()
+                            }
 
-                        if (stagingEntities.size >= batchSize) {
-                            iptvDao.insertEpgStaging(stagingEntities.toList())
-                            stagingEntities.clear()
+                            if (channelId != null && startStr != null && stopStr != null) {
+                                try {
+                                    val start = sdf.parse(startStr)?.time?.div(1000)
+                                    val stop = sdf.parse(stopStr)?.time?.div(1000)
+
+                                    if (start != null && stop != null && stop > currentTime) {
+                                        stagingEntities.add(EpgProgramStagingEntity(
+                                            channelId = channelId,
+                                            startTime = start,
+                                            stopTime = stop,
+                                            title = title ?: "Sem título",
+                                            description = desc,
+                                            category = category
+                                        ))
+                                        programCount++
+                                    }
+                                } catch (_: Exception) {}
+                            }
+
+                            if (stagingEntities.size >= batchSize) {
+                                iptvDao.insertEpgStaging(stagingEntities.toList())
+                                stagingEntities.clear()
+                            }
                         }
+                        eventType = parser.next()
                     }
-                    eventType = parser.next()
+
+                    if (stagingEntities.isNotEmpty()) {
+                        iptvDao.insertEpgStaging(stagingEntities)
+                    }
+
+                    // Final step: Atomic publish
+                    require(hasTvRoot && programCount > 0) { "O guia recebido não contém programação válida. O guia anterior foi preservado." }
+                    currentCoroutineContext().ensureActive()
+                    beforePublish()
+                    iptvDao.publishStagingEpg()
+                    Timber.i("EPG sincronizado com sucesso e publicado atomicamente")
+                    programCount
                 }
 
-                if (stagingEntities.isNotEmpty()) {
-                    iptvDao.insertEpgStaging(stagingEntities)
-                }
-                
-                // Final step: Atomic publish
-                iptvDao.publishStagingEpg()
-                Timber.i("EPG sincronizado com sucesso e publicado atomicamente")
-                
             } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                Timber.e(e, "Erro ao sincronizar EPG total")
-                iptvDao.clearEpgStaging()
+                withContext(NonCancellable) { iptvDao.clearEpgStaging() }
+                if (e !is CancellationException) Timber.e(e, "Erro ao sincronizar EPG total")
+                throw e
             }
         }
     }
 
-    fun getEpgForChannel(channelId: String): Flow<List<EpgProgramEntity>> = 
+    fun getEpgForChannel(channelId: String): Flow<List<EpgProgramEntity>> =
         iptvDao.getEpgForChannel(channelId, System.currentTimeMillis() / 1000)
 
-    suspend fun getEpgInRange(startTime: Long, stopTime: Long): List<EpgProgramEntity> = 
+    suspend fun getEpgInRange(startTime: Long, stopTime: Long): List<EpgProgramEntity> =
         iptvDao.getEpgInRange(startTime, stopTime)
 
     suspend fun getShortEpg(credentials: XtreamCredentials, streamId: Int): XtreamShortEpg {
@@ -140,7 +153,7 @@ class EpgRepository @Inject constructor(
     private fun decodeBase64IfEncoded(text: String?): String? {
         if (text.isNullOrBlank()) return text
         if (text.contains(" ") || text.length < 4) return text
-        
+
         // Simple heuristic to check if it looks like Base64
         val base64Regex = Regex("^[a-zA-Z0-9+/]*={0,2}$")
         if (!base64Regex.matches(text)) return text
@@ -148,25 +161,25 @@ class EpgRepository @Inject constructor(
         return try {
             val decodedBytes = Base64.decode(text, Base64.DEFAULT)
             val decodedText = String(decodedBytes, Charsets.UTF_8)
-            
+
             // Validate if decoded text is readable
-            val isReadable = decodedText.all { 
-                it.isLetterOrDigit() || it.isWhitespace() || it in ".,!?-:;()\"\'&@#%^*" 
+            val isReadable = decodedText.all {
+                it.isLetterOrDigit() || it.isWhitespace() || it in ".,!?-:;()\"\'&@#%^*"
             }
             if (isReadable) decodedText else text
-        } catch (e: Exception) { 
+        } catch (e: Exception) {
             Timber.v("Falha ao decodificar Base64: $text")
-            text 
+            text
         }
     }
 
     suspend fun insertReminder(reminder: EpgReminderEntity) = iptvDao.insertReminder(reminder)
-    
+
     fun getAllRemindersFlow(): Flow<List<EpgReminderEntity>> = iptvDao.getAllRemindersFlow()
-    
+
     suspend fun deleteReminder(streamId: Int, startTime: Long) = iptvDao.deleteReminder(streamId, startTime)
-    
+
     suspend fun hasReminder(streamId: Int, startTime: Long): Boolean = iptvDao.hasReminder(streamId, startTime)
 
-    suspend fun clearAllEpg() = iptvDao.clearAllEpg()
+    suspend fun clearAllEpg() = epgMutex.withLock { iptvDao.clearAllEpg() }
 }

@@ -70,6 +70,7 @@ class MainViewModel @Inject constructor(
 
     val isContentReady = syncManager.isContentReady
     val syncProgress: StateFlow<AppSyncProgress> = syncManager.syncProgress
+    val catalogRevision = syncManager.catalogRevision
     val allLiveStreams = syncManager.allLiveStreams
     val categories = syncManager.categories
 
@@ -150,8 +151,9 @@ class MainViewModel @Inject constructor(
         val normType = if (contentType == "movie") "vod" else contentType.lowercase()
         return combine(
             appSettings,
-            blockedCategoryIds
-        ) { settings, blocked ->
+            blockedCategoryIds,
+            catalogRevision
+        ) { settings, blocked, _ ->
             val creds = settings.credentials ?: return@combine emptyList()
             val rawEntities = try {
                 when (normType) {
@@ -281,6 +283,9 @@ class MainViewModel @Inject constructor(
     val newlyAdded: StateFlow<Map<ContentType, List<IptvItem>>> = _newlyAdded.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            catalogRevision.drop(1).collect { refreshStats() }
+        }
         viewModelScope.launch {
             appState.collect { state ->
                 when (state) {

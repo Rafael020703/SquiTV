@@ -46,6 +46,8 @@ class EpgViewModel @Inject constructor(
         WorkManager.getInstance(context).enqueueUniqueWork("epg_sync", ExistingWorkPolicy.KEEP, workRequest)
     }
 
+    private var epgRangeJob: kotlinx.coroutines.Job? = null
+
     fun loadChannelsForEpg(categoryId: String?, favorites: List<IptvItem>) {
         viewModelScope.launch {
             try {
@@ -58,8 +60,9 @@ class EpgViewModel @Inject constructor(
                     catalogRepository.getLiveStreams(creds, categoryId)
                 }
                 
+                val favoriteLiveIds = favorites.filter { it.type == ContentType.LIVE }.mapTo(HashSet()) { it.id }
                 val grouped = catalogRepository.groupLiveStreams(streams).map { item ->
-                    item.copy(isFavorite = favorites.any { it.id == item.id && it.type == ContentType.LIVE })
+                    item.copy(isFavorite = favoriteLiveIds.contains(item.id))
                 }
                 _epgChannels.value = grouped
                 
@@ -70,7 +73,8 @@ class EpgViewModel @Inject constructor(
     }
 
     fun loadEpgForRange() {
-        viewModelScope.launch {
+        epgRangeJob?.cancel()
+        epgRangeJob = viewModelScope.launch {
             val (start, stop) = _currentTimeRange.value
             val programs = epgRepository.getEpgInRange(start, stop)
             _epgGridData.value = programs.groupBy { it.channelId }

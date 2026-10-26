@@ -2,6 +2,9 @@
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -42,6 +45,8 @@ import rsv.squitv.ui.viewmodel.library.LibraryViewModel
 import rsv.squitv.ui.viewmodel.settings.SettingsViewModel
 import rsv.squitv.util.AppVersionProvider
 import rsv.squitv.util.rememberWindowInfo
+import rsv.squitv.util.supportsMediaPip
+import rsv.squitv.ui.login.SyncItem
 import kotlinx.coroutines.delay
 
 /**
@@ -61,7 +66,7 @@ enum class SettingsCategory(val labelRes: Int, val icon: ImageVector) {
     PLAYER_ENGINE(R.string.video_quality_section, Icons.Rounded.SettingsInputComponent),
     BUFFER(R.string.buffer_strategy_label, Icons.Rounded.Memory),
     AUTO_PLAY(R.string.auto_play_label, Icons.AutoMirrored.Rounded.PlaylistPlay),
-    BACKGROUND_PLAYBACK(R.string.background_playback_label, Icons.Rounded.Headphones),
+    BACKGROUND_AND_PIP(R.string.background_and_pip_label, Icons.Rounded.PictureInPictureAlt),
     DIAGNOSTICS(R.string.show_diagnostics_label, Icons.Rounded.Analytics),
     PARENTAL(R.string.parental_control_label, Icons.Rounded.Lock),
     HIDE_LOCKED(R.string.hide_blocked_label, Icons.Rounded.VisibilityOff),
@@ -85,12 +90,15 @@ fun SettingsScreen(
     onNavigateToContentCustomization: () -> Unit = {}
 ) {
     val settings by settingsViewModel.settings.collectAsState()
+    val syncProgress by mainViewModel.syncProgress.collectAsStateWithLifecycle()
+    val pipSupported = LocalContext.current.supportsMediaPip()
     val dbStats by mainViewModel.dbStats.collectAsState()
     val credentials = mainViewModel.credentials
     val windowInfo = rememberWindowInfo()
     val tokens = AppDesignSystem
     var detailCategory by remember { mutableStateOf<SettingsCategory?>(null) }
     var showResetDialog by remember { mutableStateOf(false) }
+    var showSyncDialog by remember { mutableStateOf(false) }
 
     val contentFocusRequester = remember { FocusRequester() }
 
@@ -148,7 +156,7 @@ fun SettingsScreen(
             val settingsGroups = remember {
                 listOf(
                     "CONTA E PREFERÊNCIAS" to listOf(SettingsCategory.ACCOUNT, SettingsCategory.NAV_CUSTOMIZATION, SettingsCategory.SIGN_OUT, SettingsCategory.LANGUAGE, SettingsCategory.THEME, SettingsCategory.ZOOM),
-                    "REPRODUÇÃO" to listOf(SettingsCategory.PLAYER_ENGINE, SettingsCategory.BUFFER, SettingsCategory.AUTO_PLAY, SettingsCategory.BACKGROUND_PLAYBACK),
+                    "REPRODUÇÃO" to listOf(SettingsCategory.PLAYER_ENGINE, SettingsCategory.BUFFER, SettingsCategory.AUTO_PLAY, SettingsCategory.BACKGROUND_AND_PIP),
                     "SEGURANÇA E CATÁLOGO" to listOf(SettingsCategory.PARENTAL, SettingsCategory.HIDE_LOCKED, SettingsCategory.CLEAR_CATALOG),
                     "ATUALIZAÇÃO E MANUTENÇÃO" to listOf(SettingsCategory.UPDATE, SettingsCategory.APP_UPDATES, SettingsCategory.CLEAR_CACHE),
                     "DIAGNÓSTICO AVANÇADO" to listOf(SettingsCategory.DIAGNOSTICS, SettingsCategory.DNS_TESTER)
@@ -180,7 +188,8 @@ fun SettingsScreen(
                                     val cardWidth = if (windowInfo.screenWidth < 600.dp) 130.dp else 165.dp
                                     Box(modifier = Modifier.width(cardWidth)) {
                                         SettingsGridCard(
-                                            label = stringResource(category.labelRes),
+                                            label = if (category == SettingsCategory.UPDATE && syncProgress.isRunning)
+                                                stringResource(R.string.sync_title) else stringResource(category.labelRes),
                                             icon = category.icon,
                                             isDestructive = category == SettingsCategory.SIGN_OUT || category == SettingsCategory.CLEAR_CATALOG,
                                             modifier = if (groupTitle == "CONTA E PREFERÊNCIAS" && index == 0) Modifier.focusRequester(contentFocusRequester) else Modifier,
@@ -189,7 +198,10 @@ fun SettingsScreen(
                                                     SettingsCategory.ACCOUNT -> onNavigateToAccount()
                                                     SettingsCategory.NAV_CUSTOMIZATION -> onNavigateToContentCustomization()
                                                     SettingsCategory.SIGN_OUT -> mainViewModel.logout()
-                                                    SettingsCategory.UPDATE -> mainViewModel.loadData(force = true)
+                                                    SettingsCategory.UPDATE -> {
+                                                        if (!syncProgress.isRunning) mainViewModel.loadData(force = true)
+                                                        showSyncDialog = true
+                                                    }
                                                     SettingsCategory.APP_UPDATES -> onNavigateToUpdates()
                                                     SettingsCategory.DNS_TESTER -> onNavigateToDnsTester()
                                                     SettingsCategory.CLEAR_CACHE -> mainViewModel.clearCache()
@@ -239,6 +251,45 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showSyncDialog) {
+        AlertDialog(
+            onDismissRequest = { showSyncDialog = false },
+            title = { Text(stringResource(R.string.catalog_sync_title)) },
+            text = {
+                Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (syncProgress.isRunning) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    SyncItem(stringResource(R.string.sync_account), syncProgress.accountStatus)
+                    SyncItem(stringResource(R.string.sync_live), syncProgress.liveStatus)
+                    SyncItem(stringResource(R.string.sync_movies), syncProgress.vodStatus)
+                    SyncItem(stringResource(R.string.sync_series), syncProgress.seriesStatus)
+                    SyncItem(stringResource(R.string.sync_epg), syncProgress.epgStatus)
+                    if (syncProgress.isComplete) {
+                        Text(
+                            when {
+                                syncProgress.isCancelled -> stringResource(R.string.sync_cancelled)
+                                syncProgress.error != null -> stringResource(R.string.sync_partial_failure)
+                                else -> stringResource(R.string.catalog_sync_success)
+                            },
+                            fontWeight = FontWeight.Bold
+                        )
+                        syncProgress.error?.let { Text(it, color = tokens.colors.error) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSyncDialog = false }) { Text(stringResource(R.string.close)) }
+            },
+            dismissButton = {
+                if (syncProgress.isComplete && (syncProgress.error != null || syncProgress.isCancelled)) {
+                    TextButton(onClick = { mainViewModel.loadData(force = true) }) {
+                        Text(stringResource(R.string.retry_sync_button))
+                    }
+                }
+            }
+        )
     }
 
     // DIÁLOGO DE CONFIRMAÇÃO PARA "REDEFINIR BASE DE DADOS"
@@ -430,13 +481,35 @@ fun SettingsScreen(
                                 onCheckedChange = { settingsViewModel.updateAutoPlay(it) }
                             )
                         }
-                        SettingsCategory.BACKGROUND_PLAYBACK -> {
+                        SettingsCategory.BACKGROUND_AND_PIP -> {
                             SettingsToggle(
-                                label = stringResource(R.string.background_playback_label).uppercase(),
+                                label = stringResource(R.string.background_audio_label),
                                 checked = settings.backgroundPlaybackEnabled,
-                                description = stringResource(R.string.background_playback_desc),
+                                description = stringResource(R.string.background_audio_desc),
                                 onCheckedChange = { settingsViewModel.updateBackgroundPlaybackEnabled(it) }
                             )
+                            Spacer(Modifier.height(8.dp))
+                            if (pipSupported) {
+                                SettingsToggle(
+                                    label = stringResource(R.string.pip_auto_minimize_label),
+                                    checked = settings.pipAutoEnterEnabled,
+                                    description = stringResource(R.string.pip_auto_minimize_desc),
+                                    onCheckedChange = { settingsViewModel.updatePipAutoEnterEnabled(it) }
+                                )
+                            } else {
+                                Surface(
+                                    color = tokens.colors.surfaceElevated,
+                                    shape = tokens.shapes.medium,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.pip_unsupported_dialog_msg),
+                                        style = tokens.typography.caption,
+                                        color = tokens.colors.textSecondary,
+                                        modifier = Modifier.padding(12.dp)
+                                    )
+                                }
+                            }
                         }
                         SettingsCategory.DIAGNOSTICS -> {
                             SettingsToggle(

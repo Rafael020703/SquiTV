@@ -11,8 +11,41 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface IptvDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertCategories(categories: List<IptvCategoryEntity>)
+
+    @Query("UPDATE iptv_categories SET name = :name WHERE id = :id AND type = :type")
+    suspend fun updateCategoryName(id: String, type: String, name: String)
+
+    @Transaction
+    suspend fun upsertCategories(categories: List<IptvCategoryEntity>) {
+        insertCategories(categories)
+        categories.forEach { updateCategoryName(it.id, it.type, it.name) }
+    }
+
+    @Query("DELETE FROM iptv_categories WHERE id = :id AND type = :type")
+    suspend fun deleteCatalogCategory(id: String, type: String)
+
+    @Query("DELETE FROM iptv_streams WHERE id IN (:ids) AND streamType = :type")
+    suspend fun deleteCatalogStreams(ids: List<Int>, type: String)
+
+    /** Publish a fully downloaded type without replacing local preferences or detail metadata. */
+    @Transaction
+    suspend fun publishCatalogSnapshot(
+        type: String,
+        categories: List<IptvCategoryEntity>,
+        streams: List<IptvStreamEntity>
+    ) {
+        require(categories.all { it.type == type } && streams.all { it.streamType == type })
+        val categoryIds = categories.map { it.id }.toSet()
+        val streamIds = streams.map { it.id }.toSet()
+        val removedCategories = getCategoriesByType(type).filter { it.id !in categoryIds }
+        val removedStreamIds = getStreamsByType(type).filter { it.id !in streamIds }.map { it.id }
+        upsertCategories(categories)
+        streams.chunked(500).forEach { upsertStreams(it) }
+        removedStreamIds.chunked(500).forEach { deleteCatalogStreams(it, type) }
+        removedCategories.forEach { deleteCatalogCategory(it.id, type) }
+    }
 
     @Query("SELECT * FROM iptv_categories WHERE type = :type ORDER BY isPinned DESC, name ASC")
     suspend fun getCategoriesByType(type: String): List<IptvCategoryEntity>
@@ -62,6 +95,7 @@ interface IptvDao {
                 url = stream.url,
                 logo = stream.logo,
                 rating = stream.rating,
+                containerExtension = stream.containerExtension,
                 added = stream.added,
                 releaseDate = stream.releaseDate,
                 genre = stream.genre
@@ -75,13 +109,14 @@ interface IptvDao {
         categoryId = :categoryId, 
         url = :url, 
         logo = :logo, 
-        rating = :rating, 
+        rating = COALESCE(:rating, rating),
+        containerExtension = COALESCE(:containerExtension, containerExtension),
         added = :added, 
-        releaseDate = :releaseDate, 
-        genre = :genre 
+        releaseDate = COALESCE(:releaseDate, releaseDate),
+        genre = COALESCE(:genre, genre)
         WHERE id = :id AND streamType = :type
     """)
-    suspend fun updateBasicStreamFields(id: Int, type: String, name: String, categoryId: String, url: String?, logo: String?, rating: String?, added: String?, releaseDate: String?, genre: String?)
+    suspend fun updateBasicStreamFields(id: Int, type: String, name: String, categoryId: String, url: String?, logo: String?, rating: String?, containerExtension: String?, added: String?, releaseDate: String?, genre: String?)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertStreams(streams: List<IptvStreamEntity>)
@@ -106,6 +141,12 @@ interface IptvDao {
 
     @Query("SELECT * FROM iptv_streams WHERE streamType = :type")
     suspend fun getStreamsByType(type: String): List<IptvStreamEntity>
+
+    @Query("SELECT * FROM iptv_streams WHERE streamType = :type AND added IS NOT NULL AND added != '' ORDER BY added DESC, id DESC LIMIT :limit")
+    suspend fun getRecentStreamsCandidatesByType(type: String, limit: Int): List<IptvStreamEntity>
+
+    @Query("SELECT * FROM iptv_streams WHERE added IS NOT NULL AND added != '' ORDER BY added DESC, id DESC LIMIT :limit")
+    suspend fun getRecentStreamsCandidates(limit: Int): List<IptvStreamEntity>
 
     @Query("SELECT * FROM iptv_streams WHERE categoryId = :categoryId AND streamType = :type")
     suspend fun getStreamsByCategory(categoryId: String, type: String): List<IptvStreamEntity>

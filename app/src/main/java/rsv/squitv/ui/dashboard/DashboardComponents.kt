@@ -109,14 +109,24 @@ fun PortalBackground(
         Canvas(modifier = Modifier.fillMaxSize()) {
             val dotSpacing = 24.dp.toPx()
             val dotColor = Color.White.copy(alpha = 0.02f)
-            for (x in 0..size.width.toInt() step dotSpacing.toInt()) {
-                for (y in 0..size.height.toInt() step dotSpacing.toInt()) {
-                    drawCircle(
-                        color = dotColor,
-                        radius = 0.6.dp.toPx(),
-                        center = Offset(x.toFloat(), y.toFloat())
-                    )
+            val strokeWidth = 1.2.dp.toPx()
+            val step = dotSpacing.toInt()
+            val width = size.width.toInt()
+            val height = size.height.toInt()
+            if (width > 0 && height > 0 && step > 0) {
+                val pointCount = ((width / step) + 1) * ((height / step) + 1)
+                val points = ArrayList<Offset>(pointCount)
+                for (x in 0..width step step) {
+                    for (y in 0..height step step) {
+                        points.add(Offset(x.toFloat(), y.toFloat()))
+                    }
                 }
+                drawPoints(
+                    points = points,
+                    pointMode = androidx.compose.ui.graphics.PointMode.Points,
+                    color = dotColor,
+                    strokeWidth = strokeWidth
+                )
             }
         }
         content()
@@ -135,6 +145,10 @@ fun ContentRow(
     val tokens = AppDesignSystem
     val responsive = tokens.responsive
     
+    val favoriteKeys = remember(favorites) {
+        favorites.mapTo(HashSet(favorites.size)) { it.id to it.type }
+    }
+    
     Column(modifier = modifier.fillMaxWidth().padding(vertical = responsive.dp(tokens.spacing.medium))) {
         if (title.isNotEmpty()) {
             AppSectionHeader(
@@ -148,7 +162,7 @@ fun ContentRow(
             horizontalArrangement = Arrangement.spacedBy(responsive.dp(tokens.spacing.large))
         ) {
             items(items, key = { it.id + it.type.toString() }) { item ->
-                val isFav = favorites.any { it.id == item.id && it.type == item.type }
+                val isFav = favoriteKeys.contains(item.id to item.type)
                 val progressValue = watchProgress[item.id.toIntOrNull() ?: -1]
                 
                 val itemWidth = responsive.dp(if (item.type == ContentType.LIVE) 260.dp else 160.dp)

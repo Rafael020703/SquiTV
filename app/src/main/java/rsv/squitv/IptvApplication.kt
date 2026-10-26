@@ -40,6 +40,8 @@ import rsv.squitv.core.debug.DebugLogger
 import rsv.squitv.core.debug.DebugExceptionHandler
 import rsv.squitv.core.debug.DebugLifecycleObserver
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -214,15 +216,20 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
         applicationScope.launch(Dispatchers.IO) {
             val entity = database.iptvDao().getDownload(download.request.id.toInt())
             if (entity != null) {
-                database.iptvDao().insertDownload(
-                    entity.copy(
-                        status = status,
-                        progress = download.percentDownloaded,
-                        size = download.contentLength,
-                        downloadedBytes = download.bytesDownloaded,
-                        downloadSpeedMbps = speedMbps
+                val progressDiff = kotlin.math.abs(entity.progress - download.percentDownloaded)
+                val statusChanged = entity.status != status
+                val bytesChanged = entity.downloadedBytes != download.bytesDownloaded
+                if (statusChanged || progressDiff >= 0.5f || bytesChanged || status == "COMPLETED" || status == "FAILED") {
+                    database.iptvDao().insertDownload(
+                        entity.copy(
+                            status = status,
+                            progress = download.percentDownloaded,
+                            size = download.contentLength,
+                            downloadedBytes = download.bytesDownloaded,
+                            downloadSpeedMbps = speedMbps
+                        )
                     )
-                )
+                }
             }
         }
     }
@@ -263,9 +270,11 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
                 }
                 downloadManager.requirements = Requirements(networkRequirement)
 
-                // Schedule periodic background sync if not already scheduled
-                schedulePeriodicSync(settings.syncIntervalHours)
             }
+        }
+        applicationScope.launch {
+            settingsRepository.settingsFlow.map { it.syncIntervalHours }.distinctUntilChanged()
+                .collect { schedulePeriodicSync(it) }
         }
     }
 
@@ -275,14 +284,14 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
             .build()
 
         val syncRequest = androidx.work.PeriodicWorkRequestBuilder<rsv.squitv.worker.SyncWorker>(
-            intervalHours.toLong(), java.util.concurrent.TimeUnit.HOURS
+            intervalHours.coerceAtLeast(1).toLong(), java.util.concurrent.TimeUnit.HOURS
         ).setConstraints(constraints)
             .addTag("periodic_sync")
             .build()
 
         androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "global_periodic_sync",
-            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            androidx.work.ExistingPeriodicWorkPolicy.UPDATE,
             syncRequest
         )
     }

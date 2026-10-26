@@ -19,7 +19,10 @@ class SyncWatchProgressUseCase @Inject constructor(
 ) {
     private var lastFirebaseSyncTime = 0L
     private var lastFirebaseSyncPosition = -1L
+    private var lastLocalSaveTime = 0L
+    private var lastLocalSaveStreamId = -1
     private val MIN_SYNC_INTERVAL_MS = 60_000L // 1 minute threshold
+    private val MIN_LOCAL_SAVE_INTERVAL_MS = 10_000L // 10 seconds threshold for disk IO
 
     /**
      * Updates watch progress.
@@ -29,7 +32,7 @@ class SyncWatchProgressUseCase @Inject constructor(
      * @param position Current playback position in ms.
      * @param duration Total duration in ms.
      * @param seriesId Optional series ID if it's an episode.
-     * @param forceSync If true, bypasses throttling for Firebase sync.
+     * @param forceSync If true, bypasses throttling for Firebase sync and local saves.
      */
     suspend operator fun invoke(
         streamId: Int,
@@ -46,15 +49,23 @@ class SyncWatchProgressUseCase @Inject constructor(
         val isCompleted = WatchProgressUtils.isVideoCompleted(position, duration, isEndedEvent)
         Timber.tag("SquiTV_E2E").i("[SYNC_WATCH_PROGRESS] streamId=$streamId type=$type position=${position}ms duration=${duration}ms isCompleted=$isCompleted isEndedEvent=$isEndedEvent forceSync=$forceSync")
 
-        // Local save or delete if completed
-        try {
-            if (isCompleted) {
-                userRepository.deleteWatchProgress(streamId)
-            } else if (position >= 5000L) {
-                userRepository.saveWatchProgress(streamId, type, position, duration, seriesId, timestamp)
+        // Local save with disk I/O throttling during continuous playback
+        val shouldSaveLocal = forceSync || isCompleted || isEndedEvent ||
+                              streamId != lastLocalSaveStreamId ||
+                              (timestamp - lastLocalSaveTime >= MIN_LOCAL_SAVE_INTERVAL_MS)
+
+        if (shouldSaveLocal) {
+            lastLocalSaveTime = timestamp
+            lastLocalSaveStreamId = streamId
+            try {
+                if (isCompleted) {
+                    userRepository.deleteWatchProgress(streamId)
+                } else if (position >= 5000L) {
+                    userRepository.saveWatchProgress(streamId, type, position, duration, seriesId, timestamp)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to save local watch progress")
             }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to save local watch progress")
         }
 
         // Remote sync with throttling logic (Time threshold OR 5% progress jump)

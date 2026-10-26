@@ -1,262 +1,221 @@
-﻿package rsv.squitv.domain.usecase
+package rsv.squitv.domain.usecase
 
 import android.content.Context
 import androidx.work.*
-import timber.log.Timber
+import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.IOException
+import java.util.UUID
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import retrofit2.HttpException
 import rsv.squitv.core.data.repository.CatalogRepository
 import rsv.squitv.core.data.repository.EpgRepository
 import rsv.squitv.core.domain.interactor.AuthManager
 import rsv.squitv.core.domain.interactor.DnsManager
-import rsv.squitv.core.domain.state.AppSyncProgress
 import rsv.squitv.core.domain.state.AppSyncStatus
-import rsv.squitv.data.repository.SettingsRepository
-import rsv.squitv.data.repository.FirebaseRepository
-import rsv.squitv.core.data.mapper.toIptvItem
 import rsv.squitv.data.model.XtreamCredentials
-import rsv.squitv.domain.model.ContentType
+import rsv.squitv.data.repository.SettingsRepository
 import rsv.squitv.domain.model.SessionStatus
 import rsv.squitv.worker.SyncWorker
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.first
-import javax.inject.Inject
-import dagger.hilt.android.qualifiers.ApplicationContext
-import java.util.UUID
+import timber.log.Timber
 
+/** One coordinator for UI, DNS changes and WorkManager. Downloads precede Room publication. */
+@Singleton
 class SyncDataUseCase @Inject constructor(
     private val catalogRepository: CatalogRepository,
     private val epgRepository: EpgRepository,
     private val dnsManager: DnsManager,
     private val authManager: AuthManager,
     private val settingsRepository: SettingsRepository,
-    private val firebaseRepository: FirebaseRepository,
     @ApplicationContext private val context: Context
 ) {
-    // Internal Result that matches AppSyncProgress fields plus orchestrator specific info
     data class SyncResult(
         val accountStatus: AppSyncStatus = AppSyncStatus.Pending,
-        val liveStatus: AppSyncStatus = AppSyncStatus.Pending,
-        val vodStatus: AppSyncStatus = AppSyncStatus.Pending,
-        val seriesStatus: AppSyncStatus = AppSyncStatus.Pending,
+        val liveStatus: AppSyncStatus = AppSyncStatus.Skipped,
+        val vodStatus: AppSyncStatus = AppSyncStatus.Skipped,
+        val seriesStatus: AppSyncStatus = AppSyncStatus.Skipped,
+        val epgStatus: AppSyncStatus = AppSyncStatus.Skipped,
         val isContentReady: Boolean = false,
         val sessionStatus: SessionStatus = SessionStatus.UNKNOWN,
         val isComplete: Boolean = false,
         val error: String? = null,
-        val workId: UUID? = null
+        val retryable: Boolean = false,
+        val isCancelled: Boolean = false,
+        val operationId: String = UUID.randomUUID().toString()
     )
 
-    fun startBackgroundSync(
-        force: Boolean = false,
-        syncLive: Boolean = true,
-        syncVod: Boolean = true,
-        syncSeries: Boolean = true
-    ): UUID {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
+    private val mutex = Mutex()
+    private val _progress = MutableStateFlow<SyncResult?>(null)
+    val progress: StateFlow<SyncResult?> = _progress.asStateFlow()
+    private val _catalogRevision = MutableStateFlow(0L)
+    val catalogRevision: StateFlow<Long> = _catalogRevision.asStateFlow()
 
-        val workRequest = OneTimeWorkRequestBuilder<SyncWorker>()
-            .setConstraints(constraints)
-            .setInputData(workDataOf(
-                "force" to force,
-                "syncLive" to syncLive,
-                "syncVod" to syncVod,
-                "syncSeries" to syncSeries
-            ))
-            .addTag("sync_work")
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            "sync_data_work",
-            ExistingWorkPolicy.REPLACE,
-            workRequest
-        )
-        return workRequest.id
+    fun startBackgroundSync(force: Boolean = false, syncLive: Boolean = true,
+        syncVod: Boolean = true, syncSeries: Boolean = true): UUID {
+        val request = OneTimeWorkRequestBuilder<SyncWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setInputData(workDataOf("force" to force, "syncLive" to syncLive,
+                "syncVod" to syncVod, "syncSeries" to syncSeries))
+            .addTag("sync_work").build()
+        WorkManager.getInstance(context).enqueueUniqueWork("sync_data_work", ExistingWorkPolicy.KEEP, request)
+        return request.id
     }
 
-    suspend operator fun invoke(
-        force: Boolean = false,
-        syncLive: Boolean = true,
-        syncVod: Boolean = true,
-        syncSeries: Boolean = true,
-        fastLogin: Boolean = false
-    ): Flow<SyncResult> = flow {
-        val settings = settingsRepository.settingsFlow.first()
-        val creds = settings.credentials ?: return@flow
-        
-        Timber.d("SyncUseCase: STARTING (force=$force)")
-        var currentResult = SyncResult(accountStatus = AppSyncStatus.Fetching)
-        emit(currentResult)
-
-        try {
-            dnsManager.updateBaseUrl(creds.baseUrl)
+    suspend operator fun invoke(force: Boolean = false, syncLive: Boolean = true,
+        syncVod: Boolean = true, syncSeries: Boolean = true,
+        @Suppress("UNUSED_PARAMETER") fastLogin: Boolean = false): Flow<SyncResult> = flow {
+        mutex.withLock {
             try {
-                Timber.d("SyncUseCase: Authenticating...")
-                val loginResponse = authManager.login(creds)
-                loginResponse.userInfo?.let { info ->
-                    settingsRepository.updateAccountCache(info)
-                    
-                    // Check for expiration
-                    val expDate = info.expDate?.toLongOrNull() ?: 0L
-                    val now = System.currentTimeMillis() / 1000
-                    if (expDate in 1..now) {
-                        currentResult = currentResult.copy(
-                            accountStatus = AppSyncStatus.Success, 
-                            sessionStatus = SessionStatus.EXPIRED
-                        )
-                    } else {
-                        currentResult = currentResult.copy(
-                            accountStatus = AppSyncStatus.Success, 
-                            sessionStatus = SessionStatus.VALID
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                Timber.w(e, "SyncUseCase: IPTV Login failed, checking local data for offline mode")
-                val stats = catalogRepository.getStats()
-                val hasData = stats.first > 0 || stats.second > 0 || stats.third > 0
-                if (hasData) {
-                    currentResult = currentResult.copy(
-                        accountStatus = AppSyncStatus.OfflineMode, 
-                        sessionStatus = SessionStatus.OFFLINE
-                    )
-                } else {
-                    currentResult = currentResult.copy(
-                        sessionStatus = SessionStatus.INVALID
-                    )
-                    throw e // No local data and no network = fail
-                }
+                runSync(force, syncLive, syncVod, syncSeries)
+                    .onEach { _progress.value = it }.collect { emit(it) }
+            } catch (cancelled: CancellationException) {
+                _progress.value = _progress.value?.copy(isComplete = true, isCancelled = true)
+                throw cancelled
             }
-            
-            // Re-check content readiness after login attempt/cache check
-            val stats = catalogRepository.getStats()
-            currentResult = currentResult.copy(isContentReady = stats.first > 0 || stats.second > 0 || stats.third > 0)
-            Timber.d("SyncUseCase: Pre-sync check - isContentReady=${currentResult.isContentReady} (stats=$stats)")
-            emit(currentResult)
-            
-            if (fastLogin) {
-                Timber.i("SyncUseCase: FastLogin mode. Emitting readiness.")
-                emit(currentResult) 
-                performFullSyncInternal(creds, force, syncLive, syncVod, syncSeries, settings).collect { 
-                    emit(it)
-                }
-            } else {
-                performFullSyncInternal(creds, force, syncLive, syncVod, syncSeries, settings).collect { 
-                    emit(it)
-                }
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "SyncUseCase: Failure")
-            emit(currentResult.copy(error = e.message, isComplete = true))
         }
     }
 
-    private suspend fun performFullSyncInternal(
-        creds: XtreamCredentials,
-        force: Boolean,
-        syncLive: Boolean,
-        syncVod: Boolean,
-        syncSeries: Boolean,
-        settings: SettingsRepository.AppSettings
-    ): Flow<SyncResult> = flow {
-        val now = System.currentTimeMillis()
-        val intervalMillis = settings.syncIntervalHours * 3600 * 1000L
-        
-        val shouldSyncLive = force || (syncLive && (now - settings.lastSyncLive > intervalMillis))
-        val shouldSyncVod = force || (syncVod && (now - settings.lastSyncVod > intervalMillis))
-        val shouldSyncSeries = force || (syncSeries && (now - settings.lastSyncSeries > intervalMillis))
+    /** Reset shares the publication lock, so an old download cannot repopulate the database. */
+    suspend fun clearCatalogData() = mutex.withLock {
+        settingsRepository.clearSyncTimestamps()
+        catalogRepository.clearCatalogData()
+        _catalogRevision.value += 1
+    }
 
-        var currentResult = SyncResult(
-            accountStatus = AppSyncStatus.Success, // Preserve success status
-            liveStatus = if (shouldSyncLive) AppSyncStatus.Pending else AppSyncStatus.Success,
-            vodStatus = if (shouldSyncVod) AppSyncStatus.Pending else AppSyncStatus.Success,
-            seriesStatus = if (shouldSyncSeries) AppSyncStatus.Pending else AppSyncStatus.Success,
-            isContentReady = true, // We already checked this in the caller or login
-            sessionStatus = SessionStatus.VALID // Assume valid as we reached this point
-        )
+    private suspend fun ensureAccountCurrent(credentials: XtreamCredentials) {
+        currentCoroutineContext().ensureActive()
+        if (settingsRepository.settingsFlow.first().credentials != credentials) {
+            throw CancellationException("A conta foi alterada durante a sincronização")
+        }
+    }
 
-        if (!shouldSyncLive && !shouldSyncVod && !shouldSyncSeries && !force) {
-            Timber.i("SyncUseCase: Local data is already fresh. Skipping download.")
-            // Mark the entire sync process as successful for the session
-            settingsRepository.updateLastSyncTimestamp(System.currentTimeMillis())
-            emit(currentResult.copy(isComplete = true))
+    private fun runSync(force: Boolean, syncLive: Boolean, syncVod: Boolean, syncSeries: Boolean): Flow<SyncResult> = flow {
+        var result = SyncResult(accountStatus = AppSyncStatus.Fetching)
+        emit(result)
+        val settings = settingsRepository.settingsFlow.first()
+        val credentials = settings.credentials
+        if (credentials == null) {
+            emit(result.copy(accountStatus = AppSyncStatus.Error("Entre na sua conta para sincronizar"),
+                sessionStatus = SessionStatus.INVALID, error = "Nenhuma conta configurada", isComplete = true))
             return@flow
         }
-
-        // 1. SYNC IPTV (Local Database ONLY)
-        if (shouldSyncLive) {
-            try {
-                currentResult = currentResult.copy(liveStatus = AppSyncStatus.Syncing)
-                emit(currentResult)
-                catalogRepository.getLiveCategories(creds, forceRefresh = true)
-                val streams = catalogRepository.getLiveStreams(creds, forceRefresh = true)
-                settingsRepository.updateSyncState("live", true)
-                currentResult = currentResult.copy(liveStatus = AppSyncStatus.Done(streams.size))
-                emit(currentResult)
-            } catch (e: Exception) {
-                currentResult = currentResult.copy(liveStatus = AppSyncStatus.Error(e.message ?: ""))
-                emit(currentResult)
-            }
+        val stats = catalogRepository.getStats()
+        result = result.copy(isContentReady = stats.first + stats.second + stats.third > 0)
+        dnsManager.updateBaseUrl(credentials.baseUrl)
+        val login = try {
+            authManager.login(credentials)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            val retryable = isRetryable(failure)
+            authManager.setSessionStatus(if (retryable) SessionStatus.OFFLINE else SessionStatus.INVALID)
+            emit(result.copy(accountStatus = if (retryable) AppSyncStatus.OfflineMode else AppSyncStatus.Error("Falha na autenticação"),
+                sessionStatus = if (retryable) SessionStatus.OFFLINE else SessionStatus.INVALID,
+                error = if (retryable) "Sem conexão com o servidor. O catálogo anterior foi preservado." else "Não foi possível autenticar a conta",
+                retryable = retryable, isComplete = true))
+            return@flow
         }
-
-        if (shouldSyncVod) {
-            try {
-                currentResult = currentResult.copy(vodStatus = AppSyncStatus.Syncing)
-                emit(currentResult)
-                catalogRepository.getVodCategories(creds, forceRefresh = true)
-                val streams = catalogRepository.getVodStreams(creds, forceRefresh = true)
-                settingsRepository.updateSyncState("vod", true)
-                currentResult = currentResult.copy(vodStatus = AppSyncStatus.Done(streams.size))
-                emit(currentResult)
-            } catch (e: Exception) {
-                currentResult = currentResult.copy(vodStatus = AppSyncStatus.Error(e.message ?: ""))
-                emit(currentResult)
-            }
+        ensureAccountCurrent(credentials)
+        val info = login.userInfo
+        val session = when {
+            info?.auth != 1 -> SessionStatus.INVALID
+            info.status.equals("Expired", true) || (info.expDate?.toLongOrNull() ?: 0L) in 1..(System.currentTimeMillis() / 1000) -> SessionStatus.EXPIRED
+            info.status.equals("Banned", true) || info.status.equals("Disabled", true) -> SessionStatus.INVALID
+            else -> SessionStatus.VALID
         }
-
-        if (shouldSyncSeries) {
-            try {
-                currentResult = currentResult.copy(seriesStatus = AppSyncStatus.Syncing)
-                emit(currentResult)
-                catalogRepository.getSeriesCategories(creds, forceRefresh = true)
-                val series = catalogRepository.getSeries(creds, forceRefresh = true)
-                settingsRepository.updateSyncState("series", true)
-                currentResult = currentResult.copy(seriesStatus = AppSyncStatus.Done(series.size))
-                emit(currentResult)
-            } catch (e: Exception) {
-                currentResult = currentResult.copy(seriesStatus = AppSyncStatus.Error(e.message ?: ""))
-                emit(currentResult)
-            }
+        authManager.setSessionStatus(session)
+        if (session != SessionStatus.VALID) {
+            val message = if (session == SessionStatus.EXPIRED) "Sua conta expirou" else "O servidor recusou a autenticação"
+            emit(result.copy(accountStatus = AppSyncStatus.Error(message), sessionStatus = session,
+                error = message, isComplete = true))
+            return@flow
         }
-
-        if (shouldSyncLive) {
-            try { epgRepository.syncFullEpg(creds) } catch (_: Exception) {}
-        }
-
-        // 2. PERSIST SUCCESS TIMESTAMP BEFORE EMITTING COMPLETION IF NO ERRORS
-        val hasCategoryError = currentResult.liveStatus is AppSyncStatus.Error || 
-                               currentResult.vodStatus is AppSyncStatus.Error || 
-                               currentResult.seriesStatus is AppSyncStatus.Error
-
-        val errorSummary = if (hasCategoryError) {
-            val errors = listOfNotNull(
-                (currentResult.liveStatus as? AppSyncStatus.Error)?.message?.let { "Ao vivo: $it" },
-                (currentResult.vodStatus as? AppSyncStatus.Error)?.message?.let { "Filmes: $it" },
-                (currentResult.seriesStatus as? AppSyncStatus.Error)?.message?.let { "Séries: $it" }
-            )
-            errors.joinToString("; ")
-        } else null
-
-        if (currentResult.sessionStatus == SessionStatus.VALID && !hasCategoryError) {
-            settingsRepository.updateLastSyncTimestamp(System.currentTimeMillis())
-        }
-
-        // 3. EMIT COMPLETE FOR UI (The catalog is now local)
-        val finalResult = currentResult.copy(
-            isComplete = true,
-            error = errorSummary
+        settingsRepository.updateAccountCache(requireNotNull(info))
+        result = result.copy(accountStatus = AppSyncStatus.Success, sessionStatus = session)
+        val interval = settings.syncIntervalHours.coerceAtLeast(1) * 3_600_000L
+        val now = System.currentTimeMillis()
+        fun due(enabled: Boolean, last: Long) = enabled && (force || settings.lastSyncTimestamp == 0L || now - last >= interval)
+        val live = due(syncLive, settings.lastSyncLive)
+        val vod = due(syncVod, settings.lastSyncVod)
+        val series = due(syncSeries, settings.lastSyncSeries)
+        val epg = due(syncLive, settings.lastSyncEpg)
+        result = result.copy(
+            liveStatus = if (live) AppSyncStatus.Pending else AppSyncStatus.Skipped,
+            vodStatus = if (vod) AppSyncStatus.Pending else AppSyncStatus.Skipped,
+            seriesStatus = if (series) AppSyncStatus.Pending else AppSyncStatus.Skipped,
+            epgStatus = if (epg) AppSyncStatus.Pending else AppSyncStatus.Skipped
         )
-        emit(finalResult)
+        emit(result)
+        fun withStatus(type: String, status: AppSyncStatus): SyncResult = when (type) {
+            "LIVE" -> result.copy(liveStatus = status)
+            "VOD" -> result.copy(vodStatus = status)
+            else -> result.copy(seriesStatus = status)
+        }
+        for ((type, enabled) in listOf("LIVE" to live, "VOD" to vod, "SERIES" to series)) {
+            if (!enabled) continue
+            result = withStatus(type, AppSyncStatus.Syncing)
+            emit(result)
+            val status = try {
+                val count = catalogRepository.syncCatalogType(credentials, type) { ensureAccountCurrent(credentials) }
+                _catalogRevision.value += 1
+                ensureAccountCurrent(credentials)
+                settingsRepository.updateSyncState(type, true)
+                AppSyncStatus.Done(count)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Timber.w(failure, "Catalog sync failed for %s", type)
+                result = result.copy(retryable = result.retryable || isRetryable(failure))
+                AppSyncStatus.Error("Não foi possível concluir esta etapa")
+            }
+            result = withStatus(type, status)
+            emit(result)
+        }
+        if (epg && result.liveStatus !is AppSyncStatus.Error) {
+            result = result.copy(epgStatus = AppSyncStatus.Syncing)
+            emit(result)
+            val status = try {
+                val count = epgRepository.syncFullEpg(credentials) { ensureAccountCurrent(credentials) }
+                ensureAccountCurrent(credentials)
+                settingsRepository.updateSyncState("epg", true)
+                AppSyncStatus.Done(count)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Timber.w(failure, "EPG sync failed")
+                result = result.copy(retryable = result.retryable || isRetryable(failure))
+                AppSyncStatus.Error("Não foi possível atualizar o guia de programação")
+            }
+            result = result.copy(epgStatus = status)
+            emit(result)
+        } else if (epg) {
+            result = result.copy(epgStatus = AppSyncStatus.Skipped)
+        }
+        ensureAccountCurrent(credentials)
+        val errors = listOf("TV ao vivo" to result.liveStatus, "Filmes" to result.vodStatus,
+            "Séries" to result.seriesStatus, "EPG" to result.epgStatus)
+            .mapNotNull { (name, status) -> (status as? AppSyncStatus.Error)?.let { "$name: ${it.message}" } }
+        val currentStats = catalogRepository.getStats()
+        if (errors.isEmpty()) settingsRepository.updateLastSyncTimestamp(System.currentTimeMillis())
+        emit(result.copy(isComplete = true, error = errors.takeIf { it.isNotEmpty() }?.joinToString("\n"),
+            isContentReady = currentStats.first + currentStats.second + currentStats.third > 0))
+    }.catch { failure ->
+        // Account switches can cancel this run even while the collecting job is still active.
+        if (failure is CancellationException) throw failure
+        Timber.e(failure, "Sync failed")
+        val previous = _progress.value ?: SyncResult()
+        emit(previous.copy(isComplete = true, error = "Não foi possível concluir a sincronização",
+            retryable = isRetryable(failure)))
+    }
+
+    companion object {
+        fun isRetryable(failure: Throwable): Boolean = failure is IOException ||
+            (failure is HttpException && (failure.code() == 429 || failure.code() >= 500))
     }
 }

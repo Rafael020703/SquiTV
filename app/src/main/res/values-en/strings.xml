@@ -223,6 +223,12 @@
     <string name="auto_play_desc">Starts the next episode automatically.</string>
     <string name="background_playback_label">Background Playback</string>
     <string name="background_playback_desc">Allows audio playback to continue when minimizing the app.</string>
+    <string name="background_and_pip_label">Background &amp; PiP</string>
+    <string name="background_audio_label">Background audio</string>
+    <string name="background_audio_desc">Continues playing audio when minimizing the app.</string>
+    <string name="pip_auto_minimize_label">Floating window when minimizing</string>
+    <string name="pip_auto_minimize_desc">Continues playing video in a floating window on supported devices.</string>
+    <string name="pip_unsupported_dialog_msg">Floating window (PiP) is not available on this device.</string>
     <string name="reconnecting_stream">Reconnecting stream&#8230;</string>
     <string name="use_external_player_label">External Player</string>
     <string name="use_external_player_desc">Open streams in VLC or MX Player.</string>
@@ -469,4 +475,16 @@
     <string name="server_offline_error">IPTV server is offline. Using local data.</string>
     <string name="stream_playback_error">Could not play this content. The server may be unavailable.</string>
     <string name="nav_customization_label">Customize Navigation/Tabs</string>
+    <string name="pip_label">Floating window (PiP)</string>
+    <string name="pip_auto_label">Open window when minimizing</string>
+    <string name="pip_auto_desc">Continue video in a floating window when leaving the app. Background audio has a separate setting.</string>
+    <string name="pip_unavailable">Unable to open the floating window. Check the PiP permission in Android settings.</string>
+    <string name="pip_unsupported">Floating video playback is unavailable on this device. Use Background Playback to keep listening when minimizing.</string>
+    <string name="catalog_sync_title">Catalog synchronization</string>
+    <string name="sync_epg">Program guide</string>
+    <string name="sync_skipped">Not run or already up to date</string>
+    <string name="sync_cancelled">Synchronization interrupted</string>
+    <string name="sync_partial_failure">Some synchronization steps did not complete.</string>
+    <string name="catalog_sync_success">Catalog synchronized successfully.</string>
+    <string name="close">Close</string>
 </resources>

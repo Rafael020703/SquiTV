@@ -29,8 +29,13 @@ import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import rsv.squitv.appfunctions.AppFunctionActionBus
 import rsv.squitv.core.domain.interactor.PlaybackManager
 import rsv.squitv.data.repository.SettingsRepository
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import rsv.squitv.util.isMediaPipAllowed
+import rsv.squitv.util.supportsMediaPip
 import rsv.squitv.core.navigation.AppController
 import rsv.squitv.core.navigation.MainNavigation
 import rsv.squitv.core.navigation.Route
@@ -46,7 +51,14 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
     private var canEnterPip = false
-    private var isPipActive = false
+    var isPipActive by mutableStateOf(false)
+        private set
+    private var backgroundPlaybackEnabled = false
+    private var pipAutoEnterEnabled = true
+    private var settingsLoaded = false
+    private var isStopped = false
+    private var resumeOnForeground = false
+    private var pipExitJob: Job? = null
 
     @Inject
     lateinit var appFunctionActionBus: AppFunctionActionBus
@@ -77,12 +89,17 @@ class MainActivity : AppCompatActivity() {
 
 
     fun setCanEnterPip(value: Boolean) {
-        canEnterPip = value
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        canEnterPip = value && supportsMediaPip()
+        updatePipParams()
+    }
+
+    private fun updatePipParams() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && supportsMediaPip()) {
             try {
                 val params = PictureInPictureParams.Builder()
                     .setAspectRatio(Rational(16, 9))
-                    .setAutoEnterEnabled(value)
+                    .setAutoEnterEnabled(settingsLoaded && canEnterPip && pipAutoEnterEnabled &&
+                        playbackManager.player?.playWhenReady == true && isMediaPipAllowed())
                     .build()
                 setPictureInPictureParams(params)
             } catch (e: Exception) {
@@ -91,10 +108,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    fun enterMediaPip(): Boolean {
+        if (!canEnterPip || !isMediaPipAllowed() || isFinishing) return false
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                enterPictureInPictureMode(PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9)).build())
+            } else false
+        } catch (failure: RuntimeException) {
+            Log.w("PIP_DEBUG", "PiP unavailable", failure)
+            false
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        lifecycleScope.launch {
+            settingsRepository.settingsFlow.collect { settings ->
+                backgroundPlaybackEnabled = settings.backgroundPlaybackEnabled
+                pipAutoEnterEnabled = settings.pipAutoEnterEnabled
+                settingsLoaded = true
+                updatePipParams()
+                if (isStopped) pauseIfNeeded()
+            }
+        }
         
         requestNotificationPermission()
         handleIntent(intent)
@@ -159,10 +198,17 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        isStopped = false
+        pipExitJob?.cancel()
     }
 
     override fun onResume() {
         super.onResume()
+        updatePipParams()
+        if (resumeOnForeground) {
+            resumeOnForeground = false
+            playbackManager.play()
+        }
     }
 
     override fun onPause() {
@@ -171,12 +217,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
-        val inPip = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) isInPictureInPictureMode else false
-        val isBgEnabled = runCatching {
-            runBlocking { settingsRepository.settingsFlow.first().backgroundPlaybackEnabled }
-        }.getOrDefault(false)
+        isStopped = true
+        pauseIfNeeded()
+    }
 
-        if (!inPip && !isPipActive && !isBgEnabled) {
+    private fun pauseIfNeeded() {
+        if (settingsLoaded && !isPipActive && !isChangingConfigurations && !backgroundPlaybackEnabled) {
+            resumeOnForeground = resumeOnForeground || playbackManager.player?.playWhenReady == true
             playbackManager.pause()
         }
     }
@@ -231,12 +278,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (canEnterPip && (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)) {
-            val params = PictureInPictureParams.Builder()
-                .setAspectRatio(Rational(16, 9))
-                // Support seamless transition
-                .build()
-            enterPictureInPictureMode(params)
+        if (settingsLoaded && pipAutoEnterEnabled && playbackManager.player?.playWhenReady == true &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            enterMediaPip()
         }
     }
 
@@ -247,9 +291,17 @@ class MainActivity : AppCompatActivity() {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isPipActive = isInPictureInPictureMode
         if (isInPictureInPictureMode) {
-            // Hide UI elements if needed, though most is handled by Compose
+            pipExitJob?.cancel()
         } else {
-            // Restore UI if needed
+            // Expansion resumes the activity. Closing the system window leaves it stopped.
+            pipExitJob = lifecycleScope.launch {
+                delay(250)
+                if (!isPipActive && !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && !isChangingConfigurations) {
+                    resumeOnForeground = false
+                    playbackManager.stopAndDisconnect()
+                    finish()
+                }
+            }
         }
     }
 }

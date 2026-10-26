@@ -106,6 +106,8 @@ class SettingsRepository @Inject constructor(
         val ACTIVE_PROFILE_ID = stringPreferencesKey("active_profile_id")
         val DETAILED_NOTIFICATIONS = booleanPreferencesKey("detailed_notifications")
         val BACKGROUND_PLAYBACK_ENABLED = booleanPreferencesKey("background_playback_enabled")
+        val PIP_AUTO_ENTER_ENABLED = booleanPreferencesKey("pip_auto_enter_enabled")
+        val LAST_SYNC_EPG = longPreferencesKey("last_sync_epg")
         
         val LAST_LIVE_CATEGORY = stringPreferencesKey("last_live_category")
         val LAST_LIVE_CHANNEL_ID = stringPreferencesKey("last_live_channel_id")
@@ -166,6 +168,8 @@ class SettingsRepository @Inject constructor(
         val activeProfileId: String = "default",
         val detailedNotifications: Boolean = true,
         val backgroundPlaybackEnabled: Boolean = false,
+        val pipAutoEnterEnabled: Boolean = true,
+        val lastSyncEpg: Long = 0L,
         val lastLiveCategory: String? = null,
         val lastLiveChannelId: String? = null,
         val lastLiveChannelName: String? = null,
@@ -325,6 +329,8 @@ class SettingsRepository @Inject constructor(
             activeProfileId = profileId,
             detailedNotifications = detailedNotifs,
             backgroundPlaybackEnabled = bgPlaybackEnabled,
+            pipAutoEnterEnabled = preferences[PreferencesKeys.PIP_AUTO_ENTER_ENABLED] ?: true,
+            lastSyncEpg = preferences[PreferencesKeys.LAST_SYNC_EPG] ?: 0L,
             lastLiveCategory = lastLive,
             lastLiveChannelId = lastLiveChannelId,
             lastLiveChannelName = lastLiveChannelName,
@@ -475,6 +481,7 @@ class SettingsRepository @Inject constructor(
         context.dataStore.edit { preferences ->
             val now = System.currentTimeMillis()
             when(type.lowercase()) {
+                "epg" -> if (loaded) preferences[PreferencesKeys.LAST_SYNC_EPG] = now
                 "live" -> {
                     preferences[PreferencesKeys.IS_LIVE_LOADED] = loaded
                     if (loaded) preferences[PreferencesKeys.LAST_SYNC_LIVE] = now
@@ -538,6 +545,7 @@ class SettingsRepository @Inject constructor(
 
     suspend fun clearSyncTimestamps() {
         context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LAST_SYNC_EPG] = 0L
             preferences[PreferencesKeys.LAST_SYNC_TIMESTAMP] = 0L
             preferences[PreferencesKeys.LAST_SYNC_LIVE] = 0L
             preferences[PreferencesKeys.LAST_SYNC_VOD] = 0L
@@ -654,6 +662,10 @@ class SettingsRepository @Inject constructor(
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.BACKGROUND_PLAYBACK_ENABLED] = enabled
         }
+    }
+
+    suspend fun updatePipAutoEnterEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.PIP_AUTO_ENTER_ENABLED] = enabled }
     }
 
     suspend fun updateLastCategory(type: String, categoryId: String) {

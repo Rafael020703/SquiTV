@@ -1,6 +1,7 @@
 ﻿package rsv.squitv.core.domain.state
 
 sealed class AppSyncStatus {
+    data object Skipped : AppSyncStatus()
     data object Pending : AppSyncStatus()
     data object Fetching : AppSyncStatus()
     data object Syncing : AppSyncStatus()
@@ -15,6 +16,10 @@ data class AppSyncProgress(
     val liveStatus: AppSyncStatus = AppSyncStatus.Pending,
     val vodStatus: AppSyncStatus = AppSyncStatus.Pending,
     val seriesStatus: AppSyncStatus = AppSyncStatus.Pending,
+    val epgStatus: AppSyncStatus = AppSyncStatus.Skipped,
+    val operationId: String? = null,
+    val isRunning: Boolean = false,
+    val isCancelled: Boolean = false,
     val isComplete: Boolean = false,
     val error: String? = null
 )

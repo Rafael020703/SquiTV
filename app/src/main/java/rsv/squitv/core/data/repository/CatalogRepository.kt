@@ -36,7 +36,7 @@ class CatalogRepository @Inject constructor(
         }
         val remote = xtreamService.getLiveCategories(credentials.username, credentials.password)
         val entities = remote.map { IptvCategoryEntity(it.categoryId ?: "", it.categoryName ?: "", "LIVE") }
-        iptvDao.insertCategories(entities)
+        iptvDao.upsertCategories(entities)
         return entities
     }
 
@@ -72,7 +72,7 @@ class CatalogRepository @Inject constructor(
                     added = it.added
                 )
             }
-            entities.chunked(1000).forEach { batch -> iptvDao.insertStreamsBatch(batch) }
+            entities.chunked(500).forEach { batch -> iptvDao.upsertStreams(batch) }
         }
         return remote
     }
@@ -84,7 +84,7 @@ class CatalogRepository @Inject constructor(
         }
         val remote = xtreamService.getVodCategories(credentials.username, credentials.password)
         val entities = remote.map { IptvCategoryEntity(it.categoryId ?: "", it.categoryName ?: "", "VOD") }
-        iptvDao.insertCategories(entities)
+        iptvDao.upsertCategories(entities)
         return entities
     }
 
@@ -123,7 +123,7 @@ class CatalogRepository @Inject constructor(
                     added = it.added
                 )
             }
-            entities.chunked(1000).forEach { batch -> iptvDao.insertStreamsBatch(batch) }
+            entities.chunked(500).forEach { batch -> iptvDao.upsertStreams(batch) }
         }
         return remote
     }
@@ -135,7 +135,7 @@ class CatalogRepository @Inject constructor(
         }
         val remote = xtreamService.getSeriesCategories(credentials.username, credentials.password)
         val entities = remote.map { IptvCategoryEntity(it.categoryId ?: "", it.categoryName ?: "", "SERIES") }
-        iptvDao.insertCategories(entities)
+        iptvDao.upsertCategories(entities)
         return entities
     }
 
@@ -179,6 +179,52 @@ class CatalogRepository @Inject constructor(
             }
         }
         return remote
+    }
+
+    /** Refresh already loaded UI lists without triggering another download for an empty type. */
+    suspend fun getCachedLiveStreams(): List<XtreamStream> = iptvDao.getStreamsByType("LIVE").map {
+        XtreamStream(streamId = it.id, name = it.name, categoryId = it.categoryId,
+            streamIcon = it.logo, streamType = it.streamType, epgChannelId = it.url, added = it.added)
+    }
+
+    /** Both requests must succeed before any part of this type becomes visible in Room. */
+    suspend fun syncCatalogType(
+        credentials: XtreamCredentials,
+        type: String,
+        beforePublish: suspend () -> Unit = {}
+    ): Int {
+        val (remoteCategories, streams) = when (type) {
+            "LIVE" -> xtreamService.getLiveCategories(credentials.username, credentials.password) to
+                xtreamService.getLiveStreams(credentials.username, credentials.password).map {
+                    IptvStreamEntity(it.streamId ?: 0, it.name.orEmpty(), it.categoryId.orEmpty(), type,
+                        it.epgChannelId, it.streamIcon, added = it.added)
+                }
+            "VOD" -> xtreamService.getVodCategories(credentials.username, credentials.password) to
+                xtreamService.getVodStreams(credentials.username, credentials.password).map {
+                    IptvStreamEntity(it.streamId ?: 0, it.name.orEmpty(), it.categoryId.orEmpty(), type,
+                        null, it.streamIcon, containerExtension = it.container_extension,
+                        rating = it.rating, added = it.added)
+                }
+            "SERIES" -> xtreamService.getSeriesCategories(credentials.username, credentials.password) to
+                xtreamService.getSeries(credentials.username, credentials.password).map {
+                    IptvStreamEntity(it.seriesId ?: 0, it.name.orEmpty(), it.categoryId.orEmpty(), type,
+                        null, it.cover, rating = it.rating, added = it.lastModified,
+                        releaseDate = it.releaseDate, genre = it.genre)
+                }
+            else -> error("Unsupported catalog type: $type")
+        }
+        val categories = remoteCategories.map {
+            IptvCategoryEntity(it.categoryId.orEmpty(), it.categoryName.orEmpty(), type)
+        }
+        // Typed Retrofit responses distinguish an authenticated empty list from malformed JSON.
+        // Never silently drop invalid records and then use the partial list to delete local data.
+        require(categories.all { it.id.isNotBlank() && it.name.isNotBlank() }) { "Categorias inválidas na resposta do servidor" }
+        require(streams.all { it.id > 0 && it.name.isNotBlank() }) { "Itens inválidos na resposta do servidor" }
+        require(categories.map { it.id }.distinct().size == categories.size) { "Categorias duplicadas na resposta do servidor" }
+        require(streams.map { it.id }.distinct().size == streams.size) { "Itens duplicados na resposta do servidor" }
+        beforePublish()
+        iptvDao.publishCatalogSnapshot(type, categories, streams)
+        return streams.size
     }
 
     suspend fun clearCatalogData() = withContext(Dispatchers.IO) {
@@ -354,22 +400,28 @@ class CatalogRepository @Inject constructor(
     }
 
     suspend fun getRecentMovies(limit: Int = 100, currentTimeMillis: Long = System.currentTimeMillis()): List<IptvItem> {
-        val streams = iptvDao.getStreamsByType("VOD")
+        val candidates = iptvDao.getRecentStreamsCandidatesByType("VOD", (limit * 5).coerceAtLeast(300))
+        val streams = if (candidates.isNotEmpty()) candidates else iptvDao.getStreamsByType("VOD")
         return sortAndFilterRecentStreams(streams, limit, currentTimeMillis)
     }
 
     suspend fun getRecentSeries(limit: Int = 100, currentTimeMillis: Long = System.currentTimeMillis()): List<IptvItem> {
-        val streams = iptvDao.getStreamsByType("SERIES")
+        val candidates = iptvDao.getRecentStreamsCandidatesByType("SERIES", (limit * 5).coerceAtLeast(300))
+        val streams = if (candidates.isNotEmpty()) candidates else iptvDao.getStreamsByType("SERIES")
         return sortAndFilterRecentStreams(streams, limit, currentTimeMillis)
     }
 
     suspend fun getRecentLiveStreams(limit: Int = 100, currentTimeMillis: Long = System.currentTimeMillis()): List<IptvItem> {
-        val streams = iptvDao.getStreamsByType("LIVE")
+        val candidates = iptvDao.getRecentStreamsCandidatesByType("LIVE", (limit * 5).coerceAtLeast(300))
+        val streams = if (candidates.isNotEmpty()) candidates else iptvDao.getStreamsByType("LIVE")
         return sortAndFilterRecentStreams(streams, limit, currentTimeMillis)
     }
 
-    suspend fun getRecentStreams(limit: Int = 20, currentTimeMillis: Long = System.currentTimeMillis()): List<IptvItem> =
-        sortAndFilterRecentStreams(iptvDao.getStreamsByType("VOD") + iptvDao.getStreamsByType("SERIES") + iptvDao.getStreamsByType("LIVE"), limit, currentTimeMillis)
+    suspend fun getRecentStreams(limit: Int = 20, currentTimeMillis: Long = System.currentTimeMillis()): List<IptvItem> {
+        val candidates = iptvDao.getRecentStreamsCandidates((limit * 5).coerceAtLeast(300))
+        val streams = if (candidates.isNotEmpty()) candidates else (iptvDao.getStreamsByType("VOD") + iptvDao.getStreamsByType("SERIES") + iptvDao.getStreamsByType("LIVE"))
+        return sortAndFilterRecentStreams(streams, limit, currentTimeMillis)
+    }
     suspend fun getTopRatedStreams(minRating: String = "8.0", limit: Int = 20): List<IptvItem> = iptvDao.getTopRatedStreams(minRating, limit).map { it.toIptvItem() }
 
     suspend fun getRandomGenreRow(): Pair<String, List<IptvItem>>? {

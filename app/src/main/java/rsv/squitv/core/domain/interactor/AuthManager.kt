@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -87,6 +88,8 @@ class AuthManager @Inject constructor(
             }
             _sessionStatus.value = status
             status
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             SessionStatus.OFFLINE
         }
@@ -135,6 +138,8 @@ class AuthManager @Inject constructor(
                 Timber.i("Login OK. Status: $status. Conexões: ${response.userInfo?.activeCons}/${response.userInfo?.maxConnections}")
             }
             return response
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _sessionStatus.value = SessionStatus.OFFLINE
             DebugLogger.log(
