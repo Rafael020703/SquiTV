@@ -2,13 +2,13 @@ import java.util.Properties
 import java.io.FileInputStream
 
 plugins {
+    alias(libs.plugins.roomplugin)
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.devtools.ksp)
     alias(libs.plugins.jetbrains.kotlin.plugin.serialization)
     id("kotlin-parcelize")
     alias(libs.plugins.google.dagger.hilt.android)
-    alias(libs.plugins.google.services)
 }
 
 android {
@@ -19,8 +19,8 @@ android {
         applicationId = "rsv.squitv"
         minSdk = 24
         targetSdk = 35
-        versionCode = 18
-        versionName = "1.17"
+        versionCode = 19
+        versionName = "1.18"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -80,6 +80,8 @@ android {
     }
 }
 
+room { schemaDirectory("$projectDir/schemas") }
+
 ksp {
     arg("androidx.appfunctions.compiler.generate_schema", "true")
     arg("androidx.appfunctions.compiler.aggregate_app_functions", "true")
@@ -118,8 +120,6 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.hilt.work)
     ksp(libs.androidx.hilt.compiler)
-    implementation("androidx.credentials:credentials:1.2.0-rc01")
-    implementation("androidx.credentials:credentials-play-services-auth:1.2.0-rc01")
     implementation(libs.androidx.appfunctions.core)
     implementation(libs.androidx.appfunctions.service)
     ksp(libs.androidx.appfunctions.compiler)
@@ -163,9 +163,5 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     "ksp"(libs.androidx.room.compiler)
 
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.firestore)
-    implementation(libs.firebase.auth)
-    implementation(libs.firebase.config)
-    implementation(libs.firebase.messaging)
+
 }

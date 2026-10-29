@@ -1,6 +1,5 @@
-﻿package rsv.squitv.core.domain.interactor
+package rsv.squitv.core.domain.interactor
 
-import rsv.squitv.data.repository.FirebaseRepository
 import rsv.squitv.data.repository.SettingsRepository
 import rsv.squitv.domain.model.UserProfile
 import kotlinx.coroutines.CoroutineScope
@@ -13,74 +12,31 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class ProfileManager @Inject constructor(
-    private val settingsRepository: SettingsRepository,
-    private val firebaseRepository: FirebaseRepository
-) {
+class ProfileManager @Inject constructor(private val settingsRepository: SettingsRepository) {
     private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     private val _profiles = MutableStateFlow<List<UserProfile>>(emptyList())
-    val profiles: StateFlow<List<UserProfile>> = _profiles.asStateFlow()
-
+    val profiles = _profiles.asStateFlow()
     private val _activeProfile = MutableStateFlow<UserProfile?>(null)
-    val activeProfile: StateFlow<UserProfile?> = _activeProfile.asStateFlow()
-
+    val activeProfile = _activeProfile.asStateFlow()
     private val _profileImageUrl = MutableStateFlow<String?>(null)
-    val profileImageUrl: StateFlow<String?> = _profileImageUrl.asStateFlow()
+    val profileImageUrl = _profileImageUrl.asStateFlow()
 
     init {
         managerScope.launch {
-            settingsRepository.settingsFlow.map { it.activeProfileId }.distinctUntilChanged().collect { id ->
-                loadProfiles(id)
-            }
-        }
-        
-        managerScope.launch {
-            firebaseRepository.getProfilePicture().collect { url ->
-                _profileImageUrl.value = url
-            }
+            settingsRepository.settingsFlow.map { Triple(it.profiles, it.activeProfileId, it.profileImageUrl) }
+                .distinctUntilChanged().collect { (profiles, activeId, picture) ->
+                    _profiles.value = profiles
+                    _activeProfile.value = profiles.find { it.id == activeId } ?: profiles.firstOrNull()
+                    _profileImageUrl.value = picture
+                }
         }
     }
 
-    private suspend fun loadProfiles(activeId: String) {
-        val fetched = firebaseRepository.getProfiles()
-        if (fetched.isEmpty()) {
-            val defaultProfile = UserProfile("default", "Usuário 1")
-            firebaseRepository.saveProfile(defaultProfile)
-            _profiles.value = listOf(defaultProfile)
-        } else {
-            _profiles.value = fetched
-        }
-        _activeProfile.value = _profiles.value.find { it.id == activeId } ?: _profiles.value.firstOrNull()
-    }
-
-    fun selectProfile(profile: UserProfile) {
-        managerScope.launch {
-            settingsRepository.updateActiveProfileId(profile.id)
-            _activeProfile.value = profile
-        }
-    }
-
+    fun selectProfile(profile: UserProfile) { managerScope.launch { settingsRepository.updateActiveProfileId(profile.id) } }
     fun addProfile(name: String, iconUrl: String? = null, isChild: Boolean = false) {
-        managerScope.launch {
-            val newProfile = UserProfile(UUID.randomUUID().toString(), name, iconUrl, isChild)
-            firebaseRepository.saveProfile(newProfile)
-            settingsRepository.settingsFlow.first().activeProfileId.let { loadProfiles(it) }
-        }
+        if (name.isBlank()) return
+        managerScope.launch { settingsRepository.saveLocalProfile(UserProfile(UUID.randomUUID().toString(), name.trim(), iconUrl, isChild)) }
     }
-
-    fun deleteProfile(profileId: String) {
-        if (profileId == "default") return
-        managerScope.launch {
-            firebaseRepository.deleteProfile(profileId)
-            settingsRepository.settingsFlow.first().activeProfileId.let { loadProfiles(it) }
-        }
-    }
-
-    fun updateProfilePicture(url: String) {
-        managerScope.launch {
-            firebaseRepository.updateProfilePicture(url)
-            _profileImageUrl.value = url
-        }
-    }
+    fun deleteProfile(profileId: String) { managerScope.launch { settingsRepository.deleteLocalProfile(profileId) } }
+    fun updateProfilePicture(url: String) { managerScope.launch { settingsRepository.updateProfilePicture(url) } }
 }

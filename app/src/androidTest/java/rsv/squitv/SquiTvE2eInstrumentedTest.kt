@@ -1,5 +1,7 @@
 package rsv.squitv
 
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -23,29 +25,55 @@ import rsv.squitv.data.local.AppDatabase
 import rsv.squitv.data.local.entities.EpisodeEntity
 import rsv.squitv.data.local.entities.FavoriteEntity
 import rsv.squitv.data.local.entities.IptvStreamEntity
+import rsv.squitv.data.model.XtreamCredentials
+import rsv.squitv.data.repository.SettingsRepository
 import rsv.squitv.domain.model.ContentType
 import rsv.squitv.domain.model.IptvItem
 import rsv.squitv.domain.usecase.WatchProgressUtils
+import java.io.File
 import timber.log.Timber
 
 @RunWith(AndroidJUnit4::class)
 class SquiTvE2eInstrumentedTest {
 
+    private lateinit var testDir: File
+    private lateinit var testContext: Context
     private lateinit var db: AppDatabase
+    private lateinit var settingsRepository: SettingsRepository
     private lateinit var userRepository: UserRepository
 
     @Before
-    fun createDb() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+    fun createDb() = runBlocking {
+        val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
+        testDir = File(targetContext.cacheDir, "test_ds_${System.currentTimeMillis()}_${(1..1000).random()}")
+        testDir.mkdirs()
+
+        testContext = object : ContextWrapper(targetContext) {
+            override fun getApplicationContext(): Context = this
+            override fun getFilesDir(): File = testDir
+            override fun getCacheDir(): File = testDir
+        }
+
+        db = Room.inMemoryDatabaseBuilder(testContext, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        userRepository = UserRepository(db.iptvDao())
+
+        settingsRepository = SettingsRepository(testContext)
+        userRepository = UserRepository(db.iptvDao(), settingsRepository)
+
+        val dummyCredentials = XtreamCredentials(
+            username = "test_user",
+            password = "test_password",
+            baseUrl = "http://test.server:8080"
+        )
+        settingsRepository.saveCredentials(dummyCredentials)
+        settingsRepository.updateActiveProfileId("default")
     }
 
     @After
     fun closeDb() {
         db.close()
+        testDir.deleteRecursively()
     }
 
     private fun isFavoriteInList(
@@ -64,7 +92,7 @@ class SquiTvE2eInstrumentedTest {
     @OptIn(UnstableApi::class)
     @Test
     fun instrumented_media3_playbackPositionRestoration_verifiesSeekAndCurrentPosition() = runBlocking {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val context = testContext
         val streamId = 429677
         val savedPosition = 120_000L // 2 minutes (120,000 ms)
         val totalDuration = 3_600_000L // 1 hour
@@ -362,18 +390,16 @@ class SquiTvE2eInstrumentedTest {
 
     @Test
     fun instrumented_apkUpdateSessionPreservation_restoresCredentialsFromEncryptedStorage() = runBlocking {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val repo = rsv.squitv.data.repository.SettingsRepository(context)
-
-        val testCreds = rsv.squitv.data.model.XtreamCredentials("user_update_test", "pass_secret_123", "http://server.iptv.com:8080")
-        repo.saveCredentials(testCreds)
+        val testCreds = XtreamCredentials("user_update_test", "pass_secret_123", "http://server.iptv.com:8080")
+        settingsRepository.saveCredentials(testCreds)
 
         // Re-read settings flow (simulating app process restart after APK update)
-        val settings = repo.settingsFlow.first()
+        val settings = settingsRepository.settingsFlow.first()
 
-        assertNotNull("Credentials must be present after APK update / process restart", settings.credentials)
-        assertEquals("user_update_test", settings.credentials!!.username)
-        assertEquals("pass_secret_123", settings.credentials!!.password)
-        assertEquals("http://server.iptv.com:8080", settings.credentials!!.baseUrl)
+        val creds = settings.credentials
+        assertNotNull("Credentials must be present after APK update / process restart", creds)
+        assertEquals("user_update_test", creds?.username)
+        assertEquals("pass_secret_123", creds?.password)
+        assertEquals("http://server.iptv.com:8080", creds?.baseUrl)
     }
 }

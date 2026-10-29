@@ -10,6 +10,7 @@ import rsv.squitv.core.data.repository.UserRepository
 import rsv.squitv.core.domain.interactor.*
 import rsv.squitv.core.domain.state.AppState
 import rsv.squitv.core.domain.state.AppSyncProgress
+import rsv.squitv.data.model.SettingsBackupCodec
 import rsv.squitv.data.model.XtreamCategory
 import rsv.squitv.data.model.UserInfo
 import rsv.squitv.data.repository.SettingsRepository
@@ -172,7 +173,7 @@ class MainViewModel @Inject constructor(
             val customOrder = settings.categoryOrderMap[typeKey]
             val hiddenCategories = settings.hiddenCategoriesMap[typeKey]
 
-            val filteredBlocked = rawEntities.filter { it.id !in blocked }
+            val filteredBlocked = if (settings.hideBlockedCategories) rawEntities.filter { it.id !in blocked } else rawEntities
             val customized = catalogRepository.applyCategoryCustomization(
                 categories = filteredBlocked,
                 customOrder = customOrder,
@@ -190,61 +191,40 @@ class MainViewModel @Inject constructor(
         }.flowOn(Dispatchers.IO)
     }
 
-    fun moveCategoryUp(contentType: String, categoryId: String, currentCategories: List<rsv.squitv.data.local.entities.IptvCategoryEntity>) {
-        val idx = currentCategories.indexOfFirst { it.id == categoryId }
-        if (idx > 0) {
-            val newList = currentCategories.map { it.id }.toMutableList()
-            val item = newList.removeAt(idx)
-            newList.add(idx - 1, item)
-            
-            val creds = credentials ?: appSettings.value.credentials ?: return
-            val simpleUser = creds.username.trim().lowercase()
-            val cleanUrl = creds.baseUrl.trim().lowercase().removeSuffix("/")
-            val accountKey = if (cleanUrl.isNotBlank()) "$cleanUrl#$simpleUser" else simpleUser
-            val normType = if (contentType == "movie") "vod" else contentType.lowercase()
-            
-            viewModelScope.launch {
-                settingsRepository.updateCategoryOrder(accountKey, normType, newList)
-            }
-        }
-    }
+    fun moveCategoryUp(contentType: String, categoryId: String, currentCategories: List<rsv.squitv.data.local.entities.IptvCategoryEntity>) =
+        moveCategory(contentType, categoryId, currentCategories, offset = -1)
 
-    fun moveCategoryDown(contentType: String, categoryId: String, currentCategories: List<rsv.squitv.data.local.entities.IptvCategoryEntity>) {
-        val idx = currentCategories.indexOfFirst { it.id == categoryId }
-        if (idx != -1 && idx < currentCategories.size - 1) {
-            val newList = currentCategories.map { it.id }.toMutableList()
-            val item = newList.removeAt(idx)
-            newList.add(idx + 1, item)
-            
-            val creds = credentials ?: appSettings.value.credentials ?: return
-            val simpleUser = creds.username.trim().lowercase()
-            val cleanUrl = creds.baseUrl.trim().lowercase().removeSuffix("/")
-            val accountKey = if (cleanUrl.isNotBlank()) "$cleanUrl#$simpleUser" else simpleUser
-            val normType = if (contentType == "movie") "vod" else contentType.lowercase()
-            
-            viewModelScope.launch {
-                settingsRepository.updateCategoryOrder(accountKey, normType, newList)
-            }
+    fun moveCategoryDown(contentType: String, categoryId: String, currentCategories: List<rsv.squitv.data.local.entities.IptvCategoryEntity>) =
+        moveCategory(contentType, categoryId, currentCategories, offset = 1)
+
+    fun moveCategoryToTop(contentType: String, categoryId: String, currentCategories: List<rsv.squitv.data.local.entities.IptvCategoryEntity>) =
+        moveCategory(contentType, categoryId, currentCategories, position = 0)
+
+    private fun moveCategory(contentType: String, categoryId: String,
+        currentCategories: List<rsv.squitv.data.local.entities.IptvCategoryEntity>, offset: Int = 0, position: Int? = null) = viewModelScope.launch {
+        val creds = credentials ?: appSettings.value.credentials ?: return@launch
+        val normType = if (contentType == "movie") "vod" else contentType.lowercase()
+        try {
+            settingsRepository.moveCategory(SettingsBackupCodec.accountKey(creds), normType, categoryId,
+                currentCategories.map { it.id }, offset, position)
+        } catch (e: CancellationException) { throw e
+        } catch (e: Exception) {
+            Timber.e(e, "Could not save category order")
+            _errorMessage.value = context.getString(R.string.customization_save_error)
         }
     }
 
     fun toggleCategoryVisibility(contentType: String, categoryId: String) {
         val creds = credentials ?: appSettings.value.credentials ?: return
-        val simpleUser = creds.username.trim().lowercase()
-        val cleanUrl = creds.baseUrl.trim().lowercase().removeSuffix("/")
-        val accountKey = if (cleanUrl.isNotBlank()) "$cleanUrl#$simpleUser" else simpleUser
         val normType = if (contentType == "movie") "vod" else contentType.lowercase()
-        val typeKey = "${accountKey}_${normType}"
-
-        val hiddenSet = appSettings.value.hiddenCategoriesMap[typeKey]?.toMutableSet() ?: mutableSetOf()
-        if (hiddenSet.contains(categoryId)) {
-            hiddenSet.remove(categoryId)
-        } else {
-            hiddenSet.add(categoryId)
-        }
-
         viewModelScope.launch {
-            settingsRepository.updateHiddenCategories(accountKey, normType, hiddenSet)
+            try {
+                settingsRepository.toggleHiddenCategory(SettingsBackupCodec.accountKey(creds), normType, categoryId)
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) {
+                Timber.e(e, "Could not save category visibility")
+                _errorMessage.value = context.getString(R.string.customization_save_error)
+            }
         }
     }
 

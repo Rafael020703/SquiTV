@@ -60,6 +60,7 @@ enum class SettingsCategory(val labelRes: Int, val icon: ImageVector) {
     ACCOUNT(R.string.account_label, Icons.Rounded.ManageAccounts),
     SIGN_OUT(R.string.logout_label, Icons.AutoMirrored.Rounded.Logout),
     NAV_CUSTOMIZATION(R.string.nav_customization_label, Icons.Rounded.DashboardCustomize),
+    BACKUP(R.string.settings_backup_title, Icons.Rounded.SettingsBackupRestore),
     LANGUAGE(R.string.language_label, Icons.Rounded.Language),
     THEME(R.string.oled_theme_label, Icons.Rounded.DarkMode),
     ZOOM(R.string.ui_zoom_label, Icons.Rounded.ZoomIn),
@@ -99,6 +100,7 @@ fun SettingsScreen(
     var detailCategory by remember { mutableStateOf<SettingsCategory?>(null) }
     var showResetDialog by remember { mutableStateOf(false) }
     var showSyncDialog by remember { mutableStateOf(false) }
+    var showBackupDialog by remember { mutableStateOf(false) }
 
     val contentFocusRequester = remember { FocusRequester() }
 
@@ -155,7 +157,7 @@ fun SettingsScreen(
             // --- SEÇÕES CATEGORIZADAS DE CONFIGURAÇÕES ---
             val settingsGroups = remember {
                 listOf(
-                    "CONTA E PREFERÊNCIAS" to listOf(SettingsCategory.ACCOUNT, SettingsCategory.NAV_CUSTOMIZATION, SettingsCategory.SIGN_OUT, SettingsCategory.LANGUAGE, SettingsCategory.THEME, SettingsCategory.ZOOM),
+                    "CONTA E PREFERÊNCIAS" to listOf(SettingsCategory.ACCOUNT, SettingsCategory.NAV_CUSTOMIZATION, SettingsCategory.BACKUP, SettingsCategory.SIGN_OUT, SettingsCategory.LANGUAGE, SettingsCategory.THEME, SettingsCategory.ZOOM),
                     "REPRODUÇÃO" to listOf(SettingsCategory.PLAYER_ENGINE, SettingsCategory.BUFFER, SettingsCategory.AUTO_PLAY, SettingsCategory.BACKGROUND_AND_PIP),
                     "SEGURANÇA E CATÁLOGO" to listOf(SettingsCategory.PARENTAL, SettingsCategory.HIDE_LOCKED, SettingsCategory.CLEAR_CATALOG),
                     "ATUALIZAÇÃO E MANUTENÇÃO" to listOf(SettingsCategory.UPDATE, SettingsCategory.APP_UPDATES, SettingsCategory.CLEAR_CACHE),
@@ -197,6 +199,7 @@ fun SettingsScreen(
                                                 when (category) {
                                                     SettingsCategory.ACCOUNT -> onNavigateToAccount()
                                                     SettingsCategory.NAV_CUSTOMIZATION -> onNavigateToContentCustomization()
+                                                    SettingsCategory.BACKUP -> showBackupDialog = true
                                                     SettingsCategory.SIGN_OUT -> mainViewModel.logout()
                                                     SettingsCategory.UPDATE -> {
                                                         if (!syncProgress.isRunning) mainViewModel.loadData(force = true)
@@ -251,6 +254,10 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showBackupDialog) {
+        SettingsBackupDialog(onDismiss = { showBackupDialog = false })
     }
 
     if (showSyncDialog) {

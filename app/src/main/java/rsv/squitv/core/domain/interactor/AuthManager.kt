@@ -3,7 +3,6 @@
 import rsv.squitv.data.api.XtreamService
 import rsv.squitv.data.model.UserInfo
 import rsv.squitv.data.model.XtreamResponse
-import rsv.squitv.data.repository.FirebaseRepository
 import rsv.squitv.data.repository.SettingsRepository
 import rsv.squitv.data.model.XtreamCredentials
 import rsv.squitv.domain.model.SessionStatus
@@ -22,7 +21,6 @@ import rsv.squitv.core.debug.*
 class AuthManager @Inject constructor(
     private val xtreamService: XtreamService,
     private val settingsRepository: SettingsRepository,
-    private val firebaseRepository: FirebaseRepository,
     private val dnsManager: DnsManager
 ) {
     private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

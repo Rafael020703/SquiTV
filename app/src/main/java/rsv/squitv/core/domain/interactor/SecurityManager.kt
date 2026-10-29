@@ -30,13 +30,19 @@ class SecurityManager @Inject constructor(
 
     init {
         managerScope.launch {
-            settingsRepository.settingsFlow.collect { settings ->
-                appPin = settings.appPin
-                if (settings.appLockEnabled && settings.appPin != null && _isAppLocked.value == false) {
-                    _isAppLocked.value = true
-                }
+            settingsRepository.settingsFlow.map { settings ->
+                Triple(settings.appLockEnabled, settings.appPin,
+                    settings.credentials?.let { rsv.squitv.data.model.SettingsBackupCodec.accountKey(it) })
+            }.distinctUntilChanged().collect { (enabled, pin, _) ->
+                appPin = pin
+                _isAppLocked.value = enabled && pin != null
+                _unlockedCategories.value = emptySet()
                 updateBlockedCategories()
             }
+        }
+        managerScope.launch {
+            settingsRepository.settingsFlow.map { Triple(it.lastSyncLive, it.lastSyncVod, it.lastSyncSeries) }
+                .distinctUntilChanged().collect { updateBlockedCategories() }
         }
     }
 

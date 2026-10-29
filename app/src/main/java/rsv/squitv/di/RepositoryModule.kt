@@ -34,8 +34,8 @@ object RepositoryModule {
 
     @Provides
     @Singleton
-    fun provideUserRepository(iptvDao: IptvDao): UserRepository {
-        return UserRepository(iptvDao)
+    fun provideUserRepository(iptvDao: IptvDao, settingsRepository: SettingsRepository): UserRepository {
+        return UserRepository(iptvDao, settingsRepository)
     }
 
     @Provides

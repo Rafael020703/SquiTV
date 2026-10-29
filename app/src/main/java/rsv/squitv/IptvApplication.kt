@@ -247,20 +247,6 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
             registerActivityLifecycleCallbacks(DebugLifecycleObserver())
         }
 
-        // Subscribe to global topic for content updates if Firebase messaging is active
-        try {
-            com.google.firebase.messaging.FirebaseMessaging.getInstance().subscribeToTopic("novidades")
-                .addOnCompleteListener { task ->
-                    if (task.isSuccessful) {
-                        Timber.d("Subscribed to 'novidades' topic successfully")
-                    } else {
-                        Timber.d("Topic subscription pending future Firebase configuration")
-                    }
-                }
-        } catch (e: Exception) {
-            Timber.d(e, "Firebase messaging topic subscription skipped")
-        }
-        
         applicationScope.launch {
             settingsRepository.settingsFlow.collectLatest { settings ->
                 val networkRequirement = if (settings.downloadWifiOnly) {

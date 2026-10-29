@@ -178,6 +178,34 @@ interface IptvDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertFavorite(favorite: rsv.squitv.data.local.entities.FavoriteEntity)
 
+    @Query("DELETE FROM favorites WHERE accountId = :accountId AND profileId = :profileId AND streamId = :streamId AND streamType = :type")
+    suspend fun deleteScopedFavorite(accountId: String, profileId: String, streamId: Int, type: String)
+
+    @Query("SELECT * FROM favorites WHERE accountId = :accountId AND profileId = :profileId ORDER BY timestamp DESC")
+    fun getScopedFavoritesFlow(accountId: String, profileId: String): kotlinx.coroutines.flow.Flow<List<FavoriteEntity>>
+
+    @Query("SELECT * FROM favorites ORDER BY timestamp DESC")
+    suspend fun getAllFavoritesForBackup(): List<FavoriteEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFavorites(favorites: List<FavoriteEntity>)
+
+    @Query("""INSERT OR IGNORE INTO favorites
+        (streamId, streamType, name, logo, rating, releaseDate, url, containerExtension, categoryId, timestamp, accountId, profileId)
+        SELECT streamId, streamType, name, logo, rating, releaseDate, url, containerExtension, categoryId, timestamp, :accountId, :profileId
+        FROM favorites WHERE accountId = '' AND profileId = ''""")
+    suspend fun copyLegacyFavorites(accountId: String, profileId: String)
+
+    @Query("DELETE FROM favorites WHERE accountId = '' AND profileId = ''")
+    suspend fun deleteLegacyFavorites()
+
+    @Transaction
+    suspend fun claimLegacyFavorites(accountId: String, profileId: String) {
+        require(accountId.isNotBlank() && profileId.isNotBlank())
+        copyLegacyFavorites(accountId, profileId)
+        deleteLegacyFavorites()
+    }
+
     @Query("DELETE FROM favorites WHERE streamId = :streamId AND streamType = :type")
     suspend fun deleteFavorite(streamId: Int, type: String)
 

@@ -32,6 +32,7 @@ fun PosterCard(
     item: IptvItem,
     modifier: Modifier = Modifier,
     progress: Float? = null,
+    onToggleFavorite: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
@@ -79,7 +80,14 @@ fun PosterCard(
                     )
             )
 
-            if (item.isFavorite) {
+            if (onToggleFavorite != null) {
+                CardFavoriteButton(
+                    isFavorite = item.isFavorite,
+                    contentName = item.name,
+                    onClick = onToggleFavorite,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(badgePadding)
+                )
+            } else if (item.isFavorite) {
                 Surface(
                     color = tokens.colors.background.copy(alpha = 0.6f),
                     shape = CircleShape,

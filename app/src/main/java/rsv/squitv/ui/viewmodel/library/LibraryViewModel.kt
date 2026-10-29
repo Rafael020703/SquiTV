@@ -42,7 +42,6 @@ class LibraryViewModel @Inject constructor(
     private val epgRepository: EpgRepository,
     private val streamRepository: StreamRepository,
     private val settingsRepository: SettingsRepository,
-    private val firebaseRepository: rsv.squitv.data.repository.FirebaseRepository,
     private val downloadTracker: DownloadTracker,
     private val toggleFavoriteUseCase: ToggleFavoriteUseCase
 ) : ViewModel() {
@@ -89,15 +88,6 @@ class LibraryViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            // Observe remote watch progress when profile changes
-            settingsRepository.settingsFlow.map { it.activeProfileId }.distinctUntilChanged().collect { profileId ->
-                firebaseRepository.getRemoteWatchProgress(profileId).collect { remoteList ->
-                    remoteProgressSync(remoteList)
-                }
-            }
-        }
-
-        viewModelScope.launch {
             userRepository.getAllDownloadsFlow().collect { _downloads.value = it }
         }
 
@@ -106,30 +96,11 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    private fun remoteProgressSync(remoteList: List<Map<String, Any>>) {
-        viewModelScope.launch {
-            remoteList.forEach { data ->
-                val streamId = (data["streamId"] as? String)?.toIntOrNull() ?: return@forEach
-                val position = data["position"] as? Long ?: 0L
-                val duration = data["duration"] as? Long ?: 0L
-                val type = data["type"] as? String ?: "VOD"
-                val seriesId = (data["seriesId"] as? Long)?.toInt()?.takeIf { it > 0 }
-                val timestamp = data["timestamp"] as? Long ?: 0L
-
-                val local = userRepository.getWatchProgress(streamId)
-                if (local == null || timestamp > local.lastWatched) {
-                    userRepository.saveWatchProgress(streamId, type, position, duration, seriesId, timestamp)
-                }
-            }
-        }
-    }
-
     fun toggleFavorite(item: IptvItem, isFav: Boolean) {
         viewModelScope.launch { 
             val settings = settingsRepository.settingsFlow.first()
             val profileId = settings.activeProfileId
-            val hash = settings.credentials?.providerHash
-            toggleFavoriteUseCase(item, isFav, profileId, hash) 
+            toggleFavoriteUseCase(item, isFav, profileId)
         }
     }
 

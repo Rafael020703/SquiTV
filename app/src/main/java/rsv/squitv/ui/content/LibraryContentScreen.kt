@@ -18,6 +18,7 @@ import rsv.squitv.core.ui.components.states.LoadingState
 import rsv.squitv.ui.dashboard.PortalBackground
 import rsv.squitv.ui.viewmodel.CategoryViewModel
 import rsv.squitv.ui.viewmodel.MainViewModel
+import rsv.squitv.ui.content.components.rememberContentGridState
 import rsv.squitv.ui.content.components.ContentGrid
 import rsv.squitv.ui.viewmodel.library.LibraryViewModel
 import rsv.squitv.util.rememberWindowInfo
@@ -41,15 +42,9 @@ fun LibraryContentScreen(
     val favorites by libraryViewModel.favorites.collectAsStateWithLifecycle()
     val watchProgress by libraryViewModel.watchProgress.collectAsStateWithLifecycle()
     
-    val windowInfo = rememberWindowInfo()
     val gridFocusRequester = remember { FocusRequester() }
-
-    LaunchedEffect(isLoading) {
-        if (!isLoading && contentRows.isNotEmpty()) {
-            delay(300)
-            try { gridFocusRequester.requestFocus() } catch (_: Exception) {}
-        }
-    }
+    val settings by viewModel.appSettings.collectAsStateWithLifecycle()
+    val gridState = rememberContentGridState("${settings.credentials?.baseUrl}#${settings.credentials?.username}/library/$title")
 
     PortalBackground {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -62,7 +57,7 @@ fun LibraryContentScreen(
             )
 
             Box(modifier = Modifier.fillMaxSize()) {
-                if (isLoading) {
+                if (isLoading && contentRows.isEmpty()) {
                     LoadingState(message = stringResource(R.string.msg_connecting))
                 } else if (contentRows.isEmpty()) {
                     EmptyState(
@@ -73,7 +68,9 @@ fun LibraryContentScreen(
                     ContentGrid(
                         items = contentRows.flatMap { it.items },
                         gridFocusRequester = gridFocusRequester,
-                        sidebarFocusRequester = remember { FocusRequester() }, // Library usually doesn't have a sidebar yet
+                        sidebarFocusRequester = FocusRequester.Default,
+                        state = gridState,
+                        onToggleFavorite = libraryViewModel::toggleFavorite,
                         favorites = favorites,
                         watchProgress = watchProgress,
                         onItemClick = { item ->

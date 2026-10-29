@@ -6,6 +6,8 @@ import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import rsv.squitv.ui.content.components.rememberContentGridState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.res.stringResource
@@ -73,12 +75,13 @@ fun SeriesScreen(
         if (settings.hideBlockedCategories) blockedIds else emptySet()
     }
 
-    var selectedCategoryId by remember { mutableStateOf<String?>(null) }
+    var selectedCategoryId by rememberSaveable { mutableStateOf(categoryViewModel.activeCategoryId.value ?: settings.lastSeriesCategory) }
+    val gridState = rememberContentGridState("${settings.credentials?.baseUrl}#${settings.credentials?.username}/series/$selectedCategoryId/$selectedGenre/$sortOrder")
 
     LaunchedEffect(categories, settings.lastSeriesCategory) {
         if (categories.isNotEmpty()) {
             val savedCat = settings.lastSeriesCategory
-            val isSavedValid = savedCat != null && (savedCat == "RECENTS" || savedCat == "FAVORITES" || categories.any { it.categoryId == savedCat })
+            val isSavedValid = savedCat != null && (savedCat == "RECENTS" || savedCat == "FAVORITES" || savedCat == "CONTINUE_WATCHING" || categories.any { it.categoryId == savedCat })
             if (!isSavedValid) {
                 val fallbackCatId = categories.firstOrNull()?.categoryId ?: "RECENTS"
                 if (selectedCategoryId != fallbackCatId) {
@@ -94,16 +97,6 @@ fun SeriesScreen(
         val loadedCatId = contentRows.firstOrNull()?.catId
         if (loadedCatId != null && selectedCategoryId != loadedCatId) {
             selectedCategoryId = loadedCatId
-        }
-    }
-
-    var isInitialLoad by remember { mutableStateOf(true) }
-
-    LaunchedEffect(isLoading) {
-        if (!isLoading && isInitialLoad) {
-            isInitialLoad = false
-            delay(200)
-            try { sidebarFocusRequester.requestFocus() } catch (_: Exception) {}
         }
     }
 
@@ -167,7 +160,7 @@ fun SeriesScreen(
                 }
 
                 Box(modifier = Modifier.weight(1f)) {
-                    if (isLoading) {
+                    if (isLoading && contentRows.isEmpty()) {
                         LoadingState(message = stringResource(R.string.msg_connecting))
                     } else if (contentRows.isEmpty()) {
                         EmptyState(
@@ -179,6 +172,8 @@ fun SeriesScreen(
                             items = contentRows.flatMap { it.items },
                             gridFocusRequester = gridFocusRequester,
                             sidebarFocusRequester = sidebarFocusRequester,
+                            state = gridState,
+                            onToggleFavorite = libraryViewModel::toggleFavorite,
                             favorites = favorites,
                             watchProgress = watchProgress,
                             onItemClick = { item -> onSeriesClick(item.id.toInt(), item.name, item.icon) }

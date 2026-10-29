@@ -4,13 +4,20 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import rsv.squitv.data.model.SettingsBackup
+import rsv.squitv.data.model.SettingsBackupCodec
 import rsv.squitv.data.model.UserInfo
 import rsv.squitv.data.model.XtreamCredentials
 import rsv.squitv.util.SecurityHelper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.onStart
+import rsv.squitv.domain.model.UserProfile
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -25,15 +32,18 @@ class SettingsRepository @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
 
-    init {
-        // Safe migration on startup
-        migrateToEncryptedStorage()
+    private val storageMigrationMutex = Mutex()
+    private var storageMigrated = false
+
+    private suspend fun ensureStorageMigration() = storageMigrationMutex.withLock {
+        if (!storageMigrated) {
+            migrateToEncryptedStorage()
+            storageMigrated = true
+        }
     }
 
-    private fun migrateToEncryptedStorage() {
-        // We use runBlocking here as this is a one-time migration on singleton init
-        // and needs to ensure data consistency before the first flow emission.
-        runBlocking {
+    private suspend fun migrateToEncryptedStorage() {
+        withContext(Dispatchers.IO) {
             context.dataStore.edit { preferences ->
                 // 1. Migrate single password
                 val currentPassword = preferences[PreferencesKeys.PASSWORD]
@@ -131,6 +141,8 @@ class SettingsRepository @Inject constructor(
 
         // Customization
         val DISPLAY_NAMES_MAP = stringPreferencesKey("display_names_map")
+        val LOCAL_PROFILES = stringPreferencesKey("local_profiles_v1")
+        val PROFILE_PICTURE = stringPreferencesKey("profile_picture")
         val HIDDEN_SECTIONS = stringSetPreferencesKey("hidden_sections")
         val CATEGORY_ORDER_MAP = stringPreferencesKey("category_order_map")
         val HIDDEN_CATEGORIES_MAP = stringPreferencesKey("hidden_categories_map")
@@ -166,6 +178,8 @@ class SettingsRepository @Inject constructor(
         val preferredAudioLang: String? = null,
         val preferredSubtitleLang: String? = null,
         val activeProfileId: String = "default",
+        val profiles: List<UserProfile> = listOf(UserProfile("default", "Usuário 1")),
+        val profileImageUrl: String? = null,
         val detailedNotifications: Boolean = true,
         val backgroundPlaybackEnabled: Boolean = false,
         val pipAutoEnterEnabled: Boolean = true,
@@ -191,7 +205,9 @@ class SettingsRepository @Inject constructor(
             get() = credentials?.username?.lowercase()?.let { displayNamesMap[it] }
     }
 
-    val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { preferences ->
+    val settingsFlow: Flow<AppSettings> = context.dataStore.data.onStart { ensureStorageMigration() }.map(::readSettings)
+
+    private fun readSettings(preferences: Preferences): AppSettings {
         val accountsJson = preferences[PreferencesKeys.ACCOUNTS]
         val accounts = try {
             if (accountsJson != null) {
@@ -297,7 +313,7 @@ class SettingsRepository @Inject constructor(
             null
         }
         
-        AppSettings(
+        return AppSettings(
             credentials = creds,
             accounts = accounts,
             currentAccountIndex = currentIndex,
@@ -327,6 +343,8 @@ class SettingsRepository @Inject constructor(
             preferredAudioLang = audioLang,
             preferredSubtitleLang = subLang,
             activeProfileId = profileId,
+            profiles = readProfiles(preferences),
+            profileImageUrl = preferences[PreferencesKeys.PROFILE_PICTURE],
             detailedNotifications = detailedNotifs,
             backgroundPlaybackEnabled = bgPlaybackEnabled,
             pipAutoEnterEnabled = preferences[PreferencesKeys.PIP_AUTO_ENTER_ENABLED] ?: true,
@@ -784,10 +802,7 @@ class SettingsRepository @Inject constructor(
 
     suspend fun updateCategoryOrder(accountKey: String, contentType: String, order: List<String>) {
         context.dataStore.edit { preferences ->
-            val mapJson = preferences[PreferencesKeys.CATEGORY_ORDER_MAP]
-            val map = try {
-                if (mapJson != null) Json.decodeFromString<MutableMap<String, List<String>>>(mapJson) else mutableMapOf()
-            } catch (_: Exception) { mutableMapOf() }
+            val map = readOrderMap(preferences)
             val key = "${accountKey.lowercase().trim()}_${contentType.lowercase().trim()}"
             map[key] = order
             preferences[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(map)
@@ -796,10 +811,7 @@ class SettingsRepository @Inject constructor(
 
     suspend fun updateHiddenCategories(accountKey: String, contentType: String, hiddenSet: Set<String>) {
         context.dataStore.edit { preferences ->
-            val mapJson = preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP]
-            val map = try {
-                if (mapJson != null) Json.decodeFromString<MutableMap<String, Set<String>>>(mapJson) else mutableMapOf()
-            } catch (_: Exception) { mutableMapOf() }
+            val map = readHiddenMap(preferences)
             val key = "${accountKey.lowercase().trim()}_${contentType.lowercase().trim()}"
             map[key] = hiddenSet
             preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP] = Json.encodeToString(map)
@@ -808,15 +820,8 @@ class SettingsRepository @Inject constructor(
 
     suspend fun resetCategoryCustomization(accountKey: String, contentType: String) {
         context.dataStore.edit { preferences ->
-            val orderMapJson = preferences[PreferencesKeys.CATEGORY_ORDER_MAP]
-            val orderMap = try {
-                if (orderMapJson != null) Json.decodeFromString<MutableMap<String, List<String>>>(orderMapJson) else mutableMapOf()
-            } catch (_: Exception) { mutableMapOf() }
-
-            val hiddenMapJson = preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP]
-            val hiddenMap = try {
-                if (hiddenMapJson != null) Json.decodeFromString<MutableMap<String, Set<String>>>(hiddenMapJson) else mutableMapOf()
-            } catch (_: Exception) { mutableMapOf() }
+            val orderMap = readOrderMap(preferences)
+            val hiddenMap = readHiddenMap(preferences)
 
             val key = "${accountKey.lowercase().trim()}_${contentType.lowercase().trim()}"
             orderMap.remove(key)
@@ -825,5 +830,164 @@ class SettingsRepository @Inject constructor(
             preferences[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(orderMap)
             preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP] = Json.encodeToString(hiddenMap)
         }
+    }
+
+    private fun readOrderMap(preferences: Preferences): MutableMap<String, List<String>> =
+        preferences[PreferencesKeys.CATEGORY_ORDER_MAP]?.let { Json.decodeFromString(it) } ?: mutableMapOf()
+
+    private fun readHiddenMap(preferences: Preferences): MutableMap<String, Set<String>> =
+        preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP]?.let { Json.decodeFromString(it) } ?: mutableMapOf()
+
+    private fun readDisplayNamesMap(preferences: Preferences): MutableMap<String, String> =
+        preferences[PreferencesKeys.DISPLAY_NAMES_MAP]?.let { Json.decodeFromString(it) } ?: mutableMapOf()
+
+    suspend fun exportSettingsBackup(): String {
+        ensureStorageMigration()
+        val preferences = context.dataStore.data.first()
+        val snapshot = readSettings(preferences).copy(
+            categoryOrderMap = readOrderMap(preferences), hiddenCategoriesMap = readHiddenMap(preferences),
+            displayNamesMap = readDisplayNamesMap(preferences))
+        return SettingsBackupCodec.encode(SettingsBackupCodec.create(snapshot))
+    }
+
+    /** A single DataStore transaction; Room favourites/history/downloads and login data are untouched. */
+    suspend fun importSettingsBackup(backup: SettingsBackup): Int {
+        SettingsBackupCodec.validate(backup)
+        var matched = 0
+        context.dataStore.edit { preferences ->
+            val current = readSettings(preferences)
+            val configured = SettingsBackupCodec.configuredAccounts(current)
+            val orders = readOrderMap(preferences)
+            val hidden = readHiddenMap(preferences)
+            val names = readDisplayNamesMap(preferences)
+            backup.accounts.forEach { account ->
+                val key = configured[account.fingerprint] ?: return@forEach
+                matched++
+                account.categories.forEach { (type, categories) ->
+                    val categoryKey = "${key}_$type"
+                    categories.order?.let { orders[categoryKey] = it }
+                    categories.hidden?.let { hidden[categoryKey] = it }
+                }
+                account.displayName?.let { if (it.isBlank()) names.remove(key) else names[key] = it }
+            }
+            with(backup.preferences) {
+                playerEngine?.let { preferences[PreferencesKeys.PLAYER_ENGINE] = it }
+                bufferStrategy?.let { preferences[PreferencesKeys.BUFFER_STRATEGY] = it }
+                useOledTheme?.let { preferences[PreferencesKeys.USE_OLED_THEME] = it }
+                dataSaverMode?.let { preferences[PreferencesKeys.DATA_SAVER_MODE] = it }
+                uiZoom?.let { preferences[PreferencesKeys.UI_ZOOM] = it }
+                language?.let { preferences[PreferencesKeys.LANGUAGE] = it }
+                syncIntervalHours?.let { preferences[PreferencesKeys.SYNC_INTERVAL_HOURS] = it }
+                autoPlayEnabled?.let { preferences[PreferencesKeys.AUTO_PLAY_ENABLED] = it }
+                defaultResizeMode?.let { preferences[PreferencesKeys.DEFAULT_RESIZE_MODE] = it }
+                showDiagnostics?.let { preferences[PreferencesKeys.SHOW_DIAGNOSTICS] = it }
+                compactMode?.let { preferences[PreferencesKeys.COMPACT_MODE] = it }
+                hideBlockedCategories?.let { preferences[PreferencesKeys.HIDE_BLOCKED_CATEGORIES] = it }
+                downloadWifiOnly?.let { preferences[PreferencesKeys.DOWNLOAD_WIFI_ONLY] = it }
+                smartDownloadsEnabled?.let { preferences[PreferencesKeys.SMART_DOWNLOADS_ENABLED] = it }
+                preferredAudioLang?.let { if (it.isEmpty()) preferences.remove(PreferencesKeys.PREFERRED_AUDIO_LANG) else preferences[PreferencesKeys.PREFERRED_AUDIO_LANG] = it }
+                preferredSubtitleLang?.let { if (it.isEmpty()) preferences.remove(PreferencesKeys.PREFERRED_SUBTITLE_LANG) else preferences[PreferencesKeys.PREFERRED_SUBTITLE_LANG] = it }
+                detailedNotifications?.let { preferences[PreferencesKeys.DETAILED_NOTIFICATIONS] = it }
+                backgroundPlaybackEnabled?.let { preferences[PreferencesKeys.BACKGROUND_PLAYBACK_ENABLED] = it }
+                pipAutoEnterEnabled?.let { preferences[PreferencesKeys.PIP_AUTO_ENTER_ENABLED] = it }
+            }
+            backup.profiles?.let { incoming ->
+                val profiles = readProfiles(preferences).associateBy { it.id }.toMutableMap()
+                incoming.forEach { profile ->
+                    profiles[profile.id] = UserProfile(profile.id, profile.name, profile.iconUrl, profile.isChild, profiles[profile.id]?.pin)
+                }
+                preferences[PreferencesKeys.LOCAL_PROFILES] = Json.encodeToString(profiles.values.toList())
+                backup.activeProfileId?.takeIf { it in profiles }?.let { preferences[PreferencesKeys.ACTIVE_PROFILE_ID] = it }
+                backup.profileImageUrl?.let { preferences[PreferencesKeys.PROFILE_PICTURE] = it }
+            }
+            backup.hiddenSections?.let { preferences[PreferencesKeys.HIDDEN_SECTIONS] = it }
+            preferences[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(orders)
+            preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP] = Json.encodeToString(hidden)
+            preferences[PreferencesKeys.DISPLAY_NAMES_MAP] = Json.encodeToString(names)
+        }
+        return matched
+    }
+
+    suspend fun moveCategory(accountKey: String, contentType: String, categoryId: String,
+        availableIds: List<String>, offset: Int = 0, position: Int? = null) {
+        context.dataStore.edit { preferences ->
+            val orders = readOrderMap(preferences)
+            val key = "${accountKey.lowercase().trim()}_${contentType.lowercase().trim()}"
+            val available = availableIds.toSet()
+            val previous = orders[key].orEmpty()
+            val ordered = (previous.filter { it in available } + availableIds).distinct().toMutableList()
+            val from = ordered.indexOf(categoryId)
+            if (from < 0) return@edit
+            val to = (position ?: (from + offset)).coerceIn(0, ordered.lastIndex)
+            if (to == from) return@edit
+            ordered.add(to, ordered.removeAt(from))
+            // Retain temporarily missing categories so a later sync does not erase their organisation.
+            orders[key] = ordered + previous.filter { it !in available }
+            preferences[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(orders)
+        }
+    }
+
+    suspend fun toggleHiddenCategory(accountKey: String, contentType: String, categoryId: String) {
+        context.dataStore.edit { preferences ->
+            val hidden = readHiddenMap(preferences)
+            val key = "${accountKey.lowercase().trim()}_${contentType.lowercase().trim()}"
+            val values = hidden[key].orEmpty().toMutableSet()
+            if (!values.add(categoryId)) values.remove(categoryId)
+            hidden[key] = values
+            preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP] = Json.encodeToString(hidden)
+        }
+    }
+
+    /** Only for a verified DNS change of the same login; never for switching unrelated accounts. */
+    suspend fun preserveCustomizationForDnsChange(old: XtreamCredentials, updated: XtreamCredentials) {
+        require(old.username == updated.username)
+        val oldKey = SettingsBackupCodec.accountKey(old)
+        val newKey = SettingsBackupCodec.accountKey(updated)
+        if (oldKey == newKey) return
+        context.dataStore.edit { preferences ->
+            val current = readSettings(preferences).credentials ?: return@edit
+            if (SettingsBackupCodec.accountKey(current) != newKey) return@edit
+            val orders = readOrderMap(preferences)
+            val hidden = readHiddenMap(preferences)
+            val names = readDisplayNamesMap(preferences)
+            for (type in listOf("live", "vod", "series")) {
+                val source = "${oldKey}_$type"
+                val destination = "${newKey}_$type"
+                if (destination !in orders) orders[source]?.let { orders[destination] = it }
+                if (destination !in hidden) hidden[source]?.let { hidden[destination] = it }
+            }
+            if (newKey !in names) names[oldKey]?.let { names[newKey] = it }
+            preferences[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(orders)
+            preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP] = Json.encodeToString(hidden)
+            preferences[PreferencesKeys.DISPLAY_NAMES_MAP] = Json.encodeToString(names)
+        }
+    }
+
+    private fun readProfiles(preferences: Preferences): List<UserProfile> {
+        val encoded = preferences[PreferencesKeys.LOCAL_PROFILES]
+        if (encoded != null) return Json.decodeFromString(encoded)
+        val activeId = preferences[PreferencesKeys.ACTIVE_PROFILE_ID] ?: "default"
+        return if (activeId == "default") listOf(UserProfile("default", "Usuário 1"))
+            else listOf(UserProfile("default", "Usuário 1"), UserProfile(activeId, "Perfil recuperado"))
+    }
+
+    suspend fun saveLocalProfile(profile: UserProfile) {
+        require(profile.id.isNotBlank() && profile.name.isNotBlank())
+        context.dataStore.edit { preferences ->
+            val profiles = readProfiles(preferences).filterNot { it.id == profile.id } + profile
+            preferences[PreferencesKeys.LOCAL_PROFILES] = Json.encodeToString(profiles)
+        }
+    }
+
+    suspend fun deleteLocalProfile(profileId: String) {
+        if (profileId == "default") return
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LOCAL_PROFILES] = Json.encodeToString(readProfiles(preferences).filterNot { it.id == profileId })
+            if (preferences[PreferencesKeys.ACTIVE_PROFILE_ID] == profileId) preferences[PreferencesKeys.ACTIVE_PROFILE_ID] = "default"
+        }
+    }
+
+    suspend fun updateProfilePicture(url: String) {
+        context.dataStore.edit { it[PreferencesKeys.PROFILE_PICTURE] = url }
     }
 }

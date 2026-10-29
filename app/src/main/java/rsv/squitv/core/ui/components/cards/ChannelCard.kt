@@ -28,6 +28,7 @@ fun ChannelCard(
     item: IptvItem,
     modifier: Modifier = Modifier,
     epg: String? = null,
+    onToggleFavorite: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
@@ -107,7 +108,14 @@ fun ChannelCard(
                 }
             }
 
-            if (item.isFavorite) {
+            if (onToggleFavorite != null) {
+                CardFavoriteButton(
+                    isFavorite = item.isFavorite,
+                    contentName = item.name,
+                    onClick = onToggleFavorite,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(cardPadding)
+                )
+            } else if (item.isFavorite) {
                 Icon(
                     imageVector = Icons.Rounded.Favorite,
                     contentDescription = null,

@@ -3,7 +3,10 @@
 import rsv.squitv.data.local.dao.IptvDao
 import rsv.squitv.data.local.entities.*
 import rsv.squitv.domain.model.IptvItem
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import rsv.squitv.data.repository.SettingsRepository
+import rsv.squitv.data.model.SettingsBackupCodec
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -11,11 +14,17 @@ import timber.log.Timber
 
 @Singleton
 class UserRepository @Inject constructor(
-    private val iptvDao: IptvDao
+    private val iptvDao: IptvDao,
+    private val settingsRepository: SettingsRepository
 ) {
-    suspend fun updateFavorite(item: IptvItem, isFav: Boolean) {
+    suspend fun updateFavorite(item: IptvItem, isFav: Boolean, profileId: String? = null) {
+        val settings = settingsRepository.settingsFlow.first()
+        val credentials = settings.credentials ?: return
+        val accountId = SettingsBackupCodec.fingerprint(SettingsBackupCodec.accountKey(credentials))
+        val targetProfile = profileId ?: settings.activeProfileId
+        iptvDao.claimLegacyFavorites(accountId, targetProfile)
         val streamType = item.type.name
-        val sId = item.id.toIntOrNull() ?: 0
+        val sId = item.id.toIntOrNull() ?: return
         Timber.tag("SquiTV_E2E").i("[FAVORITE_ROOM] updateFavorite streamId=$sId streamType=$streamType name='${item.name}' isFav=$isFav")
         if (isFav) {
             iptvDao.insertFavorite(FavoriteEntity(
@@ -27,14 +36,23 @@ class UserRepository @Inject constructor(
                 releaseDate = item.releaseDate,
                 url = item.epgId,
                 containerExtension = item.containerExtension,
-                categoryId = item.categoryId
+                categoryId = item.categoryId,
+                accountId = accountId, profileId = targetProfile
             ))
         } else {
-            iptvDao.deleteFavorite(sId, streamType)
+            iptvDao.deleteScopedFavorite(accountId, targetProfile, sId, streamType)
         }
     }
 
-    fun getFavoritesListFlow(): Flow<List<FavoriteEntity>> = iptvDao.getFavoritesListFlow()
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun getFavoritesListFlow(): Flow<List<FavoriteEntity>> = settingsRepository.settingsFlow.map { settings ->
+        settings.credentials?.let { SettingsBackupCodec.fingerprint(SettingsBackupCodec.accountKey(it)) to settings.activeProfileId }
+    }.distinctUntilChanged().flatMapLatest { scope ->
+        if (scope == null) flowOf(emptyList()) else flow {
+            iptvDao.claimLegacyFavorites(scope.first, scope.second)
+            emitAll(iptvDao.getScopedFavoritesFlow(scope.first, scope.second))
+        }
+    }
 
     suspend fun saveWatchProgress(
         streamId: Int,

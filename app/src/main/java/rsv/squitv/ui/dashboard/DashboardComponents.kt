@@ -140,6 +140,7 @@ fun ContentRow(
     modifier: Modifier = Modifier,
     watchProgress: Map<Int, Float> = emptyMap(),
     favorites: List<IptvItem> = emptyList(),
+    onToggleFavorite: ((IptvItem, Boolean) -> Unit)? = null,
     onItemClick: (IptvItem) -> Unit
 ) {
     val tokens = AppDesignSystem
@@ -171,11 +172,13 @@ fun ContentRow(
                     if (item.type == ContentType.LIVE) {
                         ChannelCard(
                             item = item.copy(isFavorite = isFav),
+                            onToggleFavorite = onToggleFavorite?.let { toggle -> { toggle(item, !isFav) } },
                             onClick = { onItemClick(item) }
                         )
                     } else {
                         PosterCard(
                             item = item.copy(isFavorite = isFav),
+                            onToggleFavorite = onToggleFavorite?.let { toggle -> { toggle(item, !isFav) } },
                             progress = progressValue,
                             onClick = { onItemClick(item) }
                         )

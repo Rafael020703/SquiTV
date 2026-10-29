@@ -11,6 +11,8 @@ import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,11 +48,14 @@ fun ActorDetailScreen(
 ) {
     val rows by categoryViewModel.currentContentRows.collectAsStateWithLifecycle()
     val watchProgress by libraryViewModel.watchProgress.collectAsStateWithLifecycle()
+    val favorites by libraryViewModel.favorites.collectAsStateWithLifecycle()
     val isLoading by categoryViewModel.isLoading.collectAsStateWithLifecycle()
     val windowInfo = rememberWindowInfo()
     val isExpanded = windowInfo.isExpanded
     val tokens = AppDesignSystem
     
+    val listState = rememberLazyListState()
+    val rowStateHolder = rememberSaveableStateHolder()
     val sanitizedActorName = remember(actorName) { actorName.trim() }
     var showSortMenu by remember { mutableStateOf(false) }
 
@@ -83,6 +88,7 @@ fun ActorDetailScreen(
                 )
             } else {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 64.dp)
                 ) {
@@ -117,16 +123,20 @@ fun ActorDetailScreen(
                         }
                     }
 
-                    items(rows) { row ->
+                    items(rows, key = { it.title }) { row ->
+                        rowStateHolder.SaveableStateProvider(row.title) {
                         ContentRow(
                             title = row.title,
                             items = row.items,
                             watchProgress = watchProgress,
+                            favorites = favorites,
+                            onToggleFavorite = libraryViewModel::toggleFavorite,
                             onItemClick = { item ->
                                 if (item.type == ContentType.SERIES) onSeriesClick(item.id.toInt(), item.name, item.icon)
                                 else onVodClick(item.id.toInt(), item.name, item.icon)
                             }
                         )
+                        }
                     }
                 }
             }

@@ -21,6 +21,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
+import rsv.squitv.ui.content.components.rememberContentGridState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -28,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
+import rsv.squitv.core.data.mapper.toIptvItem
 import rsv.squitv.R
 import rsv.squitv.core.ui.components.buttons.AppIconButton
 import rsv.squitv.core.ui.components.cards.ChannelCard
@@ -96,6 +101,7 @@ fun SearchScreen(
             selectedType = selectedType,
             results = results,
             favorites = favorites,
+            onToggleFavorite = libraryViewModel::toggleFavorite,
             isLoading = isLoading,
             onQueryChanged = { viewModel.onQueryChanged(it) },
             onTypeChanged = { viewModel.onTypeChanged(it) },
@@ -114,6 +120,7 @@ fun SearchScreenContent(
     selectedType: String,
     results: List<SearchResult>,
     favorites: List<IptvItem> = emptyList(),
+    onToggleFavorite: ((IptvItem, Boolean) -> Unit)? = null,
     isLoading: Boolean,
     onQueryChanged: (String) -> Unit,
     onTypeChanged: (String) -> Unit,
@@ -122,20 +129,35 @@ fun SearchScreenContent(
     onVoiceSearch: () -> Unit,
     windowInfo: WindowInfo
 ) {
+    val favoriteKeys = remember(favorites) { favorites.mapTo(hashSetOf()) { it.id to it.type } }
     val tokens = AppDesignSystem
     val responsive = tokens.responsive
     val searchFocusRequester = remember { FocusRequester() }
     val gridFocusRequester = remember { FocusRequester() }
+    val gridState = rememberContentGridState("search/$query/$selectedType")
+    val useFocus = windowInfo.isTv || LocalInputModeManager.current.inputMode == InputMode.Keyboard
+    fun resultKey(result: SearchResult) = when (result) {
+        is SearchResult.Stream -> "s_${result.stream.streamType}_${result.stream.id}"
+        is SearchResult.Episode -> "e_${result.episode.episodeId}"
+    }
+    val savedIndex = results.indexOfFirst { resultKey(it) == gridState.focusedItem }
+    val focusIndex = if (savedIndex >= 0) savedIndex else gridState.focusedIndex.coerceIn(0, results.lastIndex.coerceAtLeast(0))
 
     LaunchedEffect(Unit) {
-        delay(500)
-        try { searchFocusRequester.requestFocus() } catch (_: Exception) {}
+        if (!gridState.hasInteracted) {
+            withFrameNanos { }
+            runCatching { searchFocusRequester.requestFocus() }
+        }
     }
 
-    LaunchedEffect(isLoading, results) {
-        if (!isLoading && results.isNotEmpty()) {
-            delay(500)
-            try { gridFocusRequester.requestFocus() } catch (_: Exception) {}
+    LaunchedEffect(gridState, isLoading, results.isNotEmpty()) {
+        if (!isLoading && results.isNotEmpty() && gridState.hasInteracted && useFocus) {
+            withFrameNanos { }
+            if (gridState.scroll.layoutInfo.visibleItemsInfo.none { it.index == focusIndex }) {
+                gridState.scroll.scrollToItem(focusIndex)
+            }
+            withFrameNanos { }
+            runCatching { gridFocusRequester.requestFocus() }
         }
     }
 
@@ -224,6 +246,7 @@ fun SearchScreenContent(
 
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(columns),
+                    state = gridState.scroll,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(gridSpacing),
                     verticalArrangement = Arrangement.spacedBy(gridSpacing),
@@ -231,19 +254,12 @@ fun SearchScreenContent(
                 ) {
                     itemsIndexed(results, key = { _, it -> 
                         when(it) {
-                            is SearchResult.Stream -> "s_${it.stream.id}"
+                            is SearchResult.Stream -> "s_${it.stream.streamType}_${it.stream.id}"
                             is SearchResult.Episode -> "e_${it.episode.episodeId}"
                         }
                     }) { index, result ->
                         val item = when(result) {
-                            is SearchResult.Stream -> IptvItem(
-                                id = result.stream.id.toString(),
-                                name = result.stream.name,
-                                icon = result.stream.logo,
-                                type = ContentType.fromString(result.stream.streamType),
-                                isFavorite = result.stream.isFavorite,
-                                rating = result.stream.rating
-                            )
+                            is SearchResult.Stream -> result.stream.toIptvItem()
                             is SearchResult.Episode -> IptvItem(
                                 id = result.episode.streamId.toString(),
                                 name = result.episode.title,
@@ -252,15 +268,24 @@ fun SearchScreenContent(
                             )
                         }
 
-                        val isFav = favorites.any { it.id == item.id && it.type == item.type }
-                        val itemModifier = if (index == 0) Modifier.focusRequester(gridFocusRequester) else Modifier
+                        val isFav = result is SearchResult.Stream && favoriteKeys.contains(item.id to item.type)
+                        val onFavorite = if (result is SearchResult.Stream) onToggleFavorite?.let { toggle -> { toggle(item, !isFav) } } else null
+                        fun rememberSelection() {
+                            gridState.focusedItem = resultKey(result)
+                            gridState.focusedIndex = index
+                            gridState.hasInteracted = true
+                        }
+                        val itemModifier = (if (index == focusIndex) Modifier.focusRequester(gridFocusRequester) else Modifier)
+                            .onFocusChanged { if (it.hasFocus) rememberSelection() }
                         
                         if (item.type == ContentType.LIVE) {
                             val sId = (result as? SearchResult.Stream)?.stream?.id ?: 0
                             ChannelCard(
                                 item = item.copy(isFavorite = isFav),
                                 modifier = itemModifier,
+                                onToggleFavorite = onFavorite,
                                 onClick = {
+                                    rememberSelection()
                                     onItemClick(sId, item.name, "live", null, null, null, item.icon)
                                 }
                             )
@@ -268,7 +293,9 @@ fun SearchScreenContent(
                             PosterCard(
                                 item = item.copy(isFavorite = isFav),
                                 modifier = itemModifier,
+                                onToggleFavorite = onFavorite,
                                 onClick = {
+                                    rememberSelection()
                                     when (result) {
                                         is SearchResult.Stream -> {
                                             onItemClick(result.stream.id, result.stream.name, result.stream.streamType.lowercase(), result.stream.containerExtension, null, null, result.stream.logo)

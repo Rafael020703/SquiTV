@@ -1347,7 +1347,6 @@ class PlayerViewModel @Inject constructor(
             try {
                 val settings = settingsRepository.settingsFlow.first()
                 val profileId = settings.activeProfileId
-                val hash = settings.credentials?.providerHash
 
                 if (currentType == ContentType.SERIES) {
                     val parentSeriesId = currentSeriesId ?: run {
@@ -1370,7 +1369,7 @@ class PlayerViewModel @Inject constructor(
                             )
                         }
                         
-                        toggleFavoriteUseCase(item, newFav, profileId, hash)
+                        toggleFavoriteUseCase(item, newFav, profileId)
                     } else {
                         Timber.w("Não foi possível resolver o ID da série pai para o episódio $streamId")
                         return@launch
@@ -1393,7 +1392,7 @@ class PlayerViewModel @Inject constructor(
                         )
                     }
                     
-                    toggleFavoriteUseCase(item, newFav, profileId, hash)
+                    toggleFavoriteUseCase(item, newFav, profileId)
                 }
 
                 withContext(Dispatchers.Main) {

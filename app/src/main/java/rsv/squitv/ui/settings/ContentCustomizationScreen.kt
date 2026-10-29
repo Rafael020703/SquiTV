@@ -27,6 +27,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
+import rsv.squitv.util.rememberWindowInfo
 import rsv.squitv.R
 import rsv.squitv.core.ui.components.buttons.AppButton
 import rsv.squitv.core.ui.components.common.adaptiveFocus
@@ -330,6 +335,55 @@ fun CategoryCustomizerTab(
     fun getToggleFocusRequester(catId: String): FocusRequester =
         focusRequesters.getOrPut("${catId}_toggle") { FocusRequester() }
 
+    val latestCategories by rememberUpdatedState(sortedCategories)
+    val windowInfo = rememberWindowInfo()
+    val compactActions = windowInfo.screenWidth < 600.dp
+    val useFocus = windowInfo.isTv || LocalInputModeManager.current.inputMode == InputMode.Keyboard
+    var isMoving by remember { mutableStateOf(false) }
+    var showResetConfirmation by remember { mutableStateOf(false) }
+
+    fun moveAndFollow(catId: String, index: Int, direction: Int) {
+        if (isMoving) return
+        isMoving = true
+        coroutineScope.launch {
+            try {
+                val expected = if (direction == 0) 0 else (index + direction).coerceIn(0, sortedCategories.lastIndex)
+                val job = when (direction) {
+                    0 -> mainViewModel.moveCategoryToTop(contentType, catId, sortedCategories)
+                    -1 -> mainViewModel.moveCategoryUp(contentType, catId, sortedCategories)
+                    else -> mainViewModel.moveCategoryDown(contentType, catId, sortedCategories)
+                }
+                job.join()
+                withTimeoutOrNull(1500) {
+                    snapshotFlow { latestCategories.indexOfFirst { it.id == catId } }.first { it == expected }
+                }
+                val destination = latestCategories.indexOfFirst { it.id == catId }.coerceAtLeast(0)
+                listState.scrollToItem(destination)
+                withFrameNanos { }
+                if (useFocus) runCatching { getToggleFocusRequester(catId).requestFocus() }
+            } finally {
+                isMoving = false
+            }
+        }
+    }
+
+    if (showResetConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmation = false },
+            title = { Text(stringResource(R.string.customization_reset_title)) },
+            text = { Text(stringResource(R.string.customization_reset_description)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    mainViewModel.resetCategoryCustomization(contentType)
+                    showResetConfirmation = false
+                }) { Text(stringResource(R.string.confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirmation = false }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // TOP SUMMARY BAR
         Row(
@@ -356,7 +410,7 @@ fun CategoryCustomizerTab(
                 }
 
                 TextButton(
-                    onClick = { mainViewModel.resetCategoryCustomization(contentType) },
+                    onClick = { showResetConfirmation = true },
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                 ) {
                     Text("RESTAURAR PADRÃO", fontSize = 11.sp, color = tokens.colors.error, fontWeight = FontWeight.Bold)
@@ -382,17 +436,10 @@ fun CategoryCustomizerTab(
                     border = BorderStroke(1.dp, if (isHidden) Color.White.copy(alpha = 0.05f) else tokens.colors.primary.copy(alpha = 0.15f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        // Left: Index + Name
+                    val categoryLabel: @Composable (Modifier) -> Unit = { labelModifier ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
+                            modifier = labelModifier
                         ) {
                             Text(
                                 text = "#${index + 1}",
@@ -411,79 +458,54 @@ fun CategoryCustomizerTab(
                                 modifier = Modifier.weight(1f)
                             )
                         }
-
-                        // Right: D-pad Action Buttons
+                    }
+                    val categoryActions: @Composable () -> Unit = {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            IconButton(
+                                onClick = { moveAndFollow(cat.id, index, 0) },
+                                enabled = index > 0 && !isMoving,
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(Icons.Rounded.VerticalAlignTop,
+                                    contentDescription = stringResource(R.string.category_move_top),
+                                    tint = if (index > 0) tokens.colors.primary else Color.Gray.copy(alpha = 0.3f),
+                                    modifier = Modifier.size(20.dp))
+                            }
+
                             // Move Up Button
                             IconButton(
-                                onClick = {
-                                    val newIndex = (index - 1).coerceAtLeast(0)
-                                    mainViewModel.moveCategoryUp(contentType, cat.id, sortedCategories)
-                                    coroutineScope.launch {
-                                        val scrollIndex = (newIndex - 2).coerceAtLeast(0)
-                                        listState.animateScrollToItem(scrollIndex)
-                                        delay(50)
-                                        try {
-                                            getUpFocusRequester(cat.id).requestFocus()
-                                        } catch (_: Exception) {}
-                                    }
-                                },
-                                enabled = index > 0,
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .focusRequester(getUpFocusRequester(cat.id))
+                                onClick = { moveAndFollow(cat.id, index, -1) },
+                                enabled = index > 0 && !isMoving,
+                                modifier = Modifier.size(48.dp).focusRequester(getUpFocusRequester(cat.id))
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.ArrowUpward,
-                                    contentDescription = "Mover para cima",
+                                Icon(Icons.Rounded.ArrowUpward,
+                                    contentDescription = stringResource(R.string.category_move_up),
                                     tint = if (index > 0) tokens.colors.primary else Color.Gray.copy(alpha = 0.3f),
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                    modifier = Modifier.size(18.dp))
                             }
 
                             // Move Down Button
                             IconButton(
-                                onClick = {
-                                    val newIndex = (index + 1).coerceAtMost(sortedCategories.size - 1)
-                                    mainViewModel.moveCategoryDown(contentType, cat.id, sortedCategories)
-                                    coroutineScope.launch {
-                                        val scrollIndex = (newIndex - 2).coerceAtLeast(0)
-                                        listState.animateScrollToItem(scrollIndex)
-                                        delay(50)
-                                        try {
-                                            getDownFocusRequester(cat.id).requestFocus()
-                                        } catch (_: Exception) {}
-                                    }
-                                },
-                                enabled = index < sortedCategories.size - 1,
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .focusRequester(getDownFocusRequester(cat.id))
+                                onClick = { moveAndFollow(cat.id, index, 1) },
+                                enabled = index < sortedCategories.size - 1 && !isMoving,
+                                modifier = Modifier.size(48.dp).focusRequester(getDownFocusRequester(cat.id))
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.ArrowDownward,
-                                    contentDescription = "Mover para baixo",
+                                Icon(Icons.Rounded.ArrowDownward,
+                                    contentDescription = stringResource(R.string.category_move_down),
                                     tint = if (index < sortedCategories.size - 1) tokens.colors.primary else Color.Gray.copy(alpha = 0.3f),
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                    modifier = Modifier.size(18.dp))
                             }
 
                             // Hide/Show Toggle Button
                             IconButton(
                                 onClick = {
                                     mainViewModel.toggleCategoryVisibility(contentType, cat.id)
-                                    coroutineScope.launch {
-                                        delay(50)
-                                        try {
-                                            getToggleFocusRequester(cat.id).requestFocus()
-                                        } catch (_: Exception) {}
-                                    }
                                 },
                                 modifier = Modifier
-                                    .size(32.dp)
+                                    .size(48.dp)
                                     .focusRequester(getToggleFocusRequester(cat.id))
                             ) {
                                 Icon(
@@ -493,6 +515,19 @@ fun CategoryCustomizerTab(
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
+                        }
+                    }
+                    if (compactActions) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                            categoryLabel(Modifier.fillMaxWidth())
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { categoryActions() }
+                        }
+                    } else {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween) {
+                            categoryLabel(Modifier.weight(1f))
+                            categoryActions()
                         }
                     }
                 }

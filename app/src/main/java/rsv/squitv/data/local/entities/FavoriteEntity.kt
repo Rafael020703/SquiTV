@@ -1,11 +1,13 @@
 ﻿package rsv.squitv.data.local.entities
 
 import androidx.room.Entity
+import kotlinx.serialization.Serializable
 
-@Entity(tableName = "favorites", primaryKeys = ["streamId", "streamType"])
+@Serializable
+@Entity(tableName = "favorites", primaryKeys = ["accountId", "profileId", "streamId", "streamType"])
 data class FavoriteEntity(
     val streamId: Int,
-    val streamType: String, // LIVE, VOD, SERIES
+    val streamType: String, // LIVE, MOVIE, SERIES
     val name: String = "",
     val logo: String? = null,
     val rating: String? = null,
@@ -13,5 +15,7 @@ data class FavoriteEntity(
     val url: String? = null, // epgChannelId for LIVE
     val containerExtension: String? = null,
     val categoryId: String? = null,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val accountId: String = "",
+    val profileId: String = ""
 )

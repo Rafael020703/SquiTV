@@ -148,15 +148,16 @@ fun NavGraphBuilder.appNavGraph(
         val catViewModel: CategoryViewModel = hiltViewModel()
         val blockedIds by mainViewModel.blockedCategoryIds.collectAsStateWithLifecycle()
         val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+        val catalogRevision by mainViewModel.catalogRevision.collectAsStateWithLifecycle()
 
         LaunchedEffect(Unit) {
             mainViewModel.loadCategories(route.type)
         }
 
-        LaunchedEffect(route.categoryId, route.type, blockedIds, settings.hideBlockedCategories) {
+        LaunchedEffect(route.categoryId, route.type, blockedIds, settings.hideBlockedCategories, catalogRevision, settings.credentials?.baseUrl, settings.credentials?.username) {
             val ids = if (settings.hideBlockedCategories) blockedIds else emptySet()
             val catToLoad = route.categoryId ?: (if (route.type == "movie") settings.lastMovieCategory else null) ?: "RECENTS"
-            catViewModel.loadContent(route.type, catToLoad, ids)
+            catViewModel.ensureContent(route.type, catToLoad, ids, catalogRevision)
         }
         MoviesScreen(
             title = if (route.type == "movie") stringResource(R.string.movies_nav_title) else route.categoryId ?: "",
@@ -181,15 +182,16 @@ fun NavGraphBuilder.appNavGraph(
         val catViewModel: CategoryViewModel = hiltViewModel()
         val blockedIds by mainViewModel.blockedCategoryIds.collectAsStateWithLifecycle()
         val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+        val catalogRevision by mainViewModel.catalogRevision.collectAsStateWithLifecycle()
 
         LaunchedEffect(Unit) {
             mainViewModel.loadCategories(route.type)
         }
 
-        LaunchedEffect(route.categoryId, route.type, blockedIds, settings.hideBlockedCategories) {
+        LaunchedEffect(route.categoryId, route.type, blockedIds, settings.hideBlockedCategories, catalogRevision, settings.credentials?.baseUrl, settings.credentials?.username) {
             val ids = if (settings.hideBlockedCategories) blockedIds else emptySet()
             val catToLoad = route.categoryId ?: (if (route.type == "series") settings.lastSeriesCategory else null) ?: "RECENTS"
-            catViewModel.loadContent(route.type, catToLoad, ids)
+            catViewModel.ensureContent(route.type, catToLoad, ids, catalogRevision)
         }
         SeriesScreen(
             title = if (route.type == "series") stringResource(R.string.series_nav_title) else route.categoryId ?: "",
@@ -427,8 +429,9 @@ fun NavGraphBuilder.appNavGraph(
     composable<Route.ActorDetail> { backStackEntry ->
         val route: Route.ActorDetail = backStackEntry.toRoute()
         val catViewModel: CategoryViewModel = hiltViewModel()
-        LaunchedEffect(route.name) {
-            catViewModel.loadContent("actor", route.name)
+        val catalogRevision by mainViewModel.catalogRevision.collectAsStateWithLifecycle()
+        LaunchedEffect(route.name, catalogRevision) {
+            catViewModel.ensureContent("actor", route.name, emptySet(), catalogRevision)
         }
         ActorDetailScreen(
             actorName = route.name,

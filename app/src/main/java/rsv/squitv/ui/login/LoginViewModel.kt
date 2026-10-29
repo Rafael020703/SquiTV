@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import rsv.squitv.BuildConfig
 import rsv.squitv.core.domain.interactor.AuthManager
 import rsv.squitv.core.domain.interactor.DnsManager
-import rsv.squitv.data.repository.FirebaseRepository
 import rsv.squitv.data.repository.SettingsRepository
 import rsv.squitv.data.model.XtreamCredentials
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +31,6 @@ import javax.inject.Inject
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
-    private val firebaseRepository: FirebaseRepository,
     private val dnsManager: DnsManager,
     private val authManager: AuthManager,
     private val updateRepository: UpdateRepository,
@@ -101,13 +99,7 @@ class LoginViewModel @Inject constructor(
         testAllDns()
         checkForUpdates()
         
-        // DEBUG ONLY: Pre-fill test credentials for local development testing
-        if (BuildConfig.DEBUG) {
-            if (_username.value.isEmpty() && _password.value.isEmpty()) {
-                _username.value = "565185685"
-                _password.value = "069600716"
-            }
-        }
+
     }
 
     fun onUrlChanged(value: String) { _url.value = value }

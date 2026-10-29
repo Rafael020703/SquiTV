@@ -215,6 +215,8 @@ class DnsTesterViewModel @Inject constructor(
                     return@launch
                 }
 
+                settingsRepository.preserveCustomizationForDnsChange(oldCreds, updatedCreds)
+
                 // 5. IF AUTH SUCCEEDED, UPDATE ACTIVE STATE & START SYNC
                 _uiState.update {
                     it.copy(

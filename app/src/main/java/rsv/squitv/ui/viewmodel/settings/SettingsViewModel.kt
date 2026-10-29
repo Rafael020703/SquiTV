@@ -11,8 +11,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val settingsRepository: SettingsRepository,
-    private val firebaseRepository: rsv.squitv.data.repository.FirebaseRepository
+    private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
     val settings = settingsRepository.settingsFlow.stateIn(
@@ -91,7 +90,7 @@ class SettingsViewModel @Inject constructor(
 
     fun updateProfilePicture(url: String) {
         viewModelScope.launch {
-            firebaseRepository.updateProfilePicture(url)
+            settingsRepository.updateProfilePicture(url)
         }
     }
 }

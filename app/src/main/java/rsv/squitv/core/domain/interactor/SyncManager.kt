@@ -2,13 +2,10 @@
 
 import rsv.squitv.core.domain.state.AppSyncProgress
 import rsv.squitv.core.data.repository.CatalogRepository
-import rsv.squitv.core.data.repository.UserRepository
 import rsv.squitv.data.model.XtreamCategory
 import rsv.squitv.data.model.XtreamCredentials
 import rsv.squitv.data.model.XtreamStream
-import rsv.squitv.data.repository.FirebaseRepository
 import rsv.squitv.data.repository.SettingsRepository
-import rsv.squitv.domain.model.IptvItem
 import rsv.squitv.domain.usecase.SyncDataUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,10 +15,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.json.*
-import kotlinx.serialization.decodeFromString
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,17 +22,13 @@ import javax.inject.Singleton
 @Singleton
 class SyncManager @Inject constructor(
     private val catalogRepository: CatalogRepository,
-    private val userRepository: UserRepository,
     private val settingsRepository: SettingsRepository,
     private val syncDataUseCase: SyncDataUseCase,
-    private val firebaseRepository: FirebaseRepository,
-    private val profileManager: ProfileManager,
     private val authManager: AuthManager
 ) {
     private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var syncJob: Job? = null
     private var resetJob: Job? = null
-    private val pendingMutex = Mutex()
 
     private val _syncProgress = MutableStateFlow(AppSyncProgress())
     val syncProgress: StateFlow<AppSyncProgress> = _syncProgress.asStateFlow()
@@ -74,7 +63,6 @@ class SyncManager @Inject constructor(
                 if (result.isComplete && !result.isCancelled) {
                     if (result.isContentReady) _isContentReady.value = true
                     else checkContentReadiness()
-                    if (result.error == null) processPendingSyncs()
                 }
             }
         }
@@ -84,9 +72,7 @@ class SyncManager @Inject constructor(
         }
         managerScope.launch {
             authManager.isLoggedIn.collect { logged ->
-                if (logged == true) {
-                    processPendingSyncs()
-                } else if (logged == false) {
+                if (logged == false) {
                     // Logout: We preserve catalog data but reset readiness state 
                     // until the next login confirms if this data is still valid.
                     _isContentReady.value = false
@@ -113,50 +99,6 @@ class SyncManager @Inject constructor(
         Timber.d("Sync: STARTING (force=$force)")
         syncJob = managerScope.launch {
             syncDataUseCase(force = force).collect()
-        }
-    }
-
-    fun processPendingSyncs() {
-        managerScope.launch {
-            pendingMutex.withLock {
-                val pendings = userRepository.getAllPendingSyncs()
-                if (pendings.isEmpty()) return@withLock
-                Timber.d("Processing ${pendings.size} pending syncs...")
-                val profileId = profileManager.activeProfile.value?.id ?: "default"
-                pendings.forEach { pending ->
-                    val success = try {
-                        when (pending.type) {
-                            "FAVORITE_ADD" -> {
-                                val item = Json.decodeFromString<IptvItem>(pending.payload)
-                                firebaseRepository.addFavorite(profileId, item, pending.providerHash)
-                            }
-                            "FAVORITE_REMOVE" -> firebaseRepository.removeFavorite(profileId, pending.contentId, pending.providerHash)
-                            "WATCH_PROGRESS" -> {
-                                val rawData = Json.decodeFromString<Map<String, JsonElement>>(pending.payload).mapValues {
-                                    when (it.value) {
-                                        is JsonPrimitive -> it.value.jsonPrimitive.content
-                                        else -> it.value.toString()
-                                    }
-                                }
-                                firebaseRepository.syncWatchProgress(profileId, pending.contentId, rawData)
-                            }
-                            "HISTORY_ADD" -> {
-                                val item = Json.decodeFromString<IptvItem>(pending.payload)
-                                firebaseRepository.addHistory(profileId, item)
-                            }
-                            else -> false
-                        }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (failure: Exception) {
-                        Timber.w(failure, "Pending user data sync failed; keeping it for retry")
-                        false
-                    }
-                    if (success) {
-                        userRepository.deletePendingSync(pending.type, pending.providerHash, pending.contentId)
-                    }
-                }
-            }
         }
     }
 

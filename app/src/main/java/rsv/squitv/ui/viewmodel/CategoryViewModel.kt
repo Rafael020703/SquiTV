@@ -1,5 +1,6 @@
 ﻿package rsv.squitv.ui.viewmodel
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import rsv.squitv.core.data.repository.CatalogRepository
@@ -29,16 +30,17 @@ class CategoryViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val catalogRepository: CatalogRepository,
     private val userRepository: UserRepository,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle()
 ) : ViewModel() {
 
     private val _rawRows = MutableStateFlow<List<DashboardRow>>(emptyList())
     
-    private val _searchQuery = MutableStateFlow("")
-    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+    private val _searchQuery = savedStateHandle.getStateFlow("searchQuery", "")
+    val searchQuery: StateFlow<String> = _searchQuery
 
-    private val _sortOrder = MutableStateFlow("NAME") // NAME, RECENT, RATING
-    val sortOrder: StateFlow<String> = _sortOrder.asStateFlow()
+    private val _sortOrder = savedStateHandle.getStateFlow("sortOrder", "NAME") // NAME, RECENT, RATING
+    val sortOrder: StateFlow<String> = _sortOrder
 
     val currentContentRows: StateFlow<List<DashboardRow>> = combine(_rawRows, _searchQuery, _sortOrder) { rows, query, sort ->
         rows.map { row ->
@@ -65,8 +67,8 @@ class CategoryViewModel @Inject constructor(
     private val _availableGenres = MutableStateFlow<List<String>>(emptyList())
     val availableGenres: StateFlow<List<String>> = _availableGenres.asStateFlow()
 
-    private val _selectedGenre = MutableStateFlow<String?>(null)
-    val selectedGenre: StateFlow<String?> = _selectedGenre.asStateFlow()
+    private val _selectedGenre = savedStateHandle.getStateFlow<String?>("selectedGenre", null)
+    val selectedGenre: StateFlow<String?> = _selectedGenre
 
     fun loadGenres(type: String) {
         viewModelScope.launch {
@@ -79,16 +81,16 @@ class CategoryViewModel @Inject constructor(
     }
 
     fun selectGenre(type: String, genre: String?, categoryId: String? = null, blockedIds: Set<String> = emptySet()) {
-        _selectedGenre.value = genre
+        savedStateHandle["selectedGenre"] = genre
         loadContent(type, categoryId, blockedIds, genre = genre)
     }
 
     fun onSearchQueryChanged(query: String) {
-        _searchQuery.value = query
+        savedStateHandle["searchQuery"] = query
     }
 
     fun onSortOrderChanged(order: String) {
-        _sortOrder.value = order
+        savedStateHandle["sortOrder"] = order
     }
 
     fun togglePinCategory(catId: String, type: String, pinned: Boolean) {
@@ -98,27 +100,91 @@ class CategoryViewModel @Inject constructor(
         }
     }
 
+    val activeCategoryId = savedStateHandle.getStateFlow<String?>("activeCategoryId", null)
+
+    private data class ContentRequest(
+        val type: String, val categoryId: String?, val blockedIds: Set<String>,
+        val genre: String?, val account: String, val revision: Long
+    )
+
     private var loadJob: Job? = null
+    private var generation = 0L
+    private var catalogueRevision = 0L
+    private var currentRequest: ContentRequest? = null
+    private var completedRequest: ContentRequest? = null
+
+    /** A back-stack return reuses the current category, genre and loaded rows. */
+    fun ensureContent(type: String, initialCategoryId: String?, blockedIds: Set<String>, revision: Long) {
+        val sameType = savedStateHandle.get<String>("contentType") == type
+        catalogueRevision = revision
+        loadContent(type, if (sameType) activeCategoryId.value ?: initialCategoryId else initialCategoryId,
+            blockedIds, genre = if (sameType) _selectedGenre.value else null, reuseLoaded = true)
+    }
+
+    init {
+        viewModelScope.launch {
+            userRepository.getFavoritesListFlow().collectLatest { entities ->
+                val request = currentRequest ?: return@collectLatest
+                if (request.categoryId == "FAVORITES" || request.type == "favorites") {
+                    val items = favoriteItems(entities)
+                    if (currentRequest == request) _rawRows.value = favoriteRows(request.type, items, request.genre)
+                }
+            }
+        }
+    }
+
+    private suspend fun favoriteItems(entities: List<FavoriteEntity>): List<IptvItem> {
+        val streams = entities.map { it.streamId }.distinct().chunked(500)
+            .flatMap { catalogRepository.getStreamsByIds(it) }
+            .associateBy { it.id.toString() to ContentType.fromString(it.streamType) }
+        return entities.map { favorite ->
+            val item = favorite.favoriteToIptvItem()
+            streams[item.id to item.type]?.toIptvItem()?.copy(isFavorite = true) ?: item
+        }
+    }
+
+    private fun favoriteRows(type: String, favorites: List<IptvItem>, genre: String?): List<DashboardRow> {
+        val filtered = favorites.filter {
+            (type == "favorites" || it.type == ContentType.fromString(type)) &&
+                (genre.isNullOrBlank() || rsv.squitv.domain.usecase.GenreUtils.matchesGenre(it.genre, genre))
+        }
+        return if (type == "favorites") {
+            listOf(ContentType.LIVE to "Canais", ContentType.MOVIE to "Filmes", ContentType.SERIES to "Séries")
+                .map { (contentType, label) -> DashboardRow(label, filtered.filter { it.type == contentType }, catId = "FAVORITES") }
+                .filter { it.items.isNotEmpty() }
+        } else listOf(DashboardRow("Favoritos", filtered, catId = "FAVORITES"))
+    }
 
     fun loadContent(
         type: String, 
         categoryId: String? = null, 
         blockedIds: Set<String> = emptySet(), 
         favorites: List<IptvItem> = emptyList(),
-        genre: String? = null
+        genre: String? = null,
+        reuseLoaded: Boolean = false
     ) {
+        val requestGeneration = ++generation
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             val credentials = settingsRepository.settingsFlow.first().credentials ?: return@launch
+            val account = "${credentials.baseUrl.trim().lowercase()}#${credentials.username.trim().lowercase()}"
+            val request = ContentRequest(type, categoryId, blockedIds.toSet(), genre, account, catalogueRevision)
+            if (reuseLoaded && request == completedRequest && categoryId != "CONTINUE_WATCHING") {
+                _isLoading.value = false
+                return@launch
+            }
+            if (currentRequest?.let { it.account != account || it.type != type || it.categoryId != categoryId || it.genre != genre } != false) {
+                _rawRows.value = emptyList()
+            }
+            currentRequest = request
+            savedStateHandle["contentType"] = type
+            savedStateHandle["activeCategoryId"] = categoryId
+            savedStateHandle["selectedGenre"] = genre
             _isLoading.value = true
+            var succeeded = true
             try {
                 if (type == "favorites") {
-                    val rows = listOf(
-                        DashboardRow("Canais", favorites.filter { it.type == ContentType.LIVE }),
-                        DashboardRow("Filmes", favorites.filter { it.type == ContentType.MOVIE }),
-                        DashboardRow("Séries", favorites.filter { it.type == ContentType.SERIES })
-                    ).filter { it.items.isNotEmpty() }
-                    _rawRows.value = rows
+                    _rawRows.value = favoriteRows(type, favoriteItems(userRepository.getFavoritesListFlow().first()), genre)
                     return@launch
                 }
 
@@ -183,16 +249,7 @@ class CategoryViewModel @Inject constructor(
                 }
 
                 if (categoryId == "FAVORITES") {
-                    val favList = userRepository.getFavoritesListFlow().first().map { entity ->
-                        entity.favoriteToIptvItem()
-                    }
-                    val filteredItems = when (type) {
-                        "live" -> favList.filter { it.type == ContentType.LIVE }
-                        "movie" -> favList.filter { it.type == ContentType.MOVIE }
-                        "series" -> favList.filter { it.type == ContentType.SERIES }
-                        else -> favList
-                    }
-                    _rawRows.value = listOf(DashboardRow("Favoritos", filteredItems, catId = "FAVORITES"))
+                    _rawRows.value = favoriteRows(type, favoriteItems(userRepository.getFavoritesListFlow().first()), genre)
                     return@launch
                 }
 
@@ -275,10 +332,17 @@ class CategoryViewModel @Inject constructor(
                 
                 // Prefetch visible rows
                 prefetchRowImages(_rawRows.value.take(5).flatMap { it.items.take(10) })
+            } catch (e: CancellationException) {
+                succeeded = false
+                throw e
             } catch (e: Exception) {
+                succeeded = false
                 Timber.e(e, "Error loading content")
             } finally {
-                _isLoading.value = false
+                if (requestGeneration == generation) {
+                    if (succeeded) completedRequest = request
+                    _isLoading.value = false
+                }
             }
         }
     }

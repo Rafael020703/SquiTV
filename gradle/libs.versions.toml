@@ -1,10 +1,10 @@
 [versions]
-agp = "9.3.1"
+agp = "9.4.0"
 appcompat = "1.7.1"
-media3 = "1.11.0"
+media3 = "1.11.1"
 xmlutil = "1.0.2.1"
 retrofit2KotlinxSerializationConverter = "1.0.0"
-coreKtx = "1.19.0"
+coreKtx = "1.19.1"
 junit = "4.13.2"
 junitVersion = "1.1.5"
 espressoCore = "3.5.1"
@@ -12,23 +12,23 @@ lifecycleRuntimeKtx = "2.11.0"
 lifecycleViewmodelCompose = "2.11.0"
 lifecycleRuntimeCompose = "2.11.0"
 activityCompose = "1.13.0"
-kotlin = "2.4.10"
-composeBom = "2026.06.01"
-googleDevtoolsKsp = "2.3.11"
-jetbrainsKotlinPluginSerialization = "2.4.10"
-kotlinxSerializationCore = "1.11.0"
-kotlinxSerializationJson = "1.11.0"
-navigation3Ui = "1.1.5"
-navigation3Runtime = "1.1.5"
-navigationCompose = "2.10.0"
-adaptive = "1.2.0"
-adaptiveLayout = "1.2.0"
-adaptiveNavigation3 = "1.3.0-rc01"
-navigationEvent = "1.1.2"
+kotlin = "2.4.21"
+composeBom = "2026.09.00"
+googleDevtoolsKsp = "2.3.12"
+jetbrainsKotlinPluginSerialization = "2.4.21"
+kotlinxSerializationCore = "1.12.0"
+kotlinxSerializationJson = "1.12.0"
+navigation3Ui = "1.2.0"
+navigation3Runtime = "1.2.0"
+navigationCompose = "2.10.2"
+adaptive = "1.3.0"
+adaptiveLayout = "1.3.0"
+adaptiveNavigation3 = "1.3.0"
+navigationEvent = "1.2.0"
 lifecycleViewmodelNavigation3 = "2.11.0"
-roomRuntime = "2.8.4"
-roomKtx = "2.8.4"
-roomCompiler = "2.8.4"
+roomRuntime = "2.8.5"
+roomKtx = "2.8.5"
+roomCompiler = "2.8.5"
 appfunctions = "1.0.0-alpha10"
 appfunctions-service = "1.0.0-alpha09"
 kotlinxCoroutinesTest = "1.11.0"
@@ -39,18 +39,16 @@ coilSvg = "2.7.0"
 retrofit = "3.0.0"
 kotlinxCoroutinesAndroid = "1.11.0"
 kotlinxCoroutinesCore = "1.11.0"
-loggingInterceptor = "5.4.0"
-okhttp = "5.4.0"
-datastorePreferences = "1.1.7"
+loggingInterceptor = "5.5.1"
+okhttp = "5.5.1"
+datastorePreferences = "1.3.0"
 material = "1.14.0"
 hilt = "2.60.1"
-work = "2.11.2"
+work = "2.12.0"
 hilt-work = "1.4.0"
 splashscreen = "1.2.0"
 timber = "5.0.1"
 paging = "3.5.1"
-firebaseBom = "33.1.2"
-googleServices = "4.4.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -119,11 +117,6 @@ timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "tim
 androidx-paging-runtime = { group = "androidx.paging", name = "paging-runtime", version.ref = "paging" }
 androidx-paging-compose = { group = "androidx.paging", name = "paging-compose", version.ref = "paging" }
 androidx-room-paging = { group = "androidx.room", name = "room-paging", version.ref = "roomRuntime" }
-firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
-firebase-firestore = { group = "com.google.firebase", name = "firebase-firestore" }
-firebase-auth = { group = "com.google.firebase", name = "firebase-auth" }
-firebase-config = { group = "com.google.firebase", name = "firebase-config" }
-firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -131,4 +124,4 @@ kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "ko
 google-devtools-ksp = { id = "com.google.devtools.ksp", version.ref = "googleDevtoolsKsp" }
 jetbrains-kotlin-plugin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "jetbrainsKotlinPluginSerialization" }
 google-dagger-hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
-google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
+roomplugin = { id = "androidx.room", version.ref = "roomRuntime" }

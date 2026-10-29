@@ -6,6 +6,8 @@ import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import rsv.squitv.ui.content.components.rememberContentGridState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.res.stringResource
@@ -67,7 +69,8 @@ fun LiveChannelsScreen(
         if (settings.hideBlockedCategories) blockedIds else emptySet()
     }
 
-    var selectedCategoryId by remember { mutableStateOf<String?>(null) }
+    var selectedCategoryId by rememberSaveable { mutableStateOf(categoryViewModel.activeCategoryId.value ?: settings.lastLiveCategory) }
+    val gridState = rememberContentGridState("${settings.credentials?.baseUrl}#${settings.credentials?.username}/live/$selectedCategoryId")
 
     LaunchedEffect(contentRows) {
         val loadedCatId = contentRows.firstOrNull()?.catId
@@ -76,7 +79,7 @@ fun LiveChannelsScreen(
         }
     }
 
-    var isInitialLoad by remember { mutableStateOf(true) }
+    var isInitialLoad by rememberSaveable { mutableStateOf(true) }
 
     LaunchedEffect(categories, settings.lastLiveCategory) {
         if (categories.isNotEmpty()) {
@@ -172,7 +175,7 @@ fun LiveChannelsScreen(
                 }
 
                 Box(modifier = Modifier.weight(1f)) {
-                    if (isLoading) {
+                    if (isLoading && contentRows.isEmpty()) {
                         LoadingState(message = stringResource(R.string.msg_connecting))
                     } else if (contentRows.isEmpty()) {
                         EmptyState(
@@ -207,6 +210,8 @@ fun LiveChannelsScreen(
                             items = allItems,
                             gridFocusRequester = gridFocusRequester,
                             sidebarFocusRequester = sidebarFocusRequester,
+                            state = gridState,
+                            onToggleFavorite = libraryViewModel::toggleFavorite,
                             favorites = favorites,
                             targetItemId = targetChannelId,
                             onItemClick = { item ->
