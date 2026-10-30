@@ -132,7 +132,7 @@ interface IptvDao {
 
     @Query("""
         SELECT s.* FROM iptv_streams s
-        JOIN iptv_streams_fts f ON s.name = f.name
+        JOIN iptv_streams_fts f ON s.rowid = f.rowid
         WHERE iptv_streams_fts MATCH :query || '*'
         AND s.streamType = :type
         ORDER BY s.name ASC
@@ -162,7 +162,7 @@ interface IptvDao {
 
     @Query("""
         SELECT s.* FROM iptv_streams s
-        JOIN iptv_streams_fts f ON s.name = f.name
+        JOIN iptv_streams_fts f ON s.rowid = f.rowid
         WHERE iptv_streams_fts MATCH :query || '*'
         AND s.streamType = :type
         AND s.categoryId NOT IN (:blockedIds)

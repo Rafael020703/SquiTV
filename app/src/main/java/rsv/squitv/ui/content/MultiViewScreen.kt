@@ -76,7 +76,6 @@ fun MultiViewScreen(
             AppHeader(
                 title = stringResource(R.string.multiview_nav_title),
                 subtitle = stringResource(R.string.multiview_nav_subtitle),
-                onBack = onBack
             )
 
             // Players Grid

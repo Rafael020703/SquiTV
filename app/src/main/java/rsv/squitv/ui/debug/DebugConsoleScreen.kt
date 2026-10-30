@@ -103,9 +103,6 @@ fun DebugConsoleScreen(
                     }) {
                         Text(stringResource(R.string.debug_export_button))
                     }
-                    TextButton(onClick = onNavigateBack) {
-                        Text(stringResource(R.string.back_content_desc))
-                    }
                 }
             )
         }

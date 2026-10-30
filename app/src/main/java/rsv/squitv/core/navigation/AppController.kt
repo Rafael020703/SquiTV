@@ -1,6 +1,9 @@
 ﻿package rsv.squitv.core.navigation
 
 import android.util.Log
+import rsv.squitv.BuildConfig
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import rsv.squitv.core.debug.DebugCategory
 import rsv.squitv.core.debug.DebugLevel
 import rsv.squitv.core.debug.DebugLogger
@@ -18,6 +21,12 @@ class AppController @Inject constructor() {
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
     val actions = _actions.asSharedFlow()
+
+    // External intents can arrive before the navigation collector exists on cold start.
+    private val _externalRoute = MutableStateFlow<Route?>(null)
+    val externalRoute = _externalRoute.asStateFlow()
+    fun requestExternalRoute(route: Route) { _externalRoute.value = route }
+    fun consumeExternalRoute(route: Route): Boolean = _externalRoute.compareAndSet(route, null)
 
     fun handleAction(action: AppAction) {
         _actions.tryEmit(action)
@@ -46,8 +55,10 @@ class AppController @Inject constructor() {
             )
         )
 
-        val caller = Thread.currentThread().stackTrace.getOrNull(3)
-        Log.d("BACK_NAV_DEBUG", "NAV_REQUEST | route=$route | popUpTo=$popUpToRoute | inclusive=$inclusive | caller=$caller")
+        if (BuildConfig.DEBUG) {
+            val caller = Thread.currentThread().stackTrace.getOrNull(3)
+            Log.d("BACK_NAV_DEBUG", "NAV_REQUEST | route=$route | popUpTo=$popUpToRoute | inclusive=$inclusive | caller=$caller")
+        }
         handleAction(AppAction.Navigate(route, popUpToRoute, inclusive, launchSingleTop))
     }
 
@@ -58,11 +69,11 @@ class AppController @Inject constructor() {
             event = "NAVIGATION_BACK",
             context = mapOf("eventId" to eventId, "fromRoute" to (DebugLogger.currentRoute.get() ?: "unknown"))
         )
-        Log.i("BACK_NAV_DEBUG", "GO_BACK_REQUEST | source=AppController | eventId=$eventId")
+        if (BuildConfig.DEBUG) Log.i("BACK_NAV_DEBUG", "GO_BACK_REQUEST | source=AppController | eventId=$eventId")
         handleAction(AppAction.Back(eventId))
     }
     fun exitApp() {
-        Log.e("BACK_NAV_DEBUG", "EXIT_APP_REQUEST")
+        if (BuildConfig.DEBUG) Log.e("BACK_NAV_DEBUG", "EXIT_APP_REQUEST")
         handleAction(AppAction.ExitApp)
     }
 }

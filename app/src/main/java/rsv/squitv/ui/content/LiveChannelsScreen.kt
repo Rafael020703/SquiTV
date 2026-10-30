@@ -142,7 +142,6 @@ fun LiveChannelsScreen(
             AppHeader(
                 title = stringResource(R.string.live_tv_nav_title),
                 subtitle = activeCat?.categoryName ?: stringResource(R.string.all_categories_label),
-                onBack = onBack,
                 actions = {
                     AppIconButton(Icons.AutoMirrored.Rounded.Sort, { showSortMenu = true })
                     AppIconButton(Icons.Rounded.Search, onNavigateToSearch)

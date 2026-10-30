@@ -1,96 +1,96 @@
-﻿package rsv.squitv.data.update
+package rsv.squitv.data.update
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
-import rsv.squitv.util.AppVersionProvider
+import androidx.core.net.toUri
+import rsv.squitv.R
 import timber.log.Timber
 import java.io.File
 
 object PackageInstallerHelper {
+    fun canRequestPackageInstalls(context: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
 
-    fun canRequestPackageInstalls(context: Context): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.packageManager.canRequestPackageInstalls()
-        } else {
-            true
-        }
-    }
-
-    fun openUnknownAppSourcesSettings(context: Context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+    fun openUnknownAppSourcesSettings(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true
+        return try {
             try {
-                val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                    data = Uri.parse("package:${context.packageName}")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-            } catch (e: Exception) {
-                Timber.e(e, "Erro ao abrir configurações de fontes desconhecidas")
-                val fallbackIntent = Intent(Settings.ACTION_SECURITY_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(fallbackIntent)
+                context.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    "package:${context.packageName}".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (_: Exception) {
+                context.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             }
-        }
-    }
-
-    fun isApkValid(context: Context, apkFile: File): Boolean {
-        if (!apkFile.exists() || apkFile.length() <= 0) {
-            Timber.e("Arquivo APK não existe ou está vazio")
-            return false
-        }
-        return try {
-            val packageInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
-            if (packageInfo == null) {
-                Timber.e("Não foi possível analisar as informações do pacote APK")
-                return false
-            }
-            if (packageInfo.packageName != context.packageName) {
-                Timber.e("O packageName do APK (%s) não coincide com o aplicativo instalado (%s)", packageInfo.packageName, context.packageName)
-                return false
-            }
-
-            val apkVersionName = packageInfo.versionName ?: ""
-            val currentVersionName = AppVersionProvider.getVersionName(context)
-
-            if (VersionComparator.compareVersions(apkVersionName, currentVersionName) <= 0) {
-                Timber.i("O APK baixado (%s) não é mais recente que a versão instalada (%s). Limpando arquivo.", apkVersionName, currentVersionName)
-                try { apkFile.delete() } catch (_: Exception) {}
-                return false
-            }
-
             true
         } catch (e: Exception) {
-            Timber.e(e, "Erro ao validar estrutura do arquivo APK antes da instalação")
+            Timber.w(e, "Não foi possível abrir a permissão de instalação")
             false
         }
     }
 
-    fun installApk(context: Context, apkFile: File): Boolean {
-        if (!isApkValid(context, apkFile)) {
-            Timber.e("Arquivo APK inválido ou incompatível para instalação")
-            return false
-        }
-
+    @Suppress("DEPRECATION")
+    fun validationError(context: Context, apkFile: File, expectedVersion: String? = null): String? {
+        if (!apkFile.isFile || apkFile.length() <= 0) return context.getString(R.string.updater_missing_file)
         return try {
-            val authority = "${context.packageName}.fileprovider"
-            val apkUri: Uri = FileProvider.getUriForFile(context, authority, apkFile)
-
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(apkUri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageManager.GET_SIGNING_CERTIFICATES
+            } else PackageManager.GET_SIGNATURES
+            val manager = context.packageManager
+            val candidate = manager.getPackageArchiveInfo(apkFile.absolutePath, flags)
+                ?: return context.getString(R.string.updater_invalid_apk)
+            val installed = manager.getPackageInfo(context.packageName, flags)
+            when {
+                candidate.packageName != context.packageName -> context.getString(R.string.updater_wrong_package)
+                expectedVersion != null && VersionComparator.compareVersions(candidate.versionName.orEmpty(), expectedVersion) != 0 ->
+                    context.getString(R.string.updater_wrong_version)
+                versionCode(candidate) <= versionCode(installed) -> context.getString(R.string.updater_old_apk)
+                !hasCompatibleSigners(installed, candidate) -> context.getString(R.string.updater_wrong_signature)
+                else -> null
             }
-
-            context.startActivity(intent)
-            true
         } catch (e: Exception) {
-            Timber.e(e, "Erro ao iniciar instalação do APK")
-            false
+            Timber.w(e, "Não foi possível validar o APK")
+            context.getString(R.string.updater_invalid_apk)
         }
+    }
+
+    private fun versionCode(info: PackageInfo): Long = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        info.longVersionCode
+    } else {
+        @Suppress("DEPRECATION")
+        info.versionCode.toLong()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun hasCompatibleSigners(installed: PackageInfo, candidate: PackageInfo): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val current = installed.signingInfo ?: return false
+            val incoming = candidate.signingInfo ?: return false
+            val currentSigners = current.apkContentsSigners?.toSet().orEmpty()
+            val incomingSigners = incoming.apkContentsSigners?.toSet().orEmpty()
+            if (currentSigners.isEmpty() || incomingSigners.isEmpty()) return false
+            if (current.hasMultipleSigners() || incoming.hasMultipleSigners()) return currentSigners == incomingSigners
+            // Accept a forward rotation only when the archive proves the installed signer
+            // belongs to its signing history. Android's installer remains the final authority.
+            return incoming.signingCertificateHistory?.toSet().orEmpty().containsAll(currentSigners)
+        }
+        val current = installed.signatures?.toSet().orEmpty()
+        return current.isNotEmpty() && current == candidate.signatures?.toSet().orEmpty()
+    }
+
+    // Called only after validation on Dispatchers.IO by UpdateViewModel.
+    fun installApk(context: Context, apkFile: File): Boolean = try {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apkFile)
+        context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
+        true
+    } catch (e: Exception) {
+        Timber.w(e, "Não foi possível abrir o instalador")
+        false
     }
 }

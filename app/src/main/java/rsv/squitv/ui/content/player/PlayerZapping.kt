@@ -4,7 +4,6 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,12 +19,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import rsv.squitv.R
 import rsv.squitv.core.ui.theme.*
 import rsv.squitv.data.model.EpgProgramme
@@ -95,98 +100,104 @@ fun BoxScope.ZappingBanner(
     program: EpgProgramme?,
     isExpanded: Boolean
 ) {
-    val tokens = AppDesignSystem
+    val colors = AppDesignSystem.colors
+    val logoSize = if (isExpanded) 44.dp else 36.dp
+    val programmeTitle = program?.title?.trim()?.takeIf { it.isNotEmpty() }
     AnimatedVisibility(
         visible = isVisible,
-        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
-        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+        enter = fadeIn(tween(160)) + slideInVertically(tween(160), initialOffsetY = { -it / 3 }),
+        exit = fadeOut(tween(120)) + slideOutVertically(tween(120), targetOffsetY = { -it / 3 }),
         modifier = Modifier
+            .align(Alignment.TopStart)
+            .displayCutoutPadding()
+            .padding(horizontal = if (isExpanded) 20.dp else 12.dp, vertical = if (isExpanded) 16.dp else 12.dp)
+            .widthIn(max = if (isExpanded) 360.dp else 300.dp)
             .fillMaxWidth()
-            .align(Alignment.TopCenter)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = if (isExpanded) 36.dp else 20.dp, start = tokens.spacing.large, end = tokens.spacing.large), 
-            contentAlignment = Alignment.TopCenter
+        Surface(
+            modifier = Modifier.semantics(mergeDescendants = true) {},
+            color = colors.backgroundSecondary.copy(alpha = 0.90f),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            tonalElevation = 0.dp
         ) {
-            Surface(
-                color = tokens.colors.backgroundSecondary.copy(alpha = 0.95f),
-                shape = tokens.shapes.extraLarge,
-                border = BorderStroke(1.dp, tokens.colors.primary.copy(alpha = 0.6f)),
-                tonalElevation = 16.dp,
-                modifier = Modifier.fillMaxWidth(if (isExpanded) 0.85f else 1f)
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(modifier = Modifier.padding(tokens.spacing.large), verticalAlignment = Alignment.CenterVertically) {
-                    // Logo Box
-                    Box(
-                        modifier = Modifier
-                            .size(if (isExpanded) 120.dp else 90.dp)
-                            .clip(tokens.shapes.large)
-                            .background(tokens.colors.surface.copy(alpha = 0.1f))
-                            .border(1.dp, tokens.colors.border.copy(alpha = 0.2f), tokens.shapes.large)
-                    ) {
-                        AsyncImage(
-                            model = channel?.streamIcon,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize().padding(tokens.spacing.medium),
-                            contentScale = ContentScale.Fit
+                CompactChannelLogo(channel?.streamIcon, logoSize)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        channel?.num?.takeIf { it > 0 }?.let { number ->
+                            Text(
+                                text = number.toString(),
+                                modifier = Modifier.widthIn(max = 44.dp),
+                                style = AppDesignSystem.typography.label.copy(fontSize = 12.sp),
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Text(
+                            text = channel?.name?.trim().orEmpty(),
+                            modifier = Modifier.weight(1f),
+                            color = colors.textPrimary,
+                            style = AppDesignSystem.typography.title.copy(fontSize = if (isExpanded) 17.sp else 15.sp),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        if (channel?.num != null) {
-                            Surface(
-                                color = tokens.colors.primary,
-                                shape = RoundedCornerShape(bottomEnd = 12.dp),
-                                modifier = Modifier.align(Alignment.TopStart)
-                            ) {
-                                Text(
-                                    text = channel.num.toString(),
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                    style = tokens.typography.label,
-                                    fontWeight = FontWeight.Black,
-                                    color = Color.Black
-                                )
-                            }
-                        }
                     }
-
-                    Spacer(modifier = Modifier.width(tokens.spacing.large))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = channel?.name?.uppercase() ?: "", 
-                                color = tokens.colors.textPrimary, 
-                                style = tokens.typography.headline, 
-                                fontWeight = FontWeight.Black, 
-                                maxLines = 1, 
-                                overflow = TextOverflow.Ellipsis, 
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                            Spacer(Modifier.width(tokens.spacing.medium))
-                            QualityBadge(channel?.name)
-                        }
-                        
-                        if (program != null) {
-                            Text(
-                                text = program.title ?: "", 
-                                color = tokens.colors.primary, 
-                                style = tokens.typography.title, 
-                                fontWeight = FontWeight.Bold, 
-                                maxLines = 1
-                            )
-                            Spacer(modifier = Modifier.height(tokens.spacing.small))
-                            EpgMiniProgress(program, isExpanded)
-                        } else {
-                            Text(
-                                text = stringResource(R.string.no_epg_available), 
-                                color = tokens.colors.textSecondary.copy(alpha = 0.4f),
-                                style = tokens.typography.body
-                            )
-                        }
+                    if (programmeTitle != null) {
+                        Text(
+                            text = programmeTitle,
+                            color = colors.textSecondary,
+                            style = AppDesignSystem.typography.body.copy(fontSize = if (isExpanded) 13.sp else 12.sp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        LinearProgressIndicator(
+                            progress = { calculateProgramProgress(program) },
+                            modifier = Modifier.fillMaxWidth().height(2.dp).clip(CircleShape),
+                            color = colors.primary.copy(alpha = 0.8f),
+                            trackColor = Color.White.copy(alpha = 0.08f),
+                            gapSize = 0.dp,
+                            drawStopIndicator = {}
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CompactChannelLogo(url: String?, size: Dp) {
+    val colors = AppDesignSystem.colors
+    val context = LocalContext.current
+    val sizePx = with(LocalDensity.current) { size.roundToPx() }
+    val logoUrl = url?.trim()?.takeIf { it.isNotEmpty() }
+    val request = remember(context, logoUrl, sizePx) {
+        ImageRequest.Builder(context).data(logoUrl).size(sizePx).crossfade(false).build()
+    }
+    var logoLoaded by remember(logoUrl) { mutableStateOf(false) }
+    Box(
+        modifier = Modifier.size(size).clip(RoundedCornerShape(8.dp))
+            .background(Color.White.copy(alpha = 0.06f)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (logoUrl != null) AsyncImage(
+            model = request,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize().padding(4.dp),
+            contentScale = ContentScale.Fit,
+            onLoading = { logoLoaded = false },
+            onSuccess = { logoLoaded = true },
+            onError = { logoLoaded = false }
+        )
+        if (!logoLoaded) Icon(Icons.Rounded.LiveTv, null, tint = colors.textSecondary, modifier = Modifier.size(size * 0.55f))
     }
 }
 

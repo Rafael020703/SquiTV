@@ -8,6 +8,7 @@ import rsv.squitv.core.domain.interactor.DnsManager
 import rsv.squitv.data.repository.SettingsRepository
 import rsv.squitv.data.model.XtreamCredentials
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +17,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -91,7 +94,10 @@ class LoginViewModel @Inject constructor(
     val isTestingDns: StateFlow<Boolean> = _isTestingDns
 
     private val _updateInfo = MutableStateFlow<AppUpdateInfo?>(null)
-    val updateInfo: StateFlow<AppUpdateInfo?> = _updateInfo
+    val updateInfo: StateFlow<AppUpdateInfo?> = combine(
+        _updateInfo, appSettings.map { it.ignoredVersion }.distinctUntilChanged()
+    ) { info, ignored -> info?.takeUnless { it.versionName == ignored } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val availableDns = dnsManager.getDnsOptions()
 
@@ -240,6 +246,8 @@ class LoginViewModel @Inject constructor(
                 } else {
                     _updateInfo.value = null
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Timber.e(e, "Error checking update on login screen")
                 _updateInfo.value = null

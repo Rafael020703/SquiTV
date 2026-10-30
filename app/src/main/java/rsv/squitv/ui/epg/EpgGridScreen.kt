@@ -122,7 +122,6 @@ fun EpgGridContent(
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
             title = stringResource(R.string.epg_label),
-            onBack = onBack,
             actions = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AppIconButton(icon = Icons.AutoMirrored.Rounded.NavigateBefore, onClick = { onShiftTime(-2) })

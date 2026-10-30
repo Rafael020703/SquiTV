@@ -50,7 +50,6 @@ fun LibraryContentScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             AppHeader(
                 title = title,
-                onBack = onBack,
                 actions = {
                     AppIconButton(Icons.Rounded.Search, onNavigateToSearch)
                 }

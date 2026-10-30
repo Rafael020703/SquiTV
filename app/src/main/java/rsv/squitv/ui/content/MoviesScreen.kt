@@ -118,7 +118,6 @@ fun MoviesScreen(
             AppHeader(
                 title = title,
                 subtitle = activeCat?.categoryName ?: stringResource(R.string.all_categories_label),
-                onBack = onBack,
                 actions = {
                     AppIconButton(Icons.AutoMirrored.Rounded.Sort, { showSortMenu = true })
                     AppIconButton(Icons.Rounded.Search, onNavigateToSearch)

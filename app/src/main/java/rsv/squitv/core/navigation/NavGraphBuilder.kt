@@ -88,11 +88,11 @@ fun NavGraphBuilder.appNavGraph(
             onNavigateToCategory = { type, catId ->
                 when (type) {
                     "live" -> {
-                        Log.d("NAV_STACK_DEBUG", "NAVIGATING | from=Dashboard | to=LiveChannels($catId)")
+                        if (BuildConfig.DEBUG) Log.d("NAV_STACK_DEBUG", "NAVIGATING | from=Dashboard | to=LiveChannels($catId)")
                         appController.navigate(Route.LiveChannels(catId))
                     }
                     "movie" -> {
-                        Log.d("NAV_STACK_DEBUG", "NAVIGATING | from=Dashboard | to=Movies($catId)")
+                        if (BuildConfig.DEBUG) Log.d("NAV_STACK_DEBUG", "NAVIGATING | from=Dashboard | to=Movies($catId)")
                         appController.navigate(Route.Movies(catId, "movie"))
                     }
                     "genre" -> appController.navigate(Route.Movies(catId, "genre"))

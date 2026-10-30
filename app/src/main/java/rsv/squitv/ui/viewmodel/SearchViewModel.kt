@@ -12,6 +12,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 sealed class SearchResult {
     data class Stream(val stream: IptvStreamEntity) : SearchResult()
@@ -21,19 +26,13 @@ sealed class SearchResult {
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val catalogRepository: CatalogRepository,
-    savedStateHandle: SavedStateHandle
+    private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow(savedStateHandle.get<String>("query") ?: "")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
     
     private var blockedCategoryIds: Set<String> = emptySet()
-
-    init {
-        if (_searchQuery.value.isNotBlank()) {
-            performSearch()
-        }
-    }
 
     private val _selectedType = MutableStateFlow("ALL")
     val selectedType: StateFlow<String> = _selectedType.asStateFlow()
@@ -50,14 +49,22 @@ class SearchViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private var searchJob: Job? = null
+    private var searchRevision = 0L
+
+    init {
+        if (_searchQuery.value.isNotBlank()) performSearch()
+    }
+
     fun setBlockedCategories(ids: Set<String>) {
         blockedCategoryIds = ids
         performSearch()
     }
 
     fun onQueryChanged(query: String) {
+        savedStateHandle["query"] = query
         _searchQuery.value = query
-        performSearch()
+        performSearch(debounceMillis = 250L)
     }
 
     fun onTypeChanged(type: String) {
@@ -75,7 +82,11 @@ class SearchViewModel @Inject constructor(
         performSearch()
     }
 
-    private fun performSearch() {
+    private fun performSearch(debounceMillis: Long = 0L) {
+        searchJob?.cancel()
+        val revision = ++searchRevision
+        _isLoading.value = false
+        val blockedIds = blockedCategoryIds.toSet()
         val query = _searchQuery.value
         val type = _selectedType.value
         val yearFilter = _selectedYear.value
@@ -86,10 +97,11 @@ class SearchViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        searchJob = viewModelScope.launch {
+            if (debounceMillis > 0) delay(debounceMillis)
             _isLoading.value = true
             try {
-                var streams = catalogRepository.searchStreams(query, type, blockedCategoryIds)
+                var streams = catalogRepository.searchStreams(query, type, blockedIds)
                 
                 if (yearFilter != null) {
                     streams = streams.filter { it.releaseDate?.contains(yearFilter) == true }
@@ -102,7 +114,7 @@ class SearchViewModel @Inject constructor(
                 val streamResults = streams.map { SearchResult.Stream(it) }
                 
                 var episodes = if (type == "ALL" || type == "SERIES") {
-                    catalogRepository.searchEpisodes(query, blockedCategoryIds)
+                    catalogRepository.searchEpisodes(query, blockedIds)
                 } else {
                     emptyList()
                 }
@@ -113,11 +125,14 @@ class SearchViewModel @Inject constructor(
 
                 val episodeResults = episodes.map { SearchResult.Episode(it) }
                 
-                _searchResults.value = streamResults + episodeResults
+                currentCoroutineContext().ensureActive()
+                if (revision == searchRevision) _searchResults.value = streamResults + episodeResults
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _searchResults.value = emptyList()
+                if (revision == searchRevision) _searchResults.value = emptyList()
             } finally {
-                _isLoading.value = false
+                if (revision == searchRevision) _isLoading.value = false
             }
         }
     }

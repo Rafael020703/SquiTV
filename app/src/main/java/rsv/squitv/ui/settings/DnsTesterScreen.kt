@@ -82,7 +82,6 @@ fun DnsTesterContent(
             AppHeader(
                 title = stringResource(R.string.dns_tester_title),
                 subtitle = stringResource(R.string.dns_tester_subtitle),
-                onBack = onBack
             )
 
             Column(

@@ -72,8 +72,6 @@ fun ActorDetailScreen(
             AppHeader(
                 title = sanitizedActorName,
                 subtitle = if (totalWorks > 0) "$totalWorks obras encontradas" else stringResource(R.string.local_filmography),
-                onBack = onBack,
-                showBackButton = true,
                 actions = {
                     AppIconButton(Icons.AutoMirrored.Rounded.Sort, { showSortMenu = true })
                 }

@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -48,13 +49,13 @@ fun LoginScreen(
     onOpenUpdates: (() -> Unit)? = null,
     onLoginSuccess: () -> Unit
 ) {
-    val username by viewModel.username.collectAsState()
-    val password by viewModel.password.collectAsState()
-    val url by viewModel.url.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val errorMessage by viewModel.errorMessage.collectAsState()
-    val updateInfo by viewModel.updateInfo.collectAsState()
-    val savedAccounts by viewModel.savedAccounts.collectAsState()
+    val username by viewModel.username.collectAsStateWithLifecycle()
+    val password by viewModel.password.collectAsStateWithLifecycle()
+    val url by viewModel.url.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
+    val updateInfo by viewModel.updateInfo.collectAsStateWithLifecycle()
+    val savedAccounts by viewModel.savedAccounts.collectAsStateWithLifecycle()
 
     val usernameFocusRequester = remember { FocusRequester() }
     val passwordFocusRequester = remember { FocusRequester() }
@@ -160,39 +161,11 @@ fun LoginContent(
         }
 
         if (updateInfo != null && onOpenUpdates != null) {
-            Surface(
+            rsv.squitv.ui.updates.UpdateLoginNotice(
+                info = updateInfo,
                 onClick = onOpenUpdates,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(16.dp)
-                    .adaptiveFocus(tokens.shapes.large),
-                shape = tokens.shapes.large,
-                color = Color(0xFF0D1322).copy(alpha = 0.85f),
-                border = BorderStroke(1.5.dp, tokens.colors.primary)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .background(tokens.colors.primary, CircleShape)
-                    )
-                    Icon(
-                        imageVector = Icons.Rounded.SystemUpdate,
-                        contentDescription = stringResource(R.string.update_available_login),
-                        tint = tokens.colors.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "ATUALIZAÇÃO DISPONÍVEL (${updateInfo.versionName})",
-                        style = tokens.typography.label.copy(fontSize = 12.sp, fontWeight = FontWeight.Black),
-                        color = tokens.colors.textPrimary
-                    )
-                }
-            }
+                modifier = Modifier.align(Alignment.TopStart).padding(16.dp)
+            )
         }
 
         if (onOpenGallery != null) {

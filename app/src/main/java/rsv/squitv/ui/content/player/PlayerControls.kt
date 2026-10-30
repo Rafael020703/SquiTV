@@ -9,7 +9,6 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -93,7 +92,7 @@ fun PlayerControlOverlay(
                 )
         )
 
-        // Top Row: Back button and Title
+        // Top row: stream title and current programme
         Row(
             modifier = Modifier
                 .fillMaxWidth()

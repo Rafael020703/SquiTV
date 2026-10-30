@@ -32,6 +32,9 @@ import rsv.squitv.data.repository.SettingsRepository
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
 import rsv.squitv.util.isMediaPipAllowed
@@ -126,13 +129,16 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         lifecycleScope.launch {
-            settingsRepository.settingsFlow.collect { settings ->
-                backgroundPlaybackEnabled = settings.backgroundPlaybackEnabled
-                pipAutoEnterEnabled = settings.pipAutoEnterEnabled
-                settingsLoaded = true
-                updatePipParams()
-                if (isStopped) pauseIfNeeded()
-            }
+            settingsRepository.settingsFlow
+                .map { it.backgroundPlaybackEnabled to it.pipAutoEnterEnabled }
+                .distinctUntilChanged()
+                .collect { (backgroundEnabled, autoPipEnabled) ->
+                    backgroundPlaybackEnabled = backgroundEnabled
+                    pipAutoEnterEnabled = autoPipEnabled
+                    settingsLoaded = true
+                    updatePipParams()
+                    if (isStopped) pauseIfNeeded()
+                }
         }
         
         requestNotificationPermission()
@@ -142,7 +148,7 @@ class MainActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 val eventId = java.util.UUID.randomUUID().toString().take(8)
-                android.util.Log.i("BACK_NAV_DEBUG", "BACK_DISPATCHED | eventId=$eventId | source=OnBackPressedCallback")
+                if (BuildConfig.DEBUG) android.util.Log.i("BACK_NAV_DEBUG", "BACK_DISPATCHED | eventId=$eventId | source=OnBackPressedCallback")
                 appController.goBack(eventId)
             }
         })
@@ -165,9 +171,9 @@ class MainActivity : AppCompatActivity() {
             }
 
             val mainViewModel: MainViewModel = hiltViewModel()
-            val useOledTheme by mainViewModel.useOledTheme.collectAsState()
-            val uiZoom by mainViewModel.uiZoom.collectAsState()
-            val language by mainViewModel.language.collectAsState()
+            val useOledTheme by mainViewModel.useOledTheme.collectAsStateWithLifecycle()
+            val uiZoom by mainViewModel.uiZoom.collectAsStateWithLifecycle()
+            val language by mainViewModel.language.collectAsStateWithLifecycle()
 
             LaunchedEffect(language) {
                 val appLocales = if (language.isBlank() || language == "auto") {
@@ -243,24 +249,26 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent?.getStringExtra("navigate_to") == "updates") {
-            appController.navigate(Route.Updates)
+            appController.requestExternalRoute(Route.Updates)
+            intent.removeExtra("navigate_to")
         }
         val uri = intent?.data
         if (uri != null && uri.scheme == "squitv" && uri.host == "pair") {
             val token = uri.getQueryParameter("token")
             if (!token.isNullOrBlank()) {
-                appController.navigate(Route.LocalLogin)
+                appController.requestExternalRoute(Route.LocalLogin)
+                intent.data = null
             }
         }
     }
 
     override fun finish() {
-        val stackTrace = Thread.currentThread().stackTrace
-        android.util.Log.e("BACK_NAV_DEBUG", "FINISH_STACK_TRACE:")
-        stackTrace.forEach { frame ->
-            android.util.Log.e("BACK_NAV_DEBUG", "  at $frame")
+        if (BuildConfig.DEBUG) {
+            val stackTrace = Thread.currentThread().stackTrace
+            Log.d("BACK_NAV_DEBUG", "FINISH_STACK_TRACE:")
+            stackTrace.forEach { frame -> Log.d("BACK_NAV_DEBUG", "  at $frame") }
+            Log.d("BACK_NAV_DEBUG", "ACTIVITY_FINISH_CALLED")
         }
-        android.util.Log.e("BACK_NAV_DEBUG", "ACTIVITY_FINISH_CALLED")
         super.finish()
     }
 

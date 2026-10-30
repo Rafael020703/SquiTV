@@ -98,8 +98,6 @@ fun ContentCustomizationScreen(
             AppHeader(
                 title = "PERSONALIZAR CONTEÚDO",
                 subtitle = "Organize suas abas e categorias do seu jeito",
-                onBack = onBack,
-                showBackButton = true
             )
 
             // TOP TAB BAR

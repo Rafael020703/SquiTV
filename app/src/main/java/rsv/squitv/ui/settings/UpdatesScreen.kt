@@ -1,459 +1,175 @@
-﻿package rsv.squitv.ui.settings
+package rsv.squitv.ui.settings
 
 import android.content.Intent
-import androidx.compose.foundation.BorderStroke
+import android.text.format.Formatter
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import rsv.squitv.R
-import rsv.squitv.core.ui.components.buttons.AppButton
-import rsv.squitv.core.ui.components.buttons.AppSecondaryButton
 import rsv.squitv.core.ui.components.navigation.AppHeader
-import rsv.squitv.core.ui.components.states.LoadingState
 import rsv.squitv.core.ui.theme.AppDesignSystem
 import rsv.squitv.domain.model.AppUpdateInfo
 import rsv.squitv.ui.dashboard.PortalBackground
+import rsv.squitv.ui.updates.*
 import rsv.squitv.ui.viewmodel.settings.UpdateUiState
 import rsv.squitv.ui.viewmodel.settings.UpdateViewModel
+import java.text.DateFormat
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 @Composable
-fun UpdatesScreen(
-    viewModel: UpdateViewModel = hiltViewModel(),
-    onBack: () -> Unit
-) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    val tokens = AppDesignSystem
-    val responsive = tokens.responsive
-
+fun UpdatesScreen(viewModel: UpdateViewModel = hiltViewModel(), onBack: () -> Unit) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                if (uiState is UpdateUiState.PermissionRequired) {
-                    viewModel.checkPermissionAndInstall()
-                }
-            }
-        }
+    val context = LocalContext.current
+    val colors = AppDesignSystem.colors
+    val actionFocus = remember { FocusRequester() }
+    // Read the ViewModel at resume time; do not capture an obsolete UI state in the observer.
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) viewModel.onResume() }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-
+    LaunchedEffect(state::class) {
+        delay(150)
+        runCatching { actionFocus.requestFocus() }
+    }
+    val info = when (val value = state) {
+        is UpdateUiState.UpdateAvailable -> value.updateInfo
+        is UpdateUiState.Downloading -> value.updateInfo
+        is UpdateUiState.Verifying -> value.updateInfo
+        is UpdateUiState.ReadyToInstall -> value.updateInfo
+        is UpdateUiState.PermissionRequired -> value.updateInfo
+        is UpdateUiState.OpeningInstaller -> value.updateInfo
+        is UpdateUiState.InstallerOpened -> value.updateInfo
+        is UpdateUiState.Error -> value.updateInfo
+        else -> null
+    }
+    val title = stringResource(when (state) {
+        UpdateUiState.Checking -> R.string.checking_updates
+        is UpdateUiState.DebugBuild -> R.string.updater_debug_title
+        is UpdateUiState.UpToDate -> R.string.up_to_date_title
+        is UpdateUiState.UpdateAvailable -> R.string.update_available_title
+        is UpdateUiState.Downloading -> R.string.downloading_update
+        is UpdateUiState.Verifying -> R.string.updater_verifying
+        is UpdateUiState.ReadyToInstall -> R.string.download_complete_title
+        is UpdateUiState.PermissionRequired -> R.string.permission_required_title
+        is UpdateUiState.OpeningInstaller -> R.string.updater_opening_installer
+        is UpdateUiState.InstallerOpened -> R.string.updater_installer_opened
+        is UpdateUiState.Error -> R.string.updater_error_title
+    })
+    val description = when (val value = state) {
+        is UpdateUiState.Error -> value.message
+        else -> stringResource(when (state) {
+            UpdateUiState.Checking -> R.string.updater_checking_desc
+            is UpdateUiState.DebugBuild -> R.string.updater_debug_desc
+            is UpdateUiState.UpToDate -> R.string.up_to_date_desc
+            is UpdateUiState.UpdateAvailable -> R.string.updater_available_desc
+            is UpdateUiState.Downloading -> R.string.updater_downloading_desc
+            is UpdateUiState.Verifying -> R.string.updater_verifying_desc
+            is UpdateUiState.ReadyToInstall -> R.string.updater_install_desc
+            is UpdateUiState.PermissionRequired -> R.string.updater_permission_desc
+            is UpdateUiState.OpeningInstaller -> R.string.updater_install_desc
+            else -> R.string.updater_installer_desc
+        })
+    }
+    val icon = when (state) {
+        is UpdateUiState.UpToDate -> Icons.Rounded.CheckCircle
+        is UpdateUiState.DebugBuild -> Icons.Rounded.Code
+        is UpdateUiState.Error -> Icons.Rounded.ErrorOutline
+        is UpdateUiState.PermissionRequired -> Icons.Rounded.LockOpen
+        is UpdateUiState.Downloading -> Icons.Rounded.Download
+        is UpdateUiState.Verifying -> Icons.Rounded.VerifiedUser
+        else -> Icons.Rounded.SystemUpdate
+    }
+    val primaryModifier = Modifier.fillMaxWidth().focusRequester(actionFocus)
     PortalBackground {
-        Column(modifier = Modifier.fillMaxSize()) {
-            AppHeader(
-                title = stringResource(R.string.app_updates_title),
-                subtitle = stringResource(R.string.app_updates_subtitle),
-                onBack = onBack,
-                showBackButton = true
-            )
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(
-                        horizontal = responsive.dp(tokens.spacing.extraLarge),
-                        vertical = responsive.dp(tokens.spacing.large)
-                    ),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                Column(
-                    modifier = Modifier.widthIn(max = responsive.dp(700.dp)).fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(responsive.dp(tokens.spacing.large))
-                ) {
-                    when (val state = uiState) {
-                        is UpdateUiState.Checking -> {
-                            LoadingState(message = stringResource(R.string.checking_updates))
+        Column(Modifier.fillMaxSize()) {
+            AppHeader(title = stringResource(R.string.app_updates_title), subtitle = stringResource(R.string.updater_header_desc))
+            Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 20.dp), contentAlignment = Alignment.TopCenter) {
+                Column(Modifier.widthIn(max = 720.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    UpdateStatusCard(title, description, icon,
+                        accent = when (state) {
+                            is UpdateUiState.Error -> colors.error
+                            is UpdateUiState.UpToDate -> colors.success
+                            is UpdateUiState.PermissionRequired -> colors.warning
+                            else -> colors.primary
                         }
-
-                        is UpdateUiState.UpToDate -> {
-                            UpToDateCard(
-                                currentVersion = state.currentVersion,
-                                onCheckAgain = { viewModel.checkForUpdates(force = true) }
-                            )
-                        }
-
-                        is UpdateUiState.UpdateAvailable -> {
-                            UpdateAvailableCard(
-                                currentVersion = state.currentVersion,
-                                updateInfo = state.updateInfo,
-                                isIgnored = state.isIgnored,
-                                onStartDownload = viewModel::startDownload,
-                                onViewRelease = {
-                                    try {
-                                        val intent = Intent(Intent.ACTION_VIEW, state.updateInfo.releaseUrl.toUri())
-                                        context.startActivity(intent)
-                                    } catch (_: Exception) {}
-                                },
-                                onIgnoreVersion = viewModel::ignoreVersion,
-                                onCheckAgain = { viewModel.checkForUpdates(force = true) }
-                            )
-                        }
-
-                        is UpdateUiState.Downloading -> {
-                            DownloadingCard(
-                                updateInfo = state.updateInfo,
-                                progressPercent = state.progressPercent,
-                                bytesDownloaded = state.bytesDownloaded,
-                                totalBytes = state.totalBytes,
-                                onCancel = viewModel::cancelDownload
-                            )
-                        }
-
-                        is UpdateUiState.ReadyToInstall -> {
-                            ReadyToInstallCard(
-                                updateInfo = state.updateInfo,
-                                onInstall = viewModel::installUpdate
-                            )
-                        }
-
-                        is UpdateUiState.PermissionRequired -> {
-                            PermissionRequiredCard(
-                                updateInfo = state.updateInfo,
-                                onOpenSettings = viewModel::openSettingsForPermission,
-                                onRetryInstall = viewModel::checkPermissionAndInstall
-                            )
-                        }
-
-                        is UpdateUiState.Error -> {
-                            ErrorCard(
-                                message = state.message,
-                                onRetry = { viewModel.checkForUpdates(force = true) }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun UpToDateCard(
-    currentVersion: String,
-    onCheckAgain: () -> Unit
-) {
-    val tokens = AppDesignSystem
-    val responsive = tokens.responsive
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(responsive.dp(1.5.dp), tokens.colors.success.copy(alpha = 0.4f), tokens.shapes.extraLarge),
-        shape = tokens.shapes.extraLarge,
-        color = Color.Black.copy(alpha = 0.6f)
-    ) {
-        Column(
-            modifier = Modifier.padding(responsive.dp(tokens.spacing.extraLarge)),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(responsive.dp(72.dp))
-                    .background(tokens.colors.success.copy(alpha = 0.15f), CircleShape)
-                    .border(responsive.dp(2.dp), tokens.colors.success, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.CheckCircle,
-                    contentDescription = null,
-                    tint = tokens.colors.success,
-                    modifier = Modifier.size(responsive.dp(44.dp))
-                )
-            }
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.large)))
-
-            Text(
-                text = stringResource(R.string.up_to_date_title).uppercase(),
-                style = tokens.typography.headline.copy(fontSize = responsive.sp(24.sp)),
-                fontWeight = FontWeight.Black,
-                color = tokens.colors.textPrimary,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.small)))
-
-            Text(
-                text = stringResource(R.string.up_to_date_desc),
-                style = tokens.typography.body.copy(fontSize = responsive.sp(14.sp)),
-                color = tokens.colors.textSecondary,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.large)))
-
-            Surface(
-                color = tokens.colors.surface,
-                shape = tokens.shapes.medium,
-                border = BorderStroke(responsive.dp(1.dp), tokens.colors.border)
-            ) {
-                Text(
-                    text = "${stringResource(R.string.current_version_label)} $currentVersion".uppercase(),
-                    style = tokens.typography.label.copy(fontSize = responsive.sp(12.sp)),
-                    fontWeight = FontWeight.Black,
-                    color = tokens.colors.primary,
-                    modifier = Modifier.padding(horizontal = responsive.dp(16.dp), vertical = responsive.dp(8.dp))
-                )
-            }
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.extraLarge)))
-
-            AppSecondaryButton(
-                text = stringResource(R.string.check_again_button),
-                icon = Icons.Rounded.Refresh,
-                onClick = onCheckAgain,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    }
-}
-
-private fun formatPublishedDate(publishedAt: String?): String {
-    if (publishedAt.isNullOrBlank()) return ""
-    return try {
-        val cleanDate = publishedAt.take(10)
-        val parts = cleanDate.split("-")
-        if (parts.size == 3) {
-            "${parts[2]}/${parts[1]}/${parts[0]}"
-        } else {
-            cleanDate
-        }
-    } catch (_: Exception) {
-        publishedAt.take(10)
-    }
-}
-
-@Composable
-private fun UpdateAvailableCard(
-    currentVersion: String,
-    updateInfo: AppUpdateInfo,
-    isIgnored: Boolean,
-    onStartDownload: () -> Unit,
-    onViewRelease: () -> Unit,
-    onIgnoreVersion: () -> Unit,
-    onCheckAgain: () -> Unit
-) {
-    val tokens = AppDesignSystem
-    val responsive = tokens.responsive
-    val formattedDate = remember(updateInfo.publishedAt) { formatPublishedDate(updateInfo.publishedAt) }
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(responsive.dp(1.5.dp), tokens.colors.primary.copy(alpha = 0.5f), tokens.shapes.extraLarge),
-        shape = tokens.shapes.extraLarge,
-        color = Color.Black.copy(alpha = 0.65f)
-    ) {
-        Column(
-            modifier = Modifier.padding(responsive.dp(tokens.spacing.extraLarge)),
-            horizontalAlignment = Alignment.Start
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(responsive.dp(48.dp))
-                            .background(tokens.colors.primary.copy(alpha = 0.15f), CircleShape)
-                            .border(responsive.dp(1.5.dp), tokens.colors.primary, CircleShape),
-                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.SystemUpdate,
-                            contentDescription = null,
-                            tint = tokens.colors.primary,
-                            modifier = Modifier.size(responsive.dp(26.dp))
+                        UpdateVersionSummary(viewModel.currentVersionName, info)
+                        if (info != null) {
+                            ReleaseMetadata(info)
+                            UpdateStages(when (state) {
+                                is UpdateUiState.Verifying -> 1
+                                is UpdateUiState.ReadyToInstall, is UpdateUiState.PermissionRequired,
+                                is UpdateUiState.OpeningInstaller, is UpdateUiState.InstallerOpened -> 2
+                                else -> 0
+                            })
+                        }
+                        when (val value = state) {
+                            UpdateUiState.Checking, is UpdateUiState.Verifying, is UpdateUiState.OpeningInstaller -> {
+                                LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.primary)
+                            }
+                            is UpdateUiState.DebugBuild -> Unit
+                            is UpdateUiState.UpToDate -> UpdateAction(stringResource(R.string.updater_check), { viewModel.checkForUpdates(true) }, primaryModifier, icon = Icons.Rounded.Refresh)
+                            is UpdateUiState.UpdateAvailable -> {
+                                if (value.isIgnored) Text(stringResource(R.string.updater_ignored_desc), color = colors.textSecondary, style = AppDesignSystem.typography.body)
+                                UpdateAction(stringResource(R.string.updater_download), viewModel::startDownload, primaryModifier, icon = Icons.Rounded.Download)
+                                if (!value.isIgnored) UpdateAction(stringResource(R.string.updater_silence), viewModel::ignoreVersion, Modifier.fillMaxWidth(), primary = false, icon = Icons.Rounded.NotificationsOff)
+                            }
+                            is UpdateUiState.Downloading -> {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (value.totalBytes > 0) {
+                                        LinearProgressIndicator(progress = { value.progressPercent / 100f }, modifier = Modifier.fillMaxWidth(), color = colors.primary)
+                                    } else LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.primary)
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text(if (value.totalBytes > 0) "${value.progressPercent}%" else stringResource(R.string.updater_download), color = colors.textPrimary)
+                                        Text(if (value.totalBytes > 0) stringResource(R.string.updater_download_bytes,
+                                            Formatter.formatShortFileSize(context, value.bytesDownloaded), Formatter.formatShortFileSize(context, value.totalBytes))
+                                            else Formatter.formatShortFileSize(context, value.bytesDownloaded), color = colors.textSecondary)
+                                    }
+                                }
+                                UpdateAction(stringResource(R.string.updater_cancel), viewModel::cancelDownload, primaryModifier, primary = false)
+                            }
+                            is UpdateUiState.ReadyToInstall -> UpdateAction(stringResource(R.string.updater_install), viewModel::installUpdate, primaryModifier, icon = Icons.Rounded.SystemUpdate)
+                            is UpdateUiState.PermissionRequired -> UpdateAction(stringResource(R.string.updater_allow_install), viewModel::openSettingsForPermission, primaryModifier, icon = Icons.Rounded.Settings)
+                            is UpdateUiState.InstallerOpened -> UpdateAction(stringResource(R.string.updater_reopen_installer), viewModel::installUpdate, primaryModifier, icon = Icons.Rounded.SystemUpdate)
+                            is UpdateUiState.Error -> UpdateAction(stringResource(R.string.updater_retry), viewModel::retry, primaryModifier, icon = Icons.Rounded.Refresh)
+                        }
+                    }
+                    if (info != null && state !is UpdateUiState.Downloading && state !is UpdateUiState.Verifying && state !is UpdateUiState.OpeningInstaller) {
+                        UpdateReleaseNotes(info)
+                        if (info.releaseUrl.startsWith("https://")) UpdateAction(
+                            stringResource(R.string.updater_on_github),
+                            onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, info.releaseUrl.toUri())) } },
+                            modifier = Modifier.fillMaxWidth(), primary = false, icon = Icons.AutoMirrored.Rounded.OpenInNew
                         )
                     }
-                    Spacer(modifier = Modifier.width(responsive.dp(16.dp)))
-                    Column {
-                        Text(
-                            text = stringResource(R.string.update_available_title).uppercase(),
-                            style = tokens.typography.headline.copy(fontSize = responsive.sp(20.sp)),
-                            fontWeight = FontWeight.Black,
-                            color = tokens.colors.textPrimary
-                        )
-                        Text(
-                            text = updateInfo.releaseName,
-                            style = tokens.typography.body.copy(fontSize = responsive.sp(14.sp)),
-                            color = tokens.colors.textSecondary,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                Surface(
-                    color = tokens.colors.primary.copy(alpha = 0.2f),
-                    shape = tokens.shapes.small,
-                    border = BorderStroke(responsive.dp(1.dp), tokens.colors.primary)
-                ) {
-                    Text(
-                        text = "v${updateInfo.versionName}",
-                        style = tokens.typography.label.copy(fontSize = responsive.sp(12.sp)),
-                        fontWeight = FontWeight.Black,
-                        color = tokens.colors.primary,
-                        modifier = Modifier.padding(horizontal = responsive.dp(12.dp), vertical = responsive.dp(6.dp))
+                    if (state is UpdateUiState.UpdateAvailable) UpdateAction(
+                        stringResource(R.string.updater_check), { viewModel.checkForUpdates(true) }, Modifier.fillMaxWidth(), primary = false, icon = Icons.Rounded.Refresh
                     )
-                }
-            }
-
-            if (formattedDate.isNotBlank()) {
-                Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.small)))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(start = responsive.dp(64.dp))
-                ) {
-                    Text(
-                        text = "${stringResource(R.string.published_at_label)} $formattedDate",
-                        style = tokens.typography.caption.copy(fontSize = responsive.sp(12.sp)),
-                        color = tokens.colors.textSecondary
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.large)))
-
-            // Version Comparison
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(tokens.colors.surface.copy(alpha = 0.3f), tokens.shapes.medium)
-                    .padding(responsive.dp(16.dp)),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = stringResource(R.string.current_version_label).uppercase(),
-                        style = tokens.typography.caption.copy(fontSize = responsive.sp(11.sp)),
-                        color = tokens.colors.textSecondary
-                    )
-                    Text(
-                        text = currentVersion,
-                        style = tokens.typography.title.copy(fontSize = responsive.sp(16.sp)),
-                        fontWeight = FontWeight.Bold,
-                        color = tokens.colors.textPrimary
-                    )
-                }
-
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
-                    contentDescription = null,
-                    tint = tokens.colors.primary,
-                    modifier = Modifier.size(responsive.dp(20.dp))
-                )
-
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = stringResource(R.string.available_version_label).uppercase(),
-                        style = tokens.typography.caption.copy(fontSize = responsive.sp(11.sp)),
-                        color = tokens.colors.primary
-                    )
-                    Text(
-                        text = updateInfo.versionName,
-                        style = tokens.typography.title.copy(fontSize = responsive.sp(16.sp)),
-                        fontWeight = FontWeight.Black,
-                        color = tokens.colors.primary
-                    )
-                }
-            }
-
-            // Changelog Box
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.large)))
-
-            Text(
-                text = stringResource(R.string.changelog_title).uppercase(),
-                style = tokens.typography.label.copy(fontSize = responsive.sp(13.sp)),
-                fontWeight = FontWeight.Black,
-                color = tokens.colors.primary,
-                letterSpacing = responsive.sp(1.sp)
-            )
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.small)))
-
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = responsive.dp(140.dp), max = responsive.dp(300.dp)),
-                color = tokens.colors.surface.copy(alpha = 0.25f),
-                shape = tokens.shapes.medium,
-                border = BorderStroke(responsive.dp(1.dp), Color.White.copy(alpha = 0.08f))
-            ) {
-                Box(
-                    modifier = Modifier
-                        .verticalScroll(rememberScrollState())
-                        .padding(responsive.dp(16.dp))
-                ) {
-                    Text(
-                        text = updateInfo.changelog.ifBlank { stringResource(R.string.no_changelog) },
-                        style = tokens.typography.body.copy(fontSize = responsive.sp(15.sp), lineHeight = responsive.sp(22.sp)),
-                        color = tokens.colors.textPrimary
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.extraLarge)))
-
-            // Action Buttons
-            Column(verticalArrangement = Arrangement.spacedBy(responsive.dp(12.dp))) {
-                AppButton(
-                    text = stringResource(R.string.download_update_button),
-                    icon = Icons.Rounded.Download,
-                    onClick = onStartDownload,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(responsive.dp(12.dp))
-                ) {
-                    AppSecondaryButton(
-                        text = stringResource(R.string.view_release_button),
-                        icon = Icons.AutoMirrored.Rounded.OpenInNew,
-                        onClick = onViewRelease,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    if (!isIgnored) {
-                        AppSecondaryButton(
-                            text = stringResource(R.string.ignore_version_button),
-                            icon = Icons.Rounded.Block,
-                            onClick = onIgnoreVersion,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
                 }
             }
         }
@@ -461,295 +177,35 @@ private fun UpdateAvailableCard(
 }
 
 @Composable
-private fun DownloadingCard(
-    updateInfo: AppUpdateInfo,
-    progressPercent: Int,
-    bytesDownloaded: Long,
-    totalBytes: Long,
-    onCancel: () -> Unit
-) {
-    val tokens = AppDesignSystem
-    val responsive = tokens.responsive
-
-    val formattedDownloaded = "%.1f MB".format(bytesDownloaded / (1024f * 1024f))
-    val formattedTotal = if (totalBytes > 0) "%.1f MB".format(totalBytes / (1024f * 1024f)) else "N/A"
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(responsive.dp(1.5.dp), tokens.colors.primary, tokens.shapes.extraLarge),
-        shape = tokens.shapes.extraLarge,
-        color = Color.Black.copy(alpha = 0.65f)
-    ) {
-        Column(
-            modifier = Modifier.padding(responsive.dp(tokens.spacing.extraLarge)),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(responsive.dp(56.dp)),
-                color = tokens.colors.primary,
-                strokeWidth = responsive.dp(4.dp)
-            )
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.large)))
-
-            Text(
-                text = stringResource(R.string.downloading_update).uppercase(),
-                style = tokens.typography.headline.copy(fontSize = responsive.sp(20.sp)),
-                fontWeight = FontWeight.Black,
-                color = tokens.colors.textPrimary,
-                textAlign = TextAlign.Center
-            )
-
-            Text(
-                text = updateInfo.releaseName,
-                style = tokens.typography.body.copy(fontSize = responsive.sp(14.sp)),
-                color = tokens.colors.textSecondary,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.extraLarge)))
-
-            // Progress bar
-            LinearProgressIndicator(
-                progress = { progressPercent / 100f },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(responsive.dp(8.dp)),
-                color = tokens.colors.primary,
-                trackColor = Color.White.copy(alpha = 0.1f)
-            )
-
-            Spacer(modifier = Modifier.height(responsive.dp(12.dp)))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "$progressPercent%",
-                    style = tokens.typography.label.copy(fontSize = responsive.sp(14.sp)),
-                    fontWeight = FontWeight.Black,
-                    color = tokens.colors.primary
-                )
-                Text(
-                    text = "$formattedDownloaded / $formattedTotal",
-                    style = tokens.typography.caption.copy(fontSize = responsive.sp(12.sp)),
-                    color = tokens.colors.textSecondary
-                )
-            }
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.extraLarge)))
-
-            AppSecondaryButton(
-                text = stringResource(R.string.cancel_button),
-                icon = Icons.Rounded.Close,
-                onClick = onCancel,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
+private fun ReleaseMetadata(info: AppUpdateInfo) {
+    val context = LocalContext.current
+    val locale = LocalLocale.current.platformLocale
+    val date = remember(info.publishedAt, locale) {
+        runCatching {
+            SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { isLenient = false }.parse(info.publishedAt.take(10))
+                ?.let { DateFormat.getDateInstance(DateFormat.MEDIUM, locale).format(it) }
+        }.getOrNull().orEmpty()
     }
+    val metadata = listOfNotNull(
+        info.apkSize.takeIf { it > 0 }?.let { Formatter.formatShortFileSize(context, it) },
+        date.takeIf { it.isNotBlank() }
+    ).joinToString(" • ")
+    if (metadata.isNotBlank()) Text(metadata, color = AppDesignSystem.colors.textSecondary, style = AppDesignSystem.typography.caption)
 }
 
 @Composable
-private fun ReadyToInstallCard(
-    updateInfo: AppUpdateInfo,
-    onInstall: () -> Unit
-) {
-    val tokens = AppDesignSystem
-    val responsive = tokens.responsive
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(responsive.dp(1.5.dp), tokens.colors.success, tokens.shapes.extraLarge),
-        shape = tokens.shapes.extraLarge,
-        color = Color.Black.copy(alpha = 0.65f)
-    ) {
-        Column(
-            modifier = Modifier.padding(responsive.dp(tokens.spacing.extraLarge)),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(responsive.dp(72.dp))
-                    .background(tokens.colors.success.copy(alpha = 0.15f), CircleShape)
-                    .border(responsive.dp(2.dp), tokens.colors.success, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.CheckCircle,
-                    contentDescription = null,
-                    tint = tokens.colors.success,
-                    modifier = Modifier.size(responsive.dp(44.dp))
-                )
+private fun UpdateStages(active: Int) {
+    val colors = AppDesignSystem.colors
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        listOf(R.string.updater_step_download, R.string.updater_step_verify, R.string.updater_step_install).forEachIndexed { index, label ->
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                val tint = if (index <= active) colors.primary else colors.textSecondary
+                Box(Modifier.size(28.dp).background(tint.copy(alpha = 0.12f), CircleShape), contentAlignment = Alignment.Center) {
+                    if (index < active) Icon(Icons.Rounded.Check, null, Modifier.size(18.dp), tint = tint)
+                    else Text("${index + 1}", color = tint, style = AppDesignSystem.typography.label)
+                }
+                Text(stringResource(label), color = tint, style = AppDesignSystem.typography.caption)
             }
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.large)))
-
-            Text(
-                text = stringResource(R.string.download_complete_title).uppercase(),
-                style = tokens.typography.headline.copy(fontSize = responsive.sp(22.sp)),
-                fontWeight = FontWeight.Black,
-                color = tokens.colors.textPrimary,
-                textAlign = TextAlign.Center
-            )
-
-            Text(
-                text = updateInfo.releaseName,
-                style = tokens.typography.body.copy(fontSize = responsive.sp(14.sp)),
-                color = tokens.colors.textSecondary,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.extraLarge)))
-
-            AppButton(
-                text = stringResource(R.string.install_now_button),
-                icon = Icons.Rounded.SystemUpdate,
-                onClick = onInstall,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    }
-}
-
-@Composable
-private fun PermissionRequiredCard(
-    updateInfo: AppUpdateInfo,
-    onOpenSettings: () -> Unit,
-    onRetryInstall: () -> Unit
-) {
-    val tokens = AppDesignSystem
-    val responsive = tokens.responsive
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(responsive.dp(1.5.dp), tokens.colors.warning, tokens.shapes.extraLarge),
-        shape = tokens.shapes.extraLarge,
-        color = Color.Black.copy(alpha = 0.65f)
-    ) {
-        Column(
-            modifier = Modifier.padding(responsive.dp(tokens.spacing.extraLarge)),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(responsive.dp(72.dp))
-                    .background(tokens.colors.warning.copy(alpha = 0.15f), CircleShape)
-                    .border(responsive.dp(2.dp), tokens.colors.warning, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Security,
-                    contentDescription = null,
-                    tint = tokens.colors.warning,
-                    modifier = Modifier.size(responsive.dp(40.dp))
-                )
-            }
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.large)))
-
-            Text(
-                text = stringResource(R.string.permission_required_title).uppercase(),
-                style = tokens.typography.headline.copy(fontSize = responsive.sp(22.sp)),
-                fontWeight = FontWeight.Black,
-                color = tokens.colors.textPrimary,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(responsive.dp(8.dp)))
-
-            Text(
-                text = stringResource(R.string.permission_required_desc),
-                style = tokens.typography.body.copy(fontSize = responsive.sp(14.sp)),
-                color = tokens.colors.textSecondary,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.extraLarge)))
-
-            Column(verticalArrangement = Arrangement.spacedBy(responsive.dp(12.dp))) {
-                AppButton(
-                    text = stringResource(R.string.open_settings_button),
-                    icon = Icons.Rounded.Settings,
-                    onClick = onOpenSettings,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                AppSecondaryButton(
-                    text = stringResource(R.string.install_now_button),
-                    icon = Icons.Rounded.SystemUpdate,
-                    onClick = onRetryInstall,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ErrorCard(
-    message: String,
-    onRetry: () -> Unit
-) {
-    val tokens = AppDesignSystem
-    val responsive = tokens.responsive
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(responsive.dp(1.5.dp), tokens.colors.error, tokens.shapes.extraLarge),
-        shape = tokens.shapes.extraLarge,
-        color = Color.Black.copy(alpha = 0.65f)
-    ) {
-        Column(
-            modifier = Modifier.padding(responsive.dp(tokens.spacing.extraLarge)),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(responsive.dp(72.dp))
-                    .background(tokens.colors.error.copy(alpha = 0.15f), CircleShape)
-                    .border(responsive.dp(2.dp), tokens.colors.error, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Error,
-                    contentDescription = null,
-                    tint = tokens.colors.error,
-                    modifier = Modifier.size(responsive.dp(44.dp))
-                )
-            }
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.large)))
-
-            Text(
-                text = stringResource(R.string.update_error_title).uppercase(),
-                style = tokens.typography.headline.copy(fontSize = responsive.sp(20.sp)),
-                fontWeight = FontWeight.Black,
-                color = tokens.colors.textPrimary,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(responsive.dp(8.dp)))
-
-            Text(
-                text = message,
-                style = tokens.typography.body.copy(fontSize = responsive.sp(14.sp)),
-                color = tokens.colors.textSecondary,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.extraLarge)))
-
-            AppButton(
-                text = stringResource(R.string.try_again_button),
-                icon = Icons.Rounded.Refresh,
-                onClick = onRetry,
-                modifier = Modifier.fillMaxWidth()
-            )
         }
     }
 }

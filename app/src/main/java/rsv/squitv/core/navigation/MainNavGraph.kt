@@ -53,6 +53,25 @@ fun MainNavigation(
     val currentRoute = currentBackStackEntry?.destination?.route
 
     var showExitDialog by remember { mutableStateOf(false) }
+    val externalRoute by appController.externalRoute.collectAsStateWithLifecycle()
+
+    // Wait until bootstrap/login/sync routing has settled before consuming an external link.
+    LaunchedEffect(externalRoute, appState, currentRoute) {
+        val target = externalRoute ?: return@LaunchedEffect
+        val route = currentRoute ?: return@LaunchedEffect
+        if (route.contains("Initial") || appState is AppState.Initializing || appState is AppState.Locked ||
+            appState is AppState.SyncRequired) return@LaunchedEffect
+        if (appState is AppState.Ready && (route.contains("Sync") || route.contains("Login"))) return@LaunchedEffect
+        if (appState is AppState.LoginRequired && !route.contains("Login") && !route.contains("Updates")) return@LaunchedEffect
+        if (appController.consumeExternalRoute(target)) {
+            showExitDialog = false
+            navController.navigate(target) { launchSingleTop = true }
+        }
+    }
+
+    LaunchedEffect(currentRoute) {
+        if (currentRoute?.contains("Updates") == true) mainViewModel.dismissUpdateModal()
+    }
 
     BackHandler(enabled = showExitDialog) {
         showExitDialog = false

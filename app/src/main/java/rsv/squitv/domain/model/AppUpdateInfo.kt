@@ -15,6 +15,7 @@ data class AppUpdateInfo(
 )
 
 sealed interface UpdateCheckResult {
+    data class DebugBuild(val currentVersion: String) : UpdateCheckResult
     data class UpdateAvailable(val updateInfo: AppUpdateInfo) : UpdateCheckResult
     data class UpToDate(val currentVersion: String) : UpdateCheckResult
     data object NoCompatibleApk : UpdateCheckResult

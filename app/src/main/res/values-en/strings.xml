@@ -316,8 +316,6 @@
 
     <!-- Update Alert -->
     <string name="update_available_title">New Version Available</string>
-    <string name="update_available_msg">A new version of Squi TV (v%s) is available. Do you want to download it now?</string>
-    <string name="download_now_button">DOWNLOAD NOW</string>
     <string name="later_button">LATER</string>
 
     <!-- Dashboard Extra -->
@@ -414,37 +412,23 @@
 
     <!-- App Updates -->
     <string name="app_updates_title">App Updates</string>
-    <string name="app_updates_subtitle">Keep your Squi TV secure and up to date</string>
     <string name="checking_updates">Checking for updates...</string>
     <string name="up_to_date_title">You are up to date</string>
     <string name="up_to_date_desc">Your installed version is the latest available.</string>
     <string name="current_version_label">Installed version:</string>
     <string name="available_version_label">Available version:</string>
-    <string name="published_at_label">Published on:</string>
     <string name="changelog_title">What\'s new in this release:</string>
     <string name="no_changelog">Release notes not provided.</string>
-    <string name="download_update_button">DOWNLOAD UPDATE</string>
-    <string name="view_release_button">VIEW RELEASE</string>
-    <string name="ignore_version_button">IGNORE THIS VERSION</string>
-    <string name="check_again_button">CHECK AGAIN</string>
     <string name="downloading_update">Downloading update...</string>
     <string name="download_complete_title">Update ready to install</string>
-    <string name="install_now_button">INSTALL NOW</string>
-    <string name="integrity_failed_title">Could not validate the update</string>
     <string name="integrity_failed_desc">The downloaded file failed the SHA-256 security test and was removed.</string>
-    <string name="try_again_button">TRY AGAIN</string>
     <string name="permission_required_title">Permission required</string>
-    <string name="permission_required_desc">To install Squi TV updates, allow this app to install unknown apps on your device.</string>
-    <string name="open_settings_button">OPEN SETTINGS</string>
     <string name="no_compatible_apk_title">This update does not have a compatible APK</string>
-    <string name="update_error_title">Could not check for updates now</string>
     <string name="update_notification_title">New update available</string>
     <string name="update_notification_msg">Squi TV %s is available.</string>
-    <string name="view_update_action">View update</string>
     <string name="empty_favorites_movies">You don\'t have any favorite movies yet.</string>
     <string name="empty_favorites_series">You don\'t have any favorite series yet.</string>
     <string name="empty_favorites_live">You don\'t have any favorite channels yet.</string>
-    <string name="update_available_login">Update Available</string>
     <string name="autofill_google_button">USE GOOGLE SAVED PASSWORD</string>
     <string name="credential_filled_msg">Credentials filled from Google</string>
     <string name="lang_auto">Automatic (System)</string>
@@ -587,4 +571,54 @@
     <string name="local_sync_connecting">Connecting to device…</string>
     <string name="local_sync_waiting_approval">Waiting for you to accept on the receiving device…</string>
     <string name="local_sync_update_required">Update Squi TV on both devices to use this sync feature.</string>
+
+    <!-- Update experience -->
+    <string name="updater_invalid_release">The published version could not be identified.</string>
+    <string name="updater_check_failed">Could not reach GitHub. Check your connection and try again.</string>
+    <string name="updater_save_failed">Could not save the update. Check available storage.</string>
+    <string name="updater_download_failed">Could not download the update. Try again.</string>
+    <string name="updater_incomplete_download">The download is incomplete. Download the update again.</string>
+    <string name="updater_missing_file">The update file is no longer available. Download it again.</string>
+    <string name="updater_invalid_apk">The downloaded file is not a valid update APK.</string>
+    <string name="updater_wrong_package">This APK belongs to another app. Download the correct Squi TV version.</string>
+    <string name="updater_wrong_version">The APK does not match the announced version. Download it again.</string>
+    <string name="updater_old_apk">This APK is not newer than the installed app.</string>
+    <string name="updater_wrong_signature">The APK signature does not match the installed app.</string>
+    <string name="updater_installer_failed">Could not open the Android installer. Try again.</string>
+    <string name="updater_permission_failed">Could not open permissions. Allow Squi TV to install apps in Android settings.</string>
+    <string name="updater_show_less">Show less</string>
+    <string name="updater_show_more">See all changes</string>
+    <string name="updater_version_ready">Squi TV %1$s available</string>
+    <string name="updater_view">View update</string>
+    <string name="updater_debug_title">Development version</string>
+    <string name="updater_debug_desc">Squi TV Debug is updated through Android Studio. GitHub updates are for the regular Squi TV app.</string>
+    <string name="updater_verifying">Checking the file</string>
+    <string name="updater_error_title">Update not completed</string>
+    <string name="updater_checking_desc">Looking for the latest version published on GitHub.</string>
+    <string name="updater_available_desc">Review the changes and download when ready. Android will ask you to confirm installation.</string>
+    <string name="updater_downloading_desc">Wait for the download. You can confirm installation in the next step.</string>
+    <string name="updater_verifying_desc">Checking that the file matches the update and the installed app.</string>
+    <string name="updater_install_desc">Android will ask you to confirm installation of the new version.</string>
+    <string name="updater_permission_desc">Allow Squi TV to install apps. When you return, the installer will open if permission was granted.</string>
+    <string name="updater_opening_installer">Preparing installation</string>
+    <string name="updater_installer_opened">Continue in the Android installer</string>
+    <string name="updater_installer_desc">Confirm installation on the Android screen. If you cancelled, you can open the installer again.</string>
+    <string name="updater_header_desc">Changes, download and installation in one place</string>
+    <string name="updater_check">Check again</string>
+    <string name="updater_ignored_desc">Notifications for this version are muted. You can still update here.</string>
+    <string name="updater_download">Download update</string>
+    <string name="updater_silence">Mute this version</string>
+    <string name="updater_cancel">Cancel download</string>
+    <string name="updater_download_bytes">%1$s of %2$s</string>
+    <string name="updater_install">Install update</string>
+    <string name="updater_allow_install">Allow installation</string>
+    <string name="updater_reopen_installer">Open installer again</string>
+    <string name="updater_retry">Try again</string>
+    <string name="updater_on_github">View release on GitHub</string>
+    <string name="updater_step_download">Download</string>
+    <string name="updater_step_verify">Verify</string>
+    <string name="updater_step_install">Install</string>
+    <string name="updater_notice_desc">See what changed and choose when to update.</string>
+    <string name="updater_later">Not now</string>
+    <string name="updater_notice_timeout">Closes in %1$ds</string>
 </resources>

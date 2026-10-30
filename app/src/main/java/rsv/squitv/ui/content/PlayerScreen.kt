@@ -110,6 +110,7 @@ fun PlayerScreen(
 
     val showOverlayWith5sTimer: () -> Unit = {
         overlayTimerJob?.cancel()
+        viewModel.dismissZappingBanner()
         isControlsVisible = true
         overlayTimerJob = coroutineScope.launch {
             delay(5000L)
@@ -383,7 +384,7 @@ fun PlayerContent(
                         // Back Button handling
                         keyEvent.key == Key.Back -> {
                             when {
-                                zappingChannel != null -> { onDismissZapping(); updateInteraction(); true }
+                                zappingChannel != null && !isControlsVisible -> { onDismissZapping(); updateInteraction(); true }
                                 isControlsVisible -> { onToggleControls(); true }
                                 else -> { onBack(); true }
                             }
@@ -513,7 +514,8 @@ fun PlayerContent(
 
             // Zapping Banner
             ZappingBanner(
-                isVisible = zappingChannel != null,
+                isVisible = zappingChannel != null && !isControlsVisible && !isSplitView &&
+                    !showSettings && !showQualityMenu && !showSpeedMenu,
                 channel = zappingChannel,
                 program = zappingEpg.get(zappingChannel?.streamId),
                 isExpanded = isExpanded

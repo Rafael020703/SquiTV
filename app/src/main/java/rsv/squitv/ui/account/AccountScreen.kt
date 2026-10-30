@@ -145,8 +145,6 @@ fun AccountContent(
         AppHeader(
             title = "CONTA",
             subtitle = "Painel da Conta e Servidor",
-            onBack = onBack,
-            showBackButton = false,
             actions = {
                 AppIconButton(icon = Icons.Rounded.Refresh, onClick = onRefresh)
             }

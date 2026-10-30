@@ -60,7 +60,6 @@ fun LiveChannelsCatalogWidePreview() {
                 AppHeader(
                     title = "TV AO VIVO",
                     subtitle = "Esportes HD",
-                    onBack = {},
                     actions = {}
                 )
 

@@ -7,9 +7,10 @@ import rsv.squitv.data.model.EpgProgramme
 import rsv.squitv.data.model.XtreamStream
 import rsv.squitv.data.repository.SettingsRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -115,7 +116,7 @@ class GetQuickSwitchUseCase @Inject constructor(
     /**
      * Returns a flow that fetches current EPG for the first [limit] streams from local Room DB and emits them.
      */
-    fun loadZappingEpg(streams: List<XtreamStream>, limit: Int = 20): Flow<Pair<Int, EpgProgramme>> = flow {
+    fun loadZappingEpg(streams: List<XtreamStream>, limit: Int = 20): Flow<Pair<Int, EpgProgramme>> = channelFlow {
         supervisorScope {
             streams.take(limit).forEach { stream ->
                 val streamId = stream.streamId ?: return@forEach
@@ -133,8 +134,10 @@ class GetQuickSwitchUseCase @Inject constructor(
                                 title = currentLocal.title,
                                 description = currentLocal.description
                             )
-                            emit(streamId to prog)
+                            send(streamId to prog)
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (_: Exception) {
                         // Individual fetch failure, ignore for zapping UI
                     }

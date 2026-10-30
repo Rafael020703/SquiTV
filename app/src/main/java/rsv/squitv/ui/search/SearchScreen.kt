@@ -164,7 +164,6 @@ fun SearchScreenContent(
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
             title = stringResource(R.string.search_label),
-            onBack = onNavigateBack,
             actions = {
                 SearchField(
                     value = query,

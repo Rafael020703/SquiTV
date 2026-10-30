@@ -316,8 +316,6 @@
 
     <!-- Update Alert -->
     <string name="update_available_title">Nueva Versión Disponible</string>
-    <string name="update_available_msg">Una nova versión de Squi TV (v%s) está disponible. ¿Desea descargarla ahora?</string>
-    <string name="download_now_button">DESCARGAR AHORA</string>
     <string name="later_button">DESPUÉS</string>
 
     <!-- Dashboard Extra -->
@@ -414,37 +412,23 @@
 
     <!-- App Updates -->
     <string name="app_updates_title">Actualizaciones de la App</string>
-    <string name="app_updates_subtitle">Mantenga su Squi TV seguro y actualizado</string>
     <string name="checking_updates">Buscando actualizaciones...</string>
     <string name="up_to_date_title">Estás actualizado</string>
     <string name="up_to_date_desc">Tu versión instalada es la más reciente disponible.</string>
     <string name="current_version_label">Versión instalada:</string>
     <string name="available_version_label">Versión disponible:</string>
-    <string name="published_at_label">Publicado el:</string>
     <string name="changelog_title">Novedades de esta versión:</string>
     <string name="no_changelog">Novedades de esta versión no proporcionadas.</string>
-    <string name="download_update_button">DESCARGAR ACTUALIZACIÓN</string>
-    <string name="view_release_button">VER RELEASE</string>
-    <string name="ignore_version_button">IGNORAR ESTA VERSIÓN</string>
-    <string name="check_again_button">VERIFICAR DE NUEVO</string>
     <string name="downloading_update">Descargando actualización...</string>
     <string name="download_complete_title">Actualización lista para instalar</string>
-    <string name="install_now_button">INSTALAR AHORA</string>
-    <string name="integrity_failed_title">No se pudo validar la actualización</string>
     <string name="integrity_failed_desc">El archivo descargado no pasó la prueba de seguridad SHA-256 y fue eliminado.</string>
-    <string name="try_again_button">INTENTAR DE NUEVO</string>
     <string name="permission_required_title">Permiso requerido</string>
-    <string name="permission_required_desc">Para instalar actualizaciones de Squi TV, permita que esta aplicación instale aplicaciones desconocidas.</string>
-    <string name="open_settings_button">ABRIR CONFIGURACIÓN</string>
     <string name="no_compatible_apk_title">Esta actualización no tiene un APK compatible</string>
-    <string name="update_error_title">No se pudo buscar actualizaciones ahora</string>
     <string name="update_notification_title">Nueva actualización disponible</string>
     <string name="update_notification_msg">Squi TV %s está disponible.</string>
-    <string name="view_update_action">Ver actualización</string>
     <string name="empty_favorites_movies">Aún no tienes películas favoritas.</string>
     <string name="empty_favorites_series">Aún no tienes series favoritas.</string>
     <string name="empty_favorites_live">Aún no tienes canales favoritos.</string>
-    <string name="update_available_login">Actualización Disponible</string>
     <string name="autofill_google_button">USAR CONTRASEÑA GUARDADA DE GOOGLE</string>
     <string name="credential_filled_msg">Credenciales completadas de Google</string>
     <string name="lang_auto">Automático (Sistema)</string>
@@ -587,4 +571,54 @@
     <string name="local_sync_connecting">Conectando con el dispositivo…</string>
     <string name="local_sync_waiting_approval">Esperando que aceptes en el dispositivo receptor…</string>
     <string name="local_sync_update_required">Actualiza Squi TV en ambos dispositivos para usar esta sincronización.</string>
+
+    <!-- Update experience -->
+    <string name="updater_invalid_release">No se pudo identificar la versión publicada.</string>
+    <string name="updater_check_failed">No se pudo consultar GitHub. Revisa la conexión e inténtalo de nuevo.</string>
+    <string name="updater_save_failed">No se pudo guardar la actualización. Revisa el espacio disponible.</string>
+    <string name="updater_download_failed">No se pudo descargar la actualización. Inténtalo de nuevo.</string>
+    <string name="updater_incomplete_download">La descarga está incompleta. Descarga la actualización de nuevo.</string>
+    <string name="updater_missing_file">El archivo ya no está disponible. Descárgalo de nuevo.</string>
+    <string name="updater_invalid_apk">El archivo recibido no es un APK válido para actualizar.</string>
+    <string name="updater_wrong_package">Este APK pertenece a otra aplicación. Descarga la versión correcta de Squi TV.</string>
+    <string name="updater_wrong_version">El APK no corresponde a la versión anunciada. Descárgalo de nuevo.</string>
+    <string name="updater_old_apk">Este APK no es más reciente que la aplicación instalada.</string>
+    <string name="updater_wrong_signature">La firma de este APK no coincide con la aplicación instalada.</string>
+    <string name="updater_installer_failed">No se pudo abrir el instalador de Android. Inténtalo de nuevo.</string>
+    <string name="updater_permission_failed">No se pudieron abrir los permisos. Permite que Squi TV instale aplicaciones en los ajustes de Android.</string>
+    <string name="updater_show_less">Mostrar menos</string>
+    <string name="updater_show_more">Ver todas las novedades</string>
+    <string name="updater_version_ready">Squi TV %1$s disponible</string>
+    <string name="updater_view">Ver actualización</string>
+    <string name="updater_debug_title">Versión de desarrollo</string>
+    <string name="updater_debug_desc">Squi TV Debug se actualiza desde Android Studio. Las actualizaciones de GitHub son para la aplicación habitual.</string>
+    <string name="updater_verifying">Verificando el archivo</string>
+    <string name="updater_error_title">La actualización no se completó</string>
+    <string name="updater_checking_desc">Buscando la última versión publicada en GitHub.</string>
+    <string name="updater_available_desc">Revisa las novedades y descarga cuando quieras. Android pedirá confirmar la instalación.</string>
+    <string name="updater_downloading_desc">Espera a que termine la descarga. Podrás confirmar la instalación después.</string>
+    <string name="updater_verifying_desc">Comprobando que el archivo corresponde a la actualización y a la aplicación instalada.</string>
+    <string name="updater_install_desc">Android pedirá confirmar la instalación de la nueva versión.</string>
+    <string name="updater_permission_desc">Permite que Squi TV instale aplicaciones. Al volver, el instalador se abrirá si se concedió el permiso.</string>
+    <string name="updater_opening_installer">Preparando la instalación</string>
+    <string name="updater_installer_opened">Continúa en el instalador de Android</string>
+    <string name="updater_installer_desc">Confirma la instalación en la pantalla de Android. Si cancelaste, puedes abrir el instalador de nuevo.</string>
+    <string name="updater_header_desc">Novedades, descarga e instalación en un solo lugar</string>
+    <string name="updater_check">Buscar de nuevo</string>
+    <string name="updater_ignored_desc">Los avisos de esta versión están silenciados. Aún puedes actualizar aquí.</string>
+    <string name="updater_download">Descargar actualización</string>
+    <string name="updater_silence">Silenciar esta versión</string>
+    <string name="updater_cancel">Cancelar descarga</string>
+    <string name="updater_download_bytes">%1$s de %2$s</string>
+    <string name="updater_install">Instalar actualización</string>
+    <string name="updater_allow_install">Permitir instalación</string>
+    <string name="updater_reopen_installer">Abrir instalador de nuevo</string>
+    <string name="updater_retry">Intentar de nuevo</string>
+    <string name="updater_on_github">Ver publicación en GitHub</string>
+    <string name="updater_step_download">Descargar</string>
+    <string name="updater_step_verify">Verificar</string>
+    <string name="updater_step_install">Instalar</string>
+    <string name="updater_notice_desc">Revisa las novedades y elige cuándo actualizar.</string>
+    <string name="updater_later">Ahora no</string>
+    <string name="updater_notice_timeout">Se cierra en %1$ds</string>
 </resources>

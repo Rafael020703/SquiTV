@@ -57,7 +57,6 @@ fun DownloadsScreen(
             AppHeader(
                 title = stringResource(R.string.downloads_nav_title),
                 subtitle = stringResource(R.string.downloads_nav_subtitle),
-                onBack = onBack
             )
 
             Surface(
