@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
 import rsv.squitv.core.domain.interactor.AuthManager
 import rsv.squitv.data.model.XtreamCredentials
 import rsv.squitv.data.repository.SettingsRepository
@@ -37,6 +38,7 @@ class PairingRepository @Inject constructor(
     private var pairingServer: LocalPairingServer? = null
     private var serverStartupJob: Job? = null
     private var expiryJob: Job? = null
+    private val authenticationMutex = Mutex()
 
     fun startPairingSession() {
         stopPairingSession()
@@ -52,9 +54,9 @@ class PairingRepository @Inject constructor(
                 handleLoginSubmission(username, password, token)
             },
             getSessionStatus = {
-                val s = _currentSession.value
-                if (s == null || s.isExpired()) null else s
-            }
+                _currentSession.value
+            },
+            getPairingState = { _serverStatus.value }
         )
         pairingServer = server
 
@@ -101,7 +103,7 @@ class PairingRepository @Inject constructor(
         pairingServer = null
         _currentSession.value = null
         _serverPort.value = 0
-        if (_serverStatus.value != PairingState.SUCCESS && _serverStatus.value != PairingState.ERROR) {
+        if (_serverStatus.value !in setOf(PairingState.SUCCESS, PairingState.ERROR, PairingState.EXPIRED)) {
             _serverStatus.value = PairingState.CANCELLED
         }
         Timber.i("Sessão de pareamento encerrada.")
@@ -133,28 +135,29 @@ class PairingRepository @Inject constructor(
             return LocalPairingServer.LoginResult.Error("Token de pareamento inválido.")
         }
 
-        // Enforce single-use atomically
-        if (!session.tryConsume()) {
-            return LocalPairingServer.LoginResult.Error("Este token já foi utilizado.")
-        }
-
+        if (session.isUsed.get()) return LocalPairingServer.LoginResult.Error("Este aparelho já foi conectado.")
+        if (!authenticationMutex.tryLock()) return LocalPairingServer.LoginResult.Error("Uma verificação já está em andamento. Aguarde.")
         _serverStatus.value = PairingState.AUTHENTICATING
 
         try {
             val settings = settingsRepository.settingsFlow.first()
             val baseUrl = settings.credentials?.baseUrl ?: "http://ded30.com/"
 
-            val credentials = XtreamCredentials(username.trim(), password.trim(), baseUrl)
+            val credentials = XtreamCredentials(username.trim(), password, baseUrl)
             val response = authManager.login(credentials)
 
+            if (_currentSession.value?.sessionId != session.sessionId || session.isExpired()) {
+                return LocalPairingServer.LoginResult.Error("Sessão encerrada. Abra um novo login no aparelho.")
+            }
             if (response.userInfo?.auth == 1) {
                 settingsRepository.saveCredentials(credentials)
+                session.isUsed.set(true)
                 _serverStatus.value = PairingState.SUCCESS
                 Timber.i("Login via rede local realizado com sucesso para usuário: %s", username)
                 
                 repositoryScope.launch {
                     delay(1000)
-                    stopPairingSession()
+                    if (_currentSession.value?.sessionId == session.sessionId) stopPairingSession()
                 }
 
                 return LocalPairingServer.LoginResult.Success
@@ -163,10 +166,15 @@ class PairingRepository @Inject constructor(
                 val msg = response.userInfo?.message ?: "Credenciais inválidas"
                 return LocalPairingServer.LoginResult.Error(msg)
             }
+        } catch (e: CancellationException) {
+            if (_currentSession.value?.sessionId == session.sessionId) _serverStatus.value = PairingState.WAITING
+            throw e
         } catch (e: Exception) {
-            _serverStatus.value = PairingState.ERROR
+            if (_currentSession.value?.sessionId == session.sessionId) _serverStatus.value = PairingState.ERROR
             Timber.e(e, "Erro no login via rede local")
-            return LocalPairingServer.LoginResult.Error("Falha ao autenticar no servidor.")
+            return LocalPairingServer.LoginResult.Error("Falha ao autenticar no servidor. Você pode tentar novamente.")
+        } finally {
+            authenticationMutex.unlock()
         }
     }
 }

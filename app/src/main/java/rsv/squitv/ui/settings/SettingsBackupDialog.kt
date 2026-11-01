@@ -155,25 +155,21 @@ internal fun BackupChoiceRow(label: String, checked: Boolean, enabled: Boolean, 
 }
 
 internal fun backupOptionLabel(option: BackupOption): Int = when (option) {
-    BackupOption.PLAYER_ENGINE -> R.string.backup_option_player_engine
-    BackupOption.BUFFER -> R.string.backup_option_buffer
-    BackupOption.THEME -> R.string.backup_option_theme
-    BackupOption.DATA_SAVER -> R.string.backup_option_data_saver
+    BackupOption.GROUP_CHANNELS -> R.string.group_live_channels
+    BackupOption.CHANNEL_QUALITY -> R.string.preferred_channel_quality
     BackupOption.ZOOM -> R.string.backup_option_zoom
     BackupOption.LANGUAGE -> R.string.backup_option_language
     BackupOption.SYNC_INTERVAL -> R.string.backup_option_sync_interval
     BackupOption.AUTO_PLAY -> R.string.backup_option_auto_play
-    BackupOption.RESIZE_MODE -> R.string.backup_option_resize_mode
-    BackupOption.DIAGNOSTICS -> R.string.backup_option_diagnostics
-    BackupOption.COMPACT_MODE -> R.string.backup_option_compact_mode
-    BackupOption.HIDE_BLOCKED -> R.string.backup_option_hide_blocked
     BackupOption.WIFI_ONLY -> R.string.backup_option_wifi_only
     BackupOption.SMART_DOWNLOADS -> R.string.backup_option_smart_downloads
     BackupOption.AUDIO_LANGUAGE -> R.string.backup_option_audio_language
     BackupOption.SUBTITLE_LANGUAGE -> R.string.backup_option_subtitle_language
-    BackupOption.NOTIFICATIONS -> R.string.backup_option_notifications
     BackupOption.BACKGROUND_AUDIO -> R.string.backup_option_background_audio
     BackupOption.PIP -> R.string.backup_option_pip
+    BackupOption.MOVIE_CATEGORY_MODE -> R.string.backup_option_movie_category_mode
+    BackupOption.SERIES_CATEGORY_MODE -> R.string.backup_option_series_category_mode
+    BackupOption.PREPARATION_SPEED -> R.string.catalog_categories_title
     BackupOption.CATEGORY_ORDER -> R.string.backup_option_category_order
     BackupOption.HIDDEN_CATEGORIES -> R.string.backup_option_hidden_categories
     BackupOption.HOME_SECTIONS -> R.string.backup_option_home_sections

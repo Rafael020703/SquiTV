@@ -43,11 +43,11 @@ fun LiveChannelsCatalogWidePreview() {
     )
 
     val sampleItems = listOf(
-        IptvItem("1", "Globo HD", "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=400", ContentType.LIVE, epgId = "Jornal Nacional", qualities = mapOf("FHD" to 1)),
-        IptvItem("2", "ESPN Brasil", "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=400", ContentType.LIVE, epgId = "Futebol Ao Vivo", qualities = mapOf("4K" to 2)),
-        IptvItem("3", "Telecine Premium", "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400", ContentType.LIVE, epgId = "Filme Inédito", qualities = mapOf("HD" to 3)),
-        IptvItem("4", "Discovery Channel", "https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=400", ContentType.LIVE, epgId = "Documentário", qualities = mapOf("FHD" to 4)),
-        IptvItem("5", "Cartoon Network", "https://images.unsplash.com/photo-1560169897-5fc9b57795b7?w=400", ContentType.LIVE, epgId = "Desenhos Animados", qualities = mapOf("HD" to 5))
+        IptvItem("1", "Globo HD", "https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=400", ContentType.LIVE, epgId = "Jornal Nacional"),
+        IptvItem("2", "ESPN Brasil", "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=400", ContentType.LIVE, epgId = "Futebol Ao Vivo"),
+        IptvItem("3", "Telecine Premium", "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=400", ContentType.LIVE, epgId = "Filme Inédito"),
+        IptvItem("4", "Discovery Channel", "https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=400", ContentType.LIVE, epgId = "Documentário"),
+        IptvItem("5", "Cartoon Network", "https://images.unsplash.com/photo-1560169897-5fc9b57795b7?w=400", ContentType.LIVE, epgId = "Desenhos Animados")
     )
 
     val sampleRows = listOf(
@@ -79,6 +79,8 @@ fun LiveChannelsCatalogWidePreview() {
                             items = sampleRows.flatMap { it.items },
                             gridFocusRequester = remember { FocusRequester() },
                             sidebarFocusRequester = remember { FocusRequester() },
+                            favorites = sampleItems.take(1),
+                            onToggleFavorite = { _, _ -> },
                             onItemClick = {}
                         )
                     }
@@ -93,4 +95,47 @@ fun LiveChannelsCatalogWidePreview() {
 @Composable
 fun LiveChannelsCatalogCompactPreview() {
     LiveChannelsCatalogWidePreview()
+}
+
+@UnstableApi
+@Preview(name = "Gêneros com conteúdo e contagens", widthDp = 960, heightDp = 540, locale = "pt")
+@Composable
+fun ContentGenreNavigationPreview() {
+    val items = listOf(
+        IptvItem("1", "Filme de ação", null, ContentType.MOVIE, genre = "Action"),
+        IptvItem("2", "Drama", null, ContentType.MOVIE, genre = "Drama"),
+        IptvItem("3", "Aventura", null, ContentType.MOVIE, genre = "Action, Adventure"),
+        IptvItem("4", "Sem metadados", null, ContentType.MOVIE)
+    )
+    val categories = rsv.squitv.domain.model.ContentCategories.catalog(
+        items = items,
+        providerCategories = emptyList(),
+        allLabel = "Todos",
+        unclassifiedLabel = "Sem gênero informado",
+        scope = "preview",
+        grouped = true,
+        quality = rsv.squitv.domain.model.ChannelQuality.AUTO,
+        mode = rsv.squitv.domain.model.CategoryMode.GENRE
+    )
+    MeusCanaisTheme {
+        PortalBackground {
+            Column(Modifier.fillMaxSize()) {
+                AppHeader(title = "FILMES", subtitle = "Ação", actions = {})
+                Row(Modifier.fillMaxSize()) {
+                    AppSidebar(
+                        items = categories, selectedItemPredicate = { it.id == "GENRE:Ação" },
+                        itemLabel = { it.name }, itemCount = { it.count }, itemKey = { it.id }, onItemClick = {}
+                    )
+                    Box(Modifier.weight(1f)) {
+                        ContentGrid(
+                            items = categories.first { it.id == "GENRE:Ação" }.items,
+                            gridFocusRequester = remember { FocusRequester() },
+                            sidebarFocusRequester = remember { FocusRequester() },
+                            onItemClick = {}
+                        )
+                    }
+                }
+            }
+        }
+    }
 }

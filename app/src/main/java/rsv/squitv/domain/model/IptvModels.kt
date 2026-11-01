@@ -21,16 +21,20 @@ data class IptvItem(
     val cast: String? = null,
     val director: String? = null,
     val added: String? = null,
-    val qualities: Map<String, Int> = emptyMap(),
+    val versions: List<ChannelVersion> = emptyList(),
+    val groupKey: String? = null,
     val categoryId: String? = null,
     val progress: Float? = null
-)
+) {
+    val stableKey: String get() = groupKey ?: "${type.name}:$id"
+    fun containsStream(streamId: String?) = id == streamId || versions.any { it.streamId.toString() == streamId }
+    fun matchesStreamKey(key: String) = key.startsWith("${type.name}:") && containsStream(key.substringAfter(':'))
+}
 
 @Immutable
 data class DashboardRow(
     val title: String,
     val items: List<IptvItem>,
-    val isLocked: Boolean = false,
     val catId: String? = null
 )
 

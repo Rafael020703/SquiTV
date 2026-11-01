@@ -2,7 +2,6 @@
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
@@ -24,7 +23,7 @@ private val BlackColorScheme = darkColorScheme(
     secondary = SecondaryPurple,
     onSecondary = Color.White,
     
-    background = PureBlack,
+    background = DeepBackground,
     onBackground = OnSurfaceLight,
     
     surface = BackgroundDark,
@@ -40,30 +39,6 @@ private val BlackColorScheme = darkColorScheme(
 )
 
 /**
- * MODERN LIGHT SCHEME (Fallback)
- */
-private val WhiteColorScheme = lightColorScheme(
-    primary = PrimaryCyanVariant,
-    onPrimary = Color.White,
-    primaryContainer = PrimaryCyan,
-    onPrimaryContainer = Color.Black,
-    
-    secondary = SecondaryPurple,
-    onSecondary = Color.White,
-    
-    background = WhiteBackground,
-    onBackground = OnWhiteSurface,
-    
-    surface = WhiteSurface,
-    onSurface = OnWhiteSurface,
-    surfaceVariant = Color(0xFFE9ECEF),
-    onSurfaceVariant = OnWhiteMuted,
-    
-    error = ErrorRed,
-    onError = Color.White
-)
-
-/**
  * MATERIAL 3 SHAPES WRAPPER
  */
 private val Shapes = Shapes(
@@ -74,25 +49,13 @@ private val Shapes = Shapes(
 
 @Composable
 fun MeusCanaisTheme(
-    useOledTheme: Boolean = true, // Default to Black
     typography: Typography = Typography,
     uiZoom: Float = 1.0f,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (useOledTheme) {
-        BlackColorScheme
-    } else {
-        WhiteColorScheme
-    }
+    val colorScheme = BlackColorScheme
+    val appColors = ColorTokens()
 
-    val appColors = if (useOledTheme) ColorTokens() else ColorTokens(
-        background = WhiteBackground,
-        backgroundSecondary = WhiteBackground,
-        surface = WhiteSurface,
-        textPrimary = OnWhiteSurface,
-        textSecondary = OnWhiteMuted
-    )
-    
     val appTypography = TypeTokens(
         display = typography.displayLarge,
         headline = typography.headlineLarge,

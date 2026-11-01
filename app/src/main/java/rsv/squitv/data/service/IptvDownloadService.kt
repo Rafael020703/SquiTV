@@ -65,7 +65,7 @@ class IptvDownloadService : DownloadService(
 
         return notificationHelper.buildProgressNotification(
             this,
-            android.R.drawable.stat_sys_download,
+            R.drawable.ic_notification,
             null,
             title,
             downloads,

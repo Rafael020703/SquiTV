@@ -37,16 +37,12 @@ fun ChannelCard(
     
     val fontSize = responsive.sp(tokens.typography.caption.fontSize)
     val cardPadding = responsive.dp(tokens.spacing.small)
-    val iconSize = responsive.dp(20.dp)
+    val iconSize = responsive.dp(16.dp)
 
-    val highestQuality = remember(item.qualities) {
-        when {
-            item.qualities.containsKey("4K") -> "4K"
-            item.qualities.containsKey("FHD") -> "FHD"
-            item.qualities.containsKey("HD") -> "HD"
-            item.qualities.containsKey("SD") -> "SD"
-            else -> item.qualities.keys.firstOrNull()
-        }
+    val highestQuality = remember(item.versions, item.name) {
+        val quality = item.versions.mapNotNull { it.resolution }.maxByOrNull { it.rank }
+            ?: rsv.squitv.domain.model.LiveChannelGrouping.parse(item.name).resolution
+        if (quality == rsv.squitv.domain.model.ChannelQuality.UHD) "4K" else quality?.name
     }
 
     Column(

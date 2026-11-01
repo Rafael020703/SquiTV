@@ -87,7 +87,7 @@ class GetQuickSwitchUseCase @Inject constructor(
                 }
             }
             categoryId != null && categoryId.startsWith("SEARCH:", ignoreCase = true) -> {
-                val query = categoryId.substringAfter("SEARCH:")
+                val query = categoryId.substringAfter(':')
                 if (query.isNotBlank()) {
                     val searchResults = catalogRepository.searchStreams(query, "LIVE")
                     searchResults.map { entity ->
@@ -104,7 +104,7 @@ class GetQuickSwitchUseCase @Inject constructor(
                     emptyList()
                 }
             }
-            categoryId == null || categoryId.equals("ALL", ignoreCase = true) || categoryId.equals("EPG_ALL", ignoreCase = true) -> {
+            categoryId == null || categoryId.equals("ALL", ignoreCase = true) -> {
                 catalogRepository.getLiveStreams(credentials)
             }
             else -> {

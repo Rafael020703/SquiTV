@@ -19,7 +19,6 @@ import kotlinx.serialization.encodeToString
 import rsv.squitv.ui.account.AccountScreen
 import rsv.squitv.ui.content.*
 import rsv.squitv.ui.dashboard.DashboardScreen
-import rsv.squitv.ui.epg.EpgGridScreen
 import rsv.squitv.ui.login.InitialScreen
 import rsv.squitv.ui.login.LocalLoginScreen
 import rsv.squitv.ui.login.LoginScreen
@@ -102,7 +101,6 @@ fun NavGraphBuilder.appNavGraph(
                 }
             },
             onNavigateToMultiView = { appController.navigate(Route.MultiView) },
-            onNavigateToEpgGrid = { appController.navigate(Route.EpgGrid) },
             onNavigateToSearch = { appController.navigate(Route.Search()) },
             onNavigateToAccount = { appController.navigate(Route.Account) },
             onNavigateToSettings = { appController.navigate(Route.Settings) },
@@ -114,17 +112,16 @@ fun NavGraphBuilder.appNavGraph(
     composable<Route.LiveChannels> { backStackEntry ->
         val route: Route.LiveChannels = backStackEntry.toRoute()
         val catViewModel: CategoryViewModel = hiltViewModel()
-        val blockedIds by mainViewModel.blockedCategoryIds.collectAsStateWithLifecycle()
         val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
 
         LaunchedEffect(Unit) {
             mainViewModel.loadCategories("live")
         }
 
-        LaunchedEffect(route.categoryId, blockedIds, settings.hideBlockedCategories) {
-            val ids = if (settings.hideBlockedCategories) blockedIds else emptySet()
+        val catalogRevision by mainViewModel.catalogRevision.collectAsStateWithLifecycle()
+        LaunchedEffect(route.categoryId, catalogRevision, settings.credentials, settings.activeProfileId) {
             val catToLoad = route.categoryId ?: settings.lastLiveCategory ?: "RECENTS"
-            catViewModel.loadContent("live", catToLoad, ids)
+            catViewModel.ensureContent("live", catToLoad, catalogRevision)
         }
         LiveChannelsScreen(
             viewModel = mainViewModel,
@@ -132,9 +129,8 @@ fun NavGraphBuilder.appNavGraph(
             settingsViewModel = settingsViewModel,
             onBack = { appController.goBack() },
             onNavigateToSearch = { appController.navigate(Route.Search()) },
-            onPlay = { streamId, name, type, epgId, qualities, icon, categoryId ->
-                val qualitiesJson = Json.encodeToString(qualities)
-                appController.navigate(Route.Player(streamId, name, type, epgId = epgId, qualitiesJson = qualitiesJson, categoryId = categoryId ?: route.categoryId ?: settings.lastLiveCategory ?: "RECENTS", streamIcon = icon))
+            onPlay = { streamId, name, type, epgId, sourceId, icon, categoryId ->
+                appController.navigate(Route.Player(streamId, name, type, epgId = epgId, sourceId = sourceId, categoryId = categoryId ?: route.categoryId ?: settings.lastLiveCategory ?: "RECENTS", streamIcon = icon))
             },
             onCategoryClick = { type, catId ->
                 if (catId != null) mainViewModel.saveLastCategory(type, catId)
@@ -145,22 +141,24 @@ fun NavGraphBuilder.appNavGraph(
 
     composable<Route.Movies> { backStackEntry ->
         val route: Route.Movies = backStackEntry.toRoute()
+        val contentType = if (route.type == "genre") "movie" else route.type
+        val initialCategoryId = if (route.type == "genre") route.categoryId?.let {
+            rsv.squitv.domain.model.ContentCategories.genreId(it)
+        } else route.categoryId
         val catViewModel: CategoryViewModel = hiltViewModel()
-        val blockedIds by mainViewModel.blockedCategoryIds.collectAsStateWithLifecycle()
         val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
         val catalogRevision by mainViewModel.catalogRevision.collectAsStateWithLifecycle()
 
         LaunchedEffect(Unit) {
-            mainViewModel.loadCategories(route.type)
+            mainViewModel.loadCategories(contentType)
         }
 
-        LaunchedEffect(route.categoryId, route.type, blockedIds, settings.hideBlockedCategories, catalogRevision, settings.credentials?.baseUrl, settings.credentials?.username) {
-            val ids = if (settings.hideBlockedCategories) blockedIds else emptySet()
-            val catToLoad = route.categoryId ?: (if (route.type == "movie") settings.lastMovieCategory else null) ?: "RECENTS"
-            catViewModel.ensureContent(route.type, catToLoad, ids, catalogRevision)
+        LaunchedEffect(initialCategoryId, contentType, catalogRevision, settings.credentials?.baseUrl, settings.credentials?.username, settings.activeProfileId) {
+            val catToLoad = initialCategoryId ?: settings.lastMovieCategory ?: "ALL"
+            catViewModel.ensureContent(contentType, catToLoad, catalogRevision)
         }
         MoviesScreen(
-            title = if (route.type == "movie") stringResource(R.string.movies_nav_title) else route.categoryId ?: "",
+            title = if (contentType == "movie") stringResource(R.string.movies_nav_title) else route.categoryId ?: "",
             viewModel = mainViewModel,
             categoryViewModel = catViewModel,
             libraryViewModel = libraryViewModel,
@@ -179,22 +177,24 @@ fun NavGraphBuilder.appNavGraph(
 
     composable<Route.Series> { backStackEntry ->
         val route: Route.Series = backStackEntry.toRoute()
+        val contentType = if (route.type == "genre") "series" else route.type
+        val initialCategoryId = if (route.type == "genre") route.categoryId?.let {
+            rsv.squitv.domain.model.ContentCategories.genreId(it)
+        } else route.categoryId
         val catViewModel: CategoryViewModel = hiltViewModel()
-        val blockedIds by mainViewModel.blockedCategoryIds.collectAsStateWithLifecycle()
         val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
         val catalogRevision by mainViewModel.catalogRevision.collectAsStateWithLifecycle()
 
         LaunchedEffect(Unit) {
-            mainViewModel.loadCategories(route.type)
+            mainViewModel.loadCategories(contentType)
         }
 
-        LaunchedEffect(route.categoryId, route.type, blockedIds, settings.hideBlockedCategories, catalogRevision, settings.credentials?.baseUrl, settings.credentials?.username) {
-            val ids = if (settings.hideBlockedCategories) blockedIds else emptySet()
-            val catToLoad = route.categoryId ?: (if (route.type == "series") settings.lastSeriesCategory else null) ?: "RECENTS"
-            catViewModel.ensureContent(route.type, catToLoad, ids, catalogRevision)
+        LaunchedEffect(initialCategoryId, contentType, catalogRevision, settings.credentials?.baseUrl, settings.credentials?.username, settings.activeProfileId) {
+            val catToLoad = initialCategoryId ?: settings.lastSeriesCategory ?: "ALL"
+            catViewModel.ensureContent(contentType, catToLoad, catalogRevision)
         }
         SeriesScreen(
-            title = if (route.type == "series") stringResource(R.string.series_nav_title) else route.categoryId ?: "",
+            title = if (contentType == "series") stringResource(R.string.series_nav_title) else route.categoryId ?: "",
             viewModel = mainViewModel,
             categoryViewModel = catViewModel,
             libraryViewModel = libraryViewModel,
@@ -238,7 +238,7 @@ fun NavGraphBuilder.appNavGraph(
                 )
             },
             onActorClick = { actor -> appController.navigate(Route.ActorDetail(actor)) },
-            onGenreClick = { genre -> appController.navigate(Route.Series(genre, "genre")) },
+            onGenreClick = { genre -> appController.navigate(Route.Series(rsv.squitv.domain.model.ContentCategories.genreId(genre), "series")) },
             onDirectorClick = { director -> appController.navigate(Route.ActorDetail(director)) }
         )
     }
@@ -255,7 +255,7 @@ fun NavGraphBuilder.appNavGraph(
                 appController.navigate(Route.Player(id, name, "movie", container = container))
             },
             onActorClick = { actor -> appController.navigate(Route.ActorDetail(actor)) },
-            onGenreClick = { genre -> appController.navigate(Route.Movies(genre, "genre")) },
+            onGenreClick = { genre -> appController.navigate(Route.Movies(rsv.squitv.domain.model.ContentCategories.genreId(genre), "movie")) },
             onDirectorClick = { director -> appController.navigate(Route.ActorDetail(director)) }
         )
     }
@@ -264,11 +264,6 @@ fun NavGraphBuilder.appNavGraph(
         val route: Route.Player = backStackEntry.toRoute()
         val playerViewModel: PlayerViewModel = hiltViewModel()
         LaunchedEffect(route) {
-            val qualities: Map<String, Int> = try {
-                Json.decodeFromString(route.qualitiesJson ?: "{}")
-            } catch (e: Exception) {
-                emptyMap()
-            }
             playerViewModel.playStream(
                 route.streamId,
                 ContentType.fromString(route.streamType),
@@ -276,16 +271,15 @@ fun NavGraphBuilder.appNavGraph(
                 route.epgId,
                 route.seriesId,
                 route.seasonNumber,
-                qualities,
                 route.categoryId,
                 displayName = route.streamName,
-                streamIcon = route.streamIcon
+                streamIcon = route.streamIcon,
+                sourceId = route.sourceId
             )
         }
         PlayerScreen(
             viewModel = playerViewModel,
             streamName = route.streamName,
-            categoryId = route.categoryId,
             onBack = { appController.goBack() },
             onNavigateToPlayer = { streamId, name, type, container ->
                 appController.navigate(
@@ -348,16 +342,6 @@ fun NavGraphBuilder.appNavGraph(
         MultiViewScreen(mainViewModel = mainViewModel, onBack = { appController.goBack() })
     }
 
-    composable<Route.EpgGrid> {
-        EpgGridScreen(
-            mainViewModel = mainViewModel,
-            onBack = { appController.goBack() },
-            onChannelClick = { id, name, epgId, categoryId ->
-                appController.navigate(Route.Player(id, name, "live", epgId = epgId, categoryId = categoryId))
-            }
-        )
-    }
-
     composable<Route.Downloads> {
         DownloadsScreen(
             viewModel = mainViewModel,
@@ -391,11 +375,10 @@ fun NavGraphBuilder.appNavGraph(
             libraryViewModel = libraryViewModel,
             onBack = { appController.goBack() },
             onNavigateToSearch = { appController.navigate(Route.Search()) },
-            onPlay = { streamId, name, type, epgId, qualities, icon ->
-                val qualitiesJson = Json.encodeToString(qualities)
+            onPlay = { streamId, name, type, epgId, sourceId, icon ->
                 if (type == "movie") appController.navigate(Route.VodDetail(streamId, name, icon))
                 else if (type == "series") appController.navigate(Route.SeriesDetail(streamId, name, icon))
-                else appController.navigate(Route.Player(streamId, name, type, epgId = epgId, qualitiesJson = qualitiesJson, categoryId = "FAVORITES", streamIcon = icon))
+                else appController.navigate(Route.Player(streamId, name, type, epgId = epgId, sourceId = sourceId, categoryId = "FAVORITES", streamIcon = icon))
             },
             onSeriesClick = { id, name, icon -> appController.navigate(Route.SeriesDetail(id, name, icon)) },
             onVodClick = { id, name, icon -> appController.navigate(Route.VodDetail(id, name, icon)) }
@@ -415,11 +398,10 @@ fun NavGraphBuilder.appNavGraph(
             libraryViewModel = libraryViewModel,
             onBack = { appController.goBack() },
             onNavigateToSearch = { appController.navigate(Route.Search()) },
-            onPlay = { streamId, name, type, epgId, qualities, icon ->
-                val qualitiesJson = Json.encodeToString(qualities)
+            onPlay = { streamId, name, type, epgId, sourceId, icon ->
                 if (type == "movie") appController.navigate(Route.VodDetail(streamId, name, icon))
                 else if (type == "series") appController.navigate(Route.SeriesDetail(streamId, name, icon))
-                else appController.navigate(Route.Player(streamId, name, type, epgId = epgId, qualitiesJson = qualitiesJson, categoryId = "HISTORY", streamIcon = icon))
+                else appController.navigate(Route.Player(streamId, name, type, epgId = epgId, sourceId = sourceId, categoryId = "HISTORY", streamIcon = icon))
             },
             onSeriesClick = { id, name, icon -> appController.navigate(Route.SeriesDetail(id, name, icon)) },
             onVodClick = { id, name, icon -> appController.navigate(Route.VodDetail(id, name, icon)) }
@@ -431,7 +413,7 @@ fun NavGraphBuilder.appNavGraph(
         val catViewModel: CategoryViewModel = hiltViewModel()
         val catalogRevision by mainViewModel.catalogRevision.collectAsStateWithLifecycle()
         LaunchedEffect(route.name, catalogRevision) {
-            catViewModel.ensureContent("actor", route.name, emptySet(), catalogRevision)
+            catViewModel.ensureContent("actor", route.name, catalogRevision)
         }
         ActorDetailScreen(
             actorName = route.name,
@@ -443,12 +425,7 @@ fun NavGraphBuilder.appNavGraph(
     }
 
     composable<Route.Search> {
-        val blockedIds by mainViewModel.blockedCategoryIds.collectAsStateWithLifecycle()
         val searchViewModel: SearchViewModel = hiltViewModel()
-
-        LaunchedEffect(blockedIds) {
-            searchViewModel.setBlockedCategories(blockedIds)
-        }
 
         SearchScreen(
             viewModel = searchViewModel,
@@ -468,7 +445,8 @@ fun NavGraphBuilder.appNavGraph(
                             container = container,
                             seriesId = seriesId,
                             seasonNumber = seasonNumber,
-                            categoryId = "SEARCH",
+                            categoryId = "SEARCH:${searchViewModel.searchQuery.value}",
+                            sourceId = searchViewModel.capturePlaybackSource(),
                             streamIcon = icon
                         )
                     )

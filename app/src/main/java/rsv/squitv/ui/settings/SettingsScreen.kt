@@ -2,16 +2,14 @@
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
@@ -59,17 +57,13 @@ enum class SettingsCategory(val labelRes: Int, val icon: ImageVector) {
     ACCOUNT(R.string.account_label, Icons.Rounded.ManageAccounts),
     SIGN_OUT(R.string.logout_label, Icons.AutoMirrored.Rounded.Logout),
     NAV_CUSTOMIZATION(R.string.nav_customization_label, Icons.Rounded.DashboardCustomize),
+    CATALOG_CATEGORIES(R.string.catalog_categories_title, Icons.Rounded.Category),
     BACKUP(R.string.settings_backup_title, Icons.Rounded.SettingsBackupRestore),
     LANGUAGE(R.string.language_label, Icons.Rounded.Language),
-    THEME(R.string.oled_theme_label, Icons.Rounded.DarkMode),
     ZOOM(R.string.ui_zoom_label, Icons.Rounded.ZoomIn),
-    PLAYER_ENGINE(R.string.video_quality_section, Icons.Rounded.SettingsInputComponent),
-    BUFFER(R.string.buffer_strategy_label, Icons.Rounded.Memory),
+    CHANNEL_QUALITY(R.string.channels_and_quality, Icons.Rounded.HighQuality),
     AUTO_PLAY(R.string.auto_play_label, Icons.AutoMirrored.Rounded.PlaylistPlay),
     BACKGROUND_AND_PIP(R.string.background_and_pip_label, Icons.Rounded.PictureInPictureAlt),
-    DIAGNOSTICS(R.string.show_diagnostics_label, Icons.Rounded.Analytics),
-    PARENTAL(R.string.parental_control_label, Icons.Rounded.Lock),
-    HIDE_LOCKED(R.string.hide_blocked_label, Icons.Rounded.VisibilityOff),
     UPDATE(R.string.force_sync_button, Icons.Rounded.Sync),
     APP_UPDATES(R.string.app_updates_title, Icons.Rounded.SystemUpdate),
     DNS_TESTER(R.string.dns_tester_title, Icons.Rounded.Dns),
@@ -103,11 +97,7 @@ fun SettingsScreen(
 
     val contentFocusRequester = remember { FocusRequester() }
 
-    // Ordenação alfabética estrita do texto visível na interface
-    val categoryNames = SettingsCategory.entries.associateWith { stringResource(it.labelRes) }
-    val sortedCategories = remember(categoryNames) {
-        SettingsCategory.entries.sortedBy { categoryNames[it]?.uppercase() ?: "" }
-    }
+    val sortedCategories = alphabeticalSettingsCategories()
 
     BackHandler(enabled = detailCategory != null || showResetDialog) {
         if (detailCategory != null) detailCategory = null
@@ -153,72 +143,29 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // --- SEÇÕES CATEGORIZADAS DE CONFIGURAÇÕES ---
-            val settingsGroups = remember {
-                listOf(
-                    "CONTA E PREFERÊNCIAS" to listOf(SettingsCategory.ACCOUNT, SettingsCategory.NAV_CUSTOMIZATION, SettingsCategory.BACKUP, SettingsCategory.SIGN_OUT, SettingsCategory.LANGUAGE, SettingsCategory.THEME, SettingsCategory.ZOOM),
-                    "REPRODUÇÃO" to listOf(SettingsCategory.PLAYER_ENGINE, SettingsCategory.BUFFER, SettingsCategory.AUTO_PLAY, SettingsCategory.BACKGROUND_AND_PIP),
-                    "SEGURANÇA E CATÁLOGO" to listOf(SettingsCategory.PARENTAL, SettingsCategory.HIDE_LOCKED, SettingsCategory.CLEAR_CATALOG),
-                    "ATUALIZAÇÃO E MANUTENÇÃO" to listOf(SettingsCategory.UPDATE, SettingsCategory.APP_UPDATES, SettingsCategory.CLEAR_CACHE),
-                    "DIAGNÓSTICO AVANÇADO" to listOf(SettingsCategory.DIAGNOSTICS, SettingsCategory.DNS_TESTER)
-                )
-            }
-
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                settingsGroups.forEach { (groupTitle, categories) ->
-                    item(key = groupTitle) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = groupTitle,
-                                style = tokens.typography.label.copy(fontSize = 11.sp, fontWeight = FontWeight.Black),
-                                color = tokens.colors.primary,
-                                letterSpacing = 1.5.sp,
-                                modifier = Modifier.padding(horizontal = 4.dp)
-                            )
-                            LazyRow(
-                                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                                contentPadding = PaddingValues(horizontal = 4.dp)
-                            ) {
-                                itemsIndexed(categories, key = { _, item -> item.name }) { index, category ->
-                                    val cardWidth = if (windowInfo.screenWidth < 600.dp) 130.dp else 165.dp
-                                    Box(modifier = Modifier.width(cardWidth)) {
-                                        SettingsGridCard(
-                                            label = if (category == SettingsCategory.UPDATE && syncProgress.isRunning)
-                                                stringResource(R.string.sync_title) else stringResource(category.labelRes),
-                                            icon = category.icon,
-                                            isDestructive = category == SettingsCategory.SIGN_OUT || category == SettingsCategory.CLEAR_CATALOG,
-                                            modifier = if (groupTitle == "CONTA E PREFERÊNCIAS" && index == 0) Modifier.focusRequester(contentFocusRequester) else Modifier,
-                                            onClick = {
-                                                when (category) {
-                                                    SettingsCategory.ACCOUNT -> onNavigateToAccount()
-                                                    SettingsCategory.NAV_CUSTOMIZATION -> onNavigateToContentCustomization()
-                                                    SettingsCategory.BACKUP -> showBackupDialog = true
-                                                    SettingsCategory.SIGN_OUT -> mainViewModel.logout()
-                                                    SettingsCategory.UPDATE -> {
-                                                        if (!syncProgress.isRunning) mainViewModel.loadData(force = true)
-                                                        showSyncDialog = true
-                                                    }
-                                                    SettingsCategory.APP_UPDATES -> onNavigateToUpdates()
-                                                    SettingsCategory.DNS_TESTER -> onNavigateToDnsTester()
-                                                    SettingsCategory.CLEAR_CACHE -> mainViewModel.clearCache()
-                                                    SettingsCategory.CLEAR_CATALOG -> showResetDialog = true
-                                                    else -> detailCategory = category
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
-                            }
+            SettingsOptionsGrid(
+                categories = sortedCategories,
+                minimumCardWidth = if (windowInfo.screenWidth < 600.dp) 130.dp else 165.dp,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                focusRequester = contentFocusRequester,
+                onSelect = { category ->
+                    when (category) {
+                        SettingsCategory.ACCOUNT -> onNavigateToAccount()
+                        SettingsCategory.NAV_CUSTOMIZATION -> onNavigateToContentCustomization()
+                        SettingsCategory.BACKUP -> showBackupDialog = true
+                        SettingsCategory.SIGN_OUT -> mainViewModel.logout()
+                        SettingsCategory.UPDATE -> {
+                            if (!syncProgress.isRunning) mainViewModel.loadData(force = true)
+                            showSyncDialog = true
                         }
+                        SettingsCategory.APP_UPDATES -> onNavigateToUpdates()
+                        SettingsCategory.DNS_TESTER -> onNavigateToDnsTester()
+                        SettingsCategory.CLEAR_CACHE -> mainViewModel.clearCache()
+                        SettingsCategory.CLEAR_CATALOG -> showResetDialog = true
+                        else -> detailCategory = category
                     }
                 }
-            }
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -370,6 +317,8 @@ fun SettingsScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState())
                         .padding(vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -392,7 +341,6 @@ fun SettingsScreen(
                                 "LIVE_TV" to "TV Ao Vivo",
                                 "MOVIES" to "Filmes",
                                 "SERIES" to "Séries",
-                                "EPG" to "Guia TV (EPG)",
                                 "MULTI_VIEW" to "Multi-View",
                                 "DOWNLOADS" to "Downloads",
                                 "FAVORITES" to "Favoritos"
@@ -440,14 +388,6 @@ fun SettingsScreen(
                                 )
                             }
                         }
-                        SettingsCategory.THEME -> {
-                            SettingsToggle(
-                                label = "TEMA OLED BLACK",
-                                checked = settings.useOledTheme,
-                                description = "Fundo preto puro para economia de bateria e contraste infinito.",
-                                onCheckedChange = { settingsViewModel.updateUseOledTheme(it) }
-                            )
-                        }
                         SettingsCategory.ZOOM -> {
                             Text("TAMANHO DA INTERFACE", color = tokens.colors.primary, style = tokens.typography.label, fontWeight = FontWeight.Black)
                             val options = listOf(0.8f to "PEQUENO", 1.0f to "PADRÃO", 1.2f to "GRANDE", 1.5f to "EXTRA")
@@ -459,31 +399,15 @@ fun SettingsScreen(
                                 )
                             }
                         }
-                        SettingsCategory.PLAYER_ENGINE -> {
-                            Text("MOTOR DE REPRODUÇÃO", color = tokens.colors.primary, style = tokens.typography.label, fontWeight = FontWeight.Black)
-                            listOf("EXO" to "EXOPLAYER (RECOMENDADO)", "VLC" to "VLC ENGINE (EXTERNO)").forEach { (id, label) ->
-                                SettingsActionItem(
-                                    label = label,
-                                    onClick = { settingsViewModel.updatePlayerEngine(id) },
-                                    trailingText = if (settings.playerEngine == id) "ATIVO" else null
-                                )
-                            }
-                        }
-                        SettingsCategory.BUFFER -> {
-                            Text("ESTRATÉGIA DE CARREGAMENTO", color = tokens.colors.primary, style = tokens.typography.label, fontWeight = FontWeight.Black)
-                            listOf("Stable" to "ESTÁVEL (EQUILIBRADO)", "Fast" to "RÁPIDO (MENOR LATÊNCIA)", "Safe" to "SEGURO (MAIOR CACHE)").forEach { (id, label) ->
-                                SettingsActionItem(
-                                    label = label,
-                                    onClick = { settingsViewModel.updateBufferStrategy(id) },
-                                    trailingText = if (settings.bufferStrategy == id) "ATIVO" else null
-                                )
-                            }
+                        SettingsCategory.CHANNEL_QUALITY -> {
+                            ChannelQualitySettings(settings.groupLiveChannels, settings.preferredChannelQuality,
+                                settingsViewModel::updateGroupLiveChannels, settingsViewModel::updatePreferredChannelQuality)
                         }
                         SettingsCategory.AUTO_PLAY -> {
                             SettingsToggle(
                                 label = "AUTO-REPRODUÇÃO",
                                 checked = settings.autoPlayEnabled,
-                                description = "Iniciar próximo episódio ou canal automaticamente.",
+                                description = "Iniciar próximo episódio automaticamente.",
                                 onCheckedChange = { settingsViewModel.updateAutoPlay(it) }
                             )
                         }
@@ -517,43 +441,83 @@ fun SettingsScreen(
                                 }
                             }
                         }
-                        SettingsCategory.DIAGNOSTICS -> {
-                            SettingsToggle(
-                                label = "ESTATÍSTICAS DE REDE",
-                                checked = settings.showDiagnostics,
-                                description = "Exibir velocidade e buffer durante a reprodução.",
-                                onCheckedChange = { settingsViewModel.updateShowDiagnostics(it) }
-                            )
-                        }
-                        SettingsCategory.PARENTAL -> {
-                            var pinInput by remember { mutableStateOf(settings.appPin ?: "") }
-                            OutlinedTextField(
-                                value = pinInput,
-                                onValueChange = { if (it.length <= 4) pinInput = it },
-                                label = { Text("PIN DE 4 DÍGITOS") },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = tokens.shapes.medium,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = tokens.colors.primary,
-                                    unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White
+                        SettingsCategory.CATALOG_CATEGORIES -> {
+                            val accountKey = settings.credentials?.let { rsv.squitv.data.model.SettingsBackupCodec.accountKey(it) } ?: ""
+                            val movieMode = settings.getMovieCategoryMode(accountKey, settings.activeProfileId)
+                            val seriesMode = settings.getSeriesCategoryMode(accountKey, settings.activeProfileId)
+                            val prepState by mainViewModel.prepState.collectAsStateWithLifecycle()
+
+                            Text("MODO DAS CATEGORIAS", color = tokens.colors.primary, style = tokens.typography.label, fontWeight = FontWeight.Black)
+
+                            Spacer(Modifier.height(4.dp))
+                            Text(stringResource(R.string.movie_category_mode_label), style = tokens.typography.body, fontWeight = FontWeight.Bold, color = tokens.colors.textPrimary)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
+                                AppButton(
+                                    text = stringResource(R.string.category_mode_provider),
+                                    onClick = { mainViewModel.updateMovieCategoryMode(rsv.squitv.domain.model.CategoryMode.PROVIDER) },
+                                    enabled = movieMode != rsv.squitv.domain.model.CategoryMode.PROVIDER
                                 )
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            AppButton(
-                                text = "SALVAR NOVO PIN",
-                                onClick = { settingsViewModel.updatePin(pinInput.ifEmpty { null }); detailCategory = null },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                        SettingsCategory.HIDE_LOCKED -> {
-                            SettingsToggle(
-                                label = "OCULTAR BLOQUEADOS",
-                                checked = settings.hideBlockedCategories,
-                                description = "Categorias protegidas por PIN não aparecerão no catálogo.",
-                                onCheckedChange = { settingsViewModel.updateHideBlockedCategories(it) }
-                            )
+                                AppButton(
+                                    text = stringResource(R.string.category_mode_genre),
+                                    onClick = { mainViewModel.updateMovieCategoryMode(rsv.squitv.domain.model.CategoryMode.GENRE) },
+                                    enabled = movieMode != rsv.squitv.domain.model.CategoryMode.GENRE
+                                )
+                            }
+
+                            Spacer(Modifier.height(8.dp))
+
+                            Text(stringResource(R.string.series_category_mode_label), style = tokens.typography.body, fontWeight = FontWeight.Bold, color = tokens.colors.textPrimary)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
+                                AppButton(
+                                    text = stringResource(R.string.category_mode_provider),
+                                    onClick = { mainViewModel.updateSeriesCategoryMode(rsv.squitv.domain.model.CategoryMode.PROVIDER) },
+                                    enabled = seriesMode != rsv.squitv.domain.model.CategoryMode.PROVIDER
+                                )
+                                AppButton(
+                                    text = stringResource(R.string.category_mode_genre),
+                                    onClick = { mainViewModel.updateSeriesCategoryMode(rsv.squitv.domain.model.CategoryMode.GENRE) },
+                                    enabled = seriesMode != rsv.squitv.domain.model.CategoryMode.GENRE
+                                )
+                            }
+
+                            Spacer(Modifier.height(16.dp))
+
+                            Text(stringResource(R.string.catalog_preparing_title).uppercase(), color = tokens.colors.primary, style = tokens.typography.label, fontWeight = FontWeight.Black)
+                            Text("Prioridade atual: ${if (prepState.priorityType == "SERIES") "Séries" else "Filmes"}", style = tokens.typography.body, color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold)
+                            Text("Filmes: ${prepState.vodProcessed} / ${prepState.vodTotal} (com gênero: ${prepState.vodWithGenre})", style = tokens.typography.caption, color = tokens.colors.textSecondary)
+                            Text("Séries: ${prepState.seriesProcessed} / ${prepState.seriesTotal} (com gênero: ${prepState.seriesWithGenre})", style = tokens.typography.caption, color = tokens.colors.textSecondary)
+
+                            Spacer(Modifier.height(8.dp))
+
+                            Text("VELOCIDADE DE PREPARAÇÃO", style = tokens.typography.caption, fontWeight = FontWeight.Black, color = tokens.colors.primary)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
+                                AppButton(
+                                    text = "Lento",
+                                    onClick = { mainViewModel.setPreparationSpeed(rsv.squitv.domain.model.PreparationSpeed.SLOW) },
+                                    enabled = prepState.speed != rsv.squitv.domain.model.PreparationSpeed.SLOW
+                                )
+                                AppButton(
+                                    text = "Normal",
+                                    onClick = { mainViewModel.setPreparationSpeed(rsv.squitv.domain.model.PreparationSpeed.NORMAL) },
+                                    enabled = prepState.speed != rsv.squitv.domain.model.PreparationSpeed.NORMAL
+                                )
+                                AppButton(
+                                    text = "Rápido",
+                                    onClick = { mainViewModel.setPreparationSpeed(rsv.squitv.domain.model.PreparationSpeed.FAST) },
+                                    enabled = prepState.speed != rsv.squitv.domain.model.PreparationSpeed.FAST
+                                )
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                                if (prepState.isRunning) {
+                                    AppButton(text = stringResource(R.string.catalog_prep_pause_action), onClick = { mainViewModel.pausePrep() })
+                                } else if (prepState.isPaused) {
+                                    AppButton(text = stringResource(R.string.catalog_prep_resume_action), onClick = { mainViewModel.resumePrep() })
+                                }
+                                if (prepState.failedItems > 0) {
+                                    AppButton(text = stringResource(R.string.catalog_prep_retry_action), onClick = { mainViewModel.retryPrepFailed() })
+                                }
+                            }
                         }
                         else -> {}
                     }
@@ -564,6 +528,55 @@ fun SettingsScreen(
                     Text("CONCLUÍDO", color = tokens.colors.primary, fontWeight = FontWeight.Black)
                 }
             }
+        )
+    }
+}
+
+@Composable
+internal fun alphabeticalSettingsCategories(): List<SettingsCategory> {
+    val names = SettingsCategory.entries.associateWith { stringResource(it.labelRes) }
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
+    return remember(names, locale) {
+        val collator = java.text.Collator.getInstance(locale).apply { strength = java.text.Collator.PRIMARY }
+        SettingsCategory.entries.sortedWith { a, b -> collator.compare(names[a], names[b]) }
+    }
+}
+
+@Composable
+internal fun SettingsOptionsGrid(
+    categories: List<SettingsCategory>,
+    minimumCardWidth: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+    focusRequester: FocusRequester = remember { FocusRequester() },
+    onSelect: (SettingsCategory) -> Unit
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minimumCardWidth),
+        modifier = modifier,
+        contentPadding = PaddingValues(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        itemsIndexed(categories, key = { _, category -> category.name }) { index, category ->
+            SettingsGridCard(
+                label = stringResource(category.labelRes),
+                icon = category.icon,
+                isDestructive = category == SettingsCategory.SIGN_OUT || category == SettingsCategory.CLEAR_CATALOG,
+                modifier = if (index == 0) Modifier.focusRequester(focusRequester) else Modifier,
+                onClick = { onSelect(category) }
+            )
+        }
+    }
+}
+
+@androidx.compose.ui.tooling.preview.Preview(name = "Configurações alfabéticas", widthDp = 960, heightDp = 540, locale = "pt")
+@Composable
+fun SettingsAlphabeticalPreview() {
+    MeusCanaisTheme {
+        SettingsOptionsGrid(
+            alphabeticalSettingsCategories(), 165.dp,
+            modifier = Modifier.fillMaxSize().background(AppDesignSystem.colors.background),
+            onSelect = {}
         )
     }
 }

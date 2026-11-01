@@ -24,6 +24,10 @@ import kotlinx.coroutines.*
 import timber.log.Timber
 import kotlinx.coroutines.flow.first
 import rsv.squitv.domain.model.ContentType
+import rsv.squitv.domain.model.ContentCategory
+import rsv.squitv.domain.model.ContentCategories
+import rsv.squitv.domain.model.ChannelQuality
+import rsv.squitv.data.model.SettingsBackupCodec
 
 @HiltViewModel
 class CategoryViewModel @Inject constructor(
@@ -31,6 +35,7 @@ class CategoryViewModel @Inject constructor(
     private val catalogRepository: CatalogRepository,
     private val userRepository: UserRepository,
     private val settingsRepository: SettingsRepository,
+    private val playbackSources: rsv.squitv.core.data.repository.PlaybackSourceRepository,
     private val savedStateHandle: SavedStateHandle = SavedStateHandle()
 ) : ViewModel() {
 
@@ -42,11 +47,21 @@ class CategoryViewModel @Inject constructor(
     private val _sortOrder = savedStateHandle.getStateFlow("sortOrder", "NAME") // NAME, RECENT, RATING
     val sortOrder: StateFlow<String> = _sortOrder
 
-    val currentContentRows: StateFlow<List<DashboardRow>> = combine(_rawRows, _searchQuery, _sortOrder) { rows, query, sort ->
+    private val channelOptions = settingsRepository.settingsFlow.map {
+        Triple(it.groupLiveChannels, rsv.squitv.domain.model.ChannelQuality.fromPreference(it.preferredChannelQuality),
+            rsv.squitv.core.data.repository.PlaybackSourceRepository.scope(it))
+    }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, Triple(true, rsv.squitv.domain.model.ChannelQuality.AUTO, ""))
+
+    fun capturePlaybackSource(): String = playbackSources.capture(
+        channelOptions.value.third, currentContentRows.value.flatMap { it.items }.filter { it.type == ContentType.LIVE })
+
+    val currentContentRows: StateFlow<List<DashboardRow>> = combine(_rawRows, _searchQuery, _sortOrder, channelOptions) { rows, query, sort, options ->
+        if (currentRequest?.account != options.third) return@combine emptyList()
         rows.map { row ->
             var items = if (query.isBlank()) row.items 
                         else row.items.filter { it.name.contains(query, ignoreCase = true) }
             
+            items = rsv.squitv.domain.model.LiveChannelGrouping.visible(items, options.third, options.first, options.second)
             items = when (sort) {
                 "RECENT" -> items.sortedByDescending { it.releaseDate }
                 "RATING" -> items.sortedByDescending { it.rating?.toDoubleOrNull() ?: 0.0 }
@@ -61,28 +76,103 @@ class CategoryViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _categoryCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
-    val categoryCounts: StateFlow<Map<String, Int>> = _categoryCounts.asStateFlow()
+    private val _navigationCategories = MutableStateFlow<List<ContentCategory>>(emptyList())
+    val navigationCategories: StateFlow<List<ContentCategory>> = _navigationCategories.asStateFlow()
+    private var browseType: String? = null
+    private var browseReady = false
+    private var browseJob: Job? = null
 
-    private val _availableGenres = MutableStateFlow<List<String>>(emptyList())
-    val availableGenres: StateFlow<List<String>> = _availableGenres.asStateFlow()
+    private data class BrowseOptions(
+        val scope: String, val hidden: Set<String>, val order: List<String>,
+        val grouped: Boolean, val quality: ChannelQuality, val language: String,
+        val categoryMode: rsv.squitv.domain.model.CategoryMode
+    )
+    private data class BrowseBase(
+        val entries: List<ContentCategory>, val lookup: Map<String, IptvItem>,
+        val recent: List<IptvItem>, val options: BrowseOptions
+    )
 
-    private val _selectedGenre = savedStateHandle.getStateFlow<String?>("selectedGenre", null)
-    val selectedGenre: StateFlow<String?> = _selectedGenre
-
-    fun loadGenres(type: String) {
-        viewModelScope.launch {
-            try {
-                _availableGenres.value = catalogRepository.getAvailableGenres(type)
-            } catch (_: Exception) {
-                _availableGenres.value = emptyList()
+    private fun startBrowsing(type: String) {
+        if (browseType == type && browseJob?.isActive == true) return
+        browseJob?.cancel()
+        browseType = type
+        browseReady = false
+        _navigationCategories.value = emptyList()
+        val contentType = ContentType.fromString(type)
+        val options = settingsRepository.settingsFlow.map { settings ->
+            val normType = if (type == "movie") "vod" else type
+            val accountKey = settings.credentials?.let { SettingsBackupCodec.accountKey(it) } ?: ""
+            val key = "${accountKey}_$normType"
+            val mode = when (type) {
+                "movie" -> settings.getMovieCategoryMode(accountKey, settings.activeProfileId)
+                "series" -> settings.getSeriesCategoryMode(accountKey, settings.activeProfileId)
+                else -> rsv.squitv.domain.model.CategoryMode.PROVIDER
+            }
+            BrowseOptions(rsv.squitv.core.data.repository.PlaybackSourceRepository.scope(settings),
+                settings.hiddenCategoriesMap[key].orEmpty(), settings.categoryOrderMap[key].orEmpty(),
+                settings.groupLiveChannels, ChannelQuality.fromPreference(settings.preferredChannelQuality), settings.language, mode)
+        }.distinctUntilChanged()
+        browseJob = viewModelScope.launch {
+            val base = combine(catalogRepository.observeBrowseCatalog(type), options) { (categories, streams), option ->
+                val allItems = streams.map { it.toIptvItem() }
+                val visible = allItems.filter { it.categoryId !in option.hidden }
+                val customized = catalogRepository.applyCategoryCustomization(categories, option.order, option.hidden)
+                BrowseBase(
+                    ContentCategories.catalog(visible, customized.map { it.id to it.name },
+                        context.getString(R.string.browse_all), context.getString(R.string.browse_unclassified),
+                        genresHeaderLabel = context.getString(R.string.category_section_genres),
+                        serverHeaderLabel = context.getString(R.string.category_section_server),
+                        scope = option.scope, grouped = option.grouped, quality = option.quality, mode = option.categoryMode),
+                    allItems.associateBy { it.id },
+                    catalogRepository.sortAndFilterRecentStreams(streams.filter { it.categoryId !in option.hidden }, 100),
+                    option
+                )
+            }.flowOn(Dispatchers.Default)
+            combine(base, userRepository.getFavoritesListFlow(), userRepository.getAllWatchProgressFlow()) { snapshot, favorites, progress ->
+                val option = snapshot.options
+                val favoriteItems = favorites.map { it.favoriteToIptvItem() }.filter { it.type == contentType }
+                    .map { snapshot.lookup[it.id]?.copy(isFavorite = true) ?: it }
+                    .distinctBy { it.id }
+                val pending = progress.filter {
+                    ContentType.fromString(it.type) == contentType &&
+                        rsv.squitv.domain.usecase.WatchProgressUtils.isPendingWatchProgress(it.position, it.duration)
+                }.sortedByDescending { it.lastWatched }.mapNotNull { wp ->
+                    val id = if (contentType == ContentType.SERIES) wp.seriesId ?: wp.streamId else wp.streamId
+                    snapshot.lookup[id.toString()]?.copy(progress = wp.position.toFloat() / wp.duration.coerceAtLeast(1L))
+                }.distinctBy { it.id }
+                fun special(id: String, label: Int, items: List<IptvItem>) =
+                    ContentCategories.entry(id, context.getString(label), items, option.scope, option.grouped, option.quality)
+                val specials = buildList {
+                    if (contentType != ContentType.LIVE) add(special("CONTINUE_WATCHING", R.string.row_continue_watching, pending))
+                    add(special("FAVORITES", R.string.favorites_label, favoriteItems))
+                    add(special("RECENTS", R.string.recently_added_label, snapshot.recent))
+                }
+                option.scope to ContentCategories.withSpecials(snapshot.entries, specials)
+            }.flowOn(Dispatchers.Default).catch { error ->
+                if (error is CancellationException) throw error
+                Timber.e(error, "Erro ao observar categorias de conteúdo")
+                _isLoading.value = false
+            }.collect { (scope, entries) ->
+                if (browseType != type) return@collect
+                _navigationCategories.value = entries
+                browseReady = true
+                publishBrowseSelection(type, scope)
             }
         }
     }
 
-    fun selectGenre(type: String, genre: String?, categoryId: String? = null, blockedIds: Set<String> = emptySet()) {
-        savedStateHandle["selectedGenre"] = genre
-        loadContent(type, categoryId, blockedIds, genre = genre)
+    private fun publishBrowseSelection(type: String, scope: String = channelOptions.value.third) {
+        if (!browseReady || browseType != type) return
+        val selected = ContentCategories.selected(_navigationCategories.value, activeCategoryId.value)
+        val previous = activeCategoryId.value
+        savedStateHandle["activeCategoryId"] = selected?.id
+        if (selected != null && previous != selected.id) {
+            viewModelScope.launch { settingsRepository.updateLastCategory(type, selected.id) }
+        }
+        savedStateHandle["selectedGenre"] = null
+        currentRequest = ContentRequest(type, selected?.id, null, scope, catalogueRevision)
+        _rawRows.value = selected?.let { listOf(DashboardRow(it.name, it.items, catId = it.id)) }.orEmpty()
+        _isLoading.value = false
     }
 
     fun onSearchQueryChanged(query: String) {
@@ -103,7 +193,7 @@ class CategoryViewModel @Inject constructor(
     val activeCategoryId = savedStateHandle.getStateFlow<String?>("activeCategoryId", null)
 
     private data class ContentRequest(
-        val type: String, val categoryId: String?, val blockedIds: Set<String>,
+        val type: String, val categoryId: String?,
         val genre: String?, val account: String, val revision: Long
     )
 
@@ -114,18 +204,18 @@ class CategoryViewModel @Inject constructor(
     private var completedRequest: ContentRequest? = null
 
     /** A back-stack return reuses the current category, genre and loaded rows. */
-    fun ensureContent(type: String, initialCategoryId: String?, blockedIds: Set<String>, revision: Long) {
+    fun ensureContent(type: String, initialCategoryId: String?, revision: Long) {
         val sameType = savedStateHandle.get<String>("contentType") == type
         catalogueRevision = revision
         loadContent(type, if (sameType) activeCategoryId.value ?: initialCategoryId else initialCategoryId,
-            blockedIds, genre = if (sameType) _selectedGenre.value else null, reuseLoaded = true)
+            genre = if (sameType) savedStateHandle.get<String>("selectedGenre") else null, reuseLoaded = true)
     }
 
     init {
         viewModelScope.launch {
             userRepository.getFavoritesListFlow().collectLatest { entities ->
                 val request = currentRequest ?: return@collectLatest
-                if (request.categoryId == "FAVORITES" || request.type == "favorites") {
+                if (request.type == "favorites") {
                     val items = favoriteItems(entities)
                     if (currentRequest == request) _rawRows.value = favoriteRows(request.type, items, request.genre)
                 }
@@ -158,17 +248,29 @@ class CategoryViewModel @Inject constructor(
     fun loadContent(
         type: String, 
         categoryId: String? = null, 
-        blockedIds: Set<String> = emptySet(), 
         favorites: List<IptvItem> = emptyList(),
         genre: String? = null,
         reuseLoaded: Boolean = false
     ) {
+        if (type in listOf("live", "movie", "series")) {
+            loadJob?.cancel()
+            savedStateHandle["contentType"] = type
+            savedStateHandle["activeCategoryId"] = categoryId
+            savedStateHandle["selectedGenre"] = null
+            _isLoading.value = !browseReady || browseType != type
+            startBrowsing(type)
+            publishBrowseSelection(type)
+            return
+        }
+        browseJob?.cancel()
+        browseType = null
         val requestGeneration = ++generation
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            val credentials = settingsRepository.settingsFlow.first().credentials ?: return@launch
-            val account = "${credentials.baseUrl.trim().lowercase()}#${credentials.username.trim().lowercase()}"
-            val request = ContentRequest(type, categoryId, blockedIds.toSet(), genre, account, catalogueRevision)
+            val settingsSnapshot = settingsRepository.settingsFlow.first()
+            if (settingsSnapshot.credentials == null) return@launch
+            val account = rsv.squitv.core.data.repository.PlaybackSourceRepository.scope(settingsSnapshot)
+            val request = ContentRequest(type, categoryId, genre, account, catalogueRevision)
             if (reuseLoaded && request == completedRequest && categoryId != "CONTINUE_WATCHING") {
                 _isLoading.value = false
                 return@launch
@@ -192,7 +294,7 @@ class CategoryViewModel @Inject constructor(
                     val progressList = userRepository.getAllWatchProgressFlow().first()
                     val streams = catalogRepository.getStreamsByIds(progressList.map { it.streamId })
                     val items = streams.map { s ->
-                        IptvItem(s.id.toString(), s.name, s.logo, ContentType.fromString(s.streamType), s.url, s.containerExtension)
+                        s.toIptvItem()
                     }
                     _rawRows.value = listOf(DashboardRow("Recentes", items))
                     return@launch
@@ -253,33 +355,6 @@ class CategoryViewModel @Inject constructor(
                     return@launch
                 }
 
-                val rawCategories = when (type) {
-                    "live" -> catalogRepository.getLiveCategories(credentials)
-                    "movie" -> catalogRepository.getVodCategories(credentials)
-                    "series" -> catalogRepository.getSeriesCategories(credentials)
-                    "genre" -> emptyList() // Handled below
-                    "actor" -> emptyList() // Handled below
-                    else -> emptyList()
-                }.filter { it.id !in blockedIds }
-
-                val currentSettings = settingsRepository.settingsFlow.first()
-                val simpleUser = credentials.username.trim().lowercase()
-                val cleanUrl = credentials.baseUrl.trim().lowercase().removeSuffix("/")
-                val accountKey = if (cleanUrl.isNotBlank()) "$cleanUrl#$simpleUser" else simpleUser
-                val normType = if (type == "movie") "vod" else type.lowercase()
-                val typeKey = "${accountKey}_${normType}"
-
-                val customOrder = currentSettings.categoryOrderMap[typeKey]
-                val hiddenCategories = currentSettings.hiddenCategoriesMap[typeKey]
-
-                val categories = catalogRepository.applyCategoryCustomization(
-                    categories = rawCategories,
-                    customOrder = customOrder,
-                    hiddenCategories = hiddenCategories
-                )
-
-                val rows = mutableListOf<DashboardRow>()
-
                 if (type == "actor" && categoryId != null) {
                     val streams = catalogRepository.getStreamsByActor(categoryId)
                     val resultRows = mutableListOf<DashboardRow>()
@@ -297,29 +372,8 @@ class CategoryViewModel @Inject constructor(
                     if (movies.isNotEmpty()) resultRows.add(DashboardRow("Filmes de $categoryId", movies))
                     if (series.isNotEmpty()) resultRows.add(DashboardRow("Séries de $categoryId", series))
                     _rawRows.value = resultRows
-                } else {
-                    val filteredCats = if (categoryId != null) categories.filter { it.id == categoryId } else categories
-                    filteredCats.forEach { cat ->
-                        val items = when(type) {
-                            "live" -> {
-                                val raw = catalogRepository.getLiveStreams(credentials, cat.id)
-                                catalogRepository.groupLiveStreams(raw)
-                            }
-                            "movie" -> {
-                                catalogRepository.getVodStreams(credentials, cat.id).map { it.toIptvItem() }
-                            }
-                            "series" -> {
-                                catalogRepository.getSeries(credentials, cat.id).map { it.toIptvItem() }
-                            }
-                            else -> emptyList()
-                        }
-                        if (items.isNotEmpty()) {
-                            rows.add(DashboardRow(cat.name, items, catId = cat.id))
-                        }
-                    }
-                    _rawRows.value = rows
                 }
-                
+
                 if (!genre.isNullOrBlank()) {
                     val filteredRows = _rawRows.value.map { row ->
                         val filteredItems = row.items.filter { item ->

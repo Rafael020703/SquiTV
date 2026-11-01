@@ -21,15 +21,37 @@ import rsv.squitv.data.local.entities.*
         FavoriteEntity::class,
         EpgProgramEntity::class,
         EpgProgramStagingEntity::class,
-        PendingSyncEntity::class
+        PendingSyncEntity::class,
+        CatalogMetadataEntity::class
     ], 
-    version = 26,
+    version = 27,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun iptvDao(): IptvDao
 
     companion object {
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `catalog_metadata_cache` (
+                        `accountKey` TEXT NOT NULL,
+                        `streamType` TEXT NOT NULL,
+                        `streamId` INTEGER NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `genre` TEXT,
+                        `lastAttempt` INTEGER NOT NULL,
+                        `lastSuccess` INTEGER NOT NULL,
+                        `nextEligibleAt` INTEGER NOT NULL,
+                        `attempts` INTEGER NOT NULL,
+                        `errorMessage` TEXT,
+                        PRIMARY KEY(`accountKey`, `streamType`, `streamId`)
+                    )
+                """.trimIndent())
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_catalog_metadata_cache_account_type_status` ON `catalog_metadata_cache` (`accountKey`, `streamType`, `status`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_catalog_metadata_cache_nextEligibleAt` ON `catalog_metadata_cache` (`nextEligibleAt`)")
+            }
+        }
         val MIGRATION_25_26 = object : Migration(25, 26) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("""CREATE TABLE IF NOT EXISTS favorites_scoped (

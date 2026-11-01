@@ -32,7 +32,7 @@ fun LibraryContentScreen(
     categoryViewModel: CategoryViewModel,
     libraryViewModel: LibraryViewModel,
     onBack: () -> Unit,
-    onPlay: (Int, String, String, String?, Map<String, Int>, String?) -> Unit,
+    onPlay: (Int, String, String, String?, String?, String?) -> Unit,
     onSeriesClick: (Int, String, String?) -> Unit,
     onVodClick: (Int, String, String?) -> Unit,
     onNavigateToSearch: () -> Unit
@@ -74,7 +74,7 @@ fun LibraryContentScreen(
                         watchProgress = watchProgress,
                         onItemClick = { item ->
                             if (item.type.toString() == "live") {
-                                onPlay(item.id.toInt(), item.name, item.type.toString(), item.epgId, item.qualities, item.icon)
+                                onPlay(item.id.toInt(), item.name, item.type.toString(), item.epgId, categoryViewModel.capturePlaybackSource(), item.icon)
                             } else if (item.type.toString() == "movie") {
                                 onVodClick(item.id.toInt(), item.name, item.icon)
                             } else {

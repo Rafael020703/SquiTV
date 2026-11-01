@@ -56,7 +56,6 @@ fun DashboardScreen(
     libraryViewModel: LibraryViewModel = hiltViewModel(),
     onNavigateToCategory: (String, String?) -> Unit,
     onNavigateToMultiView: () -> Unit = {},
-    onNavigateToEpgGrid: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onNavigateToAccount: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
@@ -96,7 +95,6 @@ fun DashboardScreen(
     val dashboardActions = DashboardActions(
         onNavigateToCategory = onNavigateToCategory,
         onNavigateToMultiView = onNavigateToMultiView,
-        onNavigateToEpgGrid = onNavigateToEpgGrid,
         onNavigateToSearch = onNavigateToSearch,
         onNavigateToAccount = onNavigateToAccount,
         onNavigateToSettings = onNavigateToSettings,
@@ -143,7 +141,6 @@ fun DashboardScreen(
 data class DashboardActions(
     val onNavigateToCategory: (String, String?) -> Unit,
     val onNavigateToMultiView: () -> Unit,
-    val onNavigateToEpgGrid: () -> Unit,
     val onNavigateToSearch: () -> Unit,
     val onNavigateToAccount: () -> Unit,
     val onNavigateToSettings: () -> Unit,
@@ -333,7 +330,6 @@ fun DashboardContent(
         val favoritesLabel = stringResource(R.string.favorites_label)
 
         val allSecondaryCards = listOf(
-            Triple("EPG", "EPG", Icons.AutoMirrored.Rounded.ListAlt to ThemeEPG),
             Triple("MULTI_VIEW", "MULTI-VIEW", Icons.Rounded.GridView to ThemeMultiView),
             Triple("DOWNLOADS", downloadsLabel, Icons.Rounded.Download to ThemeDownloads),
             Triple("FAVORITES", favoritesLabel, Icons.Rounded.Favorite to ThemeFavorites)
@@ -352,7 +348,6 @@ fun DashboardContent(
                         description = "",
                         icon = icon,
                         cardType = when(key) {
-                            "EPG" -> HomeCardType.EPG
                             "MULTI_VIEW" -> HomeCardType.MULTI_VIEW
                             "DOWNLOADS" -> HomeCardType.DOWNLOADS
                             else -> HomeCardType.FAVORITES
@@ -364,7 +359,6 @@ fun DashboardContent(
                             .then(if (mainCards.isEmpty() && index == 0) Modifier.focusRequester(firstItemFocusRequester) else Modifier),
                         onClick = {
                             when(key) {
-                                "EPG" -> actions.onNavigateToEpgGrid()
                                 "MULTI_VIEW" -> actions.onNavigateToMultiView()
                                 "DOWNLOADS" -> actions.onNavigateToDownloads()
                                 else -> actions.onNavigateToCategory("favorites", null)

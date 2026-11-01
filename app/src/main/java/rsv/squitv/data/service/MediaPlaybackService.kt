@@ -7,6 +7,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.DefaultMediaNotificationProvider
+import rsv.squitv.R
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
@@ -64,6 +66,9 @@ class MediaPlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        setMediaNotificationProvider(DefaultMediaNotificationProvider(this).apply {
+            setSmallIcon(R.drawable.ic_notification)
+        })
         mediaSession = MediaSession.Builder(this, player)
             .setCallback(mediaSessionCallback)
             .build()

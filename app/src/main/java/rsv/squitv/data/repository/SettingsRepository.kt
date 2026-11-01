@@ -34,6 +34,7 @@ class SettingsRepository @Inject constructor(
 
     private val storageMigrationMutex = Mutex()
     private var storageMigrated = false
+    private val profileJson = Json { ignoreUnknownKeys = true }
 
     private suspend fun ensureStorageMigration() = storageMigrationMutex.withLock {
         if (!storageMigrated) {
@@ -53,15 +54,7 @@ class SettingsRepository @Inject constructor(
                     }
                 }
 
-                // 2. Migrate PIN
-                val currentPin = preferences[PreferencesKeys.APP_PIN]
-                if (currentPin != null && !SecurityHelper.isEncrypted(currentPin)) {
-                    SecurityHelper.encrypt(currentPin)?.let { encrypted ->
-                        preferences[PreferencesKeys.APP_PIN] = encrypted
-                    }
-                }
-
-                // 3. Migrate Accounts list
+                // Migrate accounts without changing their identity.
                 val accountsJson = preferences[PreferencesKeys.ACCOUNTS]
                 if (accountsJson != null) {
                     try {
@@ -88,25 +81,17 @@ class SettingsRepository @Inject constructor(
         val BASE_URL = stringPreferencesKey("base_url")
         val LAST_SYNC_TIMESTAMP = longPreferencesKey("last_sync_timestamp")
         val SYNC_INTERVAL_HOURS = intPreferencesKey("sync_interval_hours")
-        val APP_PIN = stringPreferencesKey("app_pin")
+        val GROUP_LIVE_CHANNELS = booleanPreferencesKey("group_live_channels")
+        val PREFERRED_CHANNEL_QUALITY = stringPreferencesKey("preferred_channel_quality")
         val AUTO_PLAY_ENABLED = booleanPreferencesKey("auto_play_enabled")
-        val DEFAULT_RESIZE_MODE = intPreferencesKey("default_resize_mode")
-        val SHOW_DIAGNOSTICS = booleanPreferencesKey("show_diagnostics")
-        val COMPACT_MODE = booleanPreferencesKey("compact_mode")
-        val HIDE_BLOCKED_CATEGORIES = booleanPreferencesKey("hide_blocked_categories")
-        val APP_LOCK_ENABLED = booleanPreferencesKey("app_lock_enabled")
         val ACCOUNTS = stringPreferencesKey("accounts")
         val CURRENT_ACCOUNT_INDEX = intPreferencesKey("current_account_index")
-        val PLAYER_ENGINE = stringPreferencesKey("player_engine") // EXO, VLC, IJK
         val IS_LIVE_LOADED = booleanPreferencesKey("is_live_loaded")
         val IS_VOD_LOADED = booleanPreferencesKey("is_vod_loaded")
         val IS_SERIES_LOADED = booleanPreferencesKey("is_series_loaded")
         val LAST_SYNC_LIVE = longPreferencesKey("last_sync_live")
         val LAST_SYNC_VOD = longPreferencesKey("last_sync_vod")
         val LAST_SYNC_SERIES = longPreferencesKey("last_sync_series")
-        val BUFFER_STRATEGY = stringPreferencesKey("buffer_strategy")
-        val USE_OLED_THEME = booleanPreferencesKey("use_oled_theme")
-        val DATA_SAVER_MODE = booleanPreferencesKey("data_saver_mode")
         val UI_ZOOM = floatPreferencesKey("ui_zoom")
         val LANGUAGE = stringPreferencesKey("language")
         val DOWNLOAD_WIFI_ONLY = booleanPreferencesKey("download_wifi_only")
@@ -114,7 +99,6 @@ class SettingsRepository @Inject constructor(
         val PREFERRED_AUDIO_LANG = stringPreferencesKey("preferred_audio_lang")
         val PREFERRED_SUBTITLE_LANG = stringPreferencesKey("preferred_subtitle_lang")
         val ACTIVE_PROFILE_ID = stringPreferencesKey("active_profile_id")
-        val DETAILED_NOTIFICATIONS = booleanPreferencesKey("detailed_notifications")
         val BACKGROUND_PLAYBACK_ENABLED = booleanPreferencesKey("background_playback_enabled")
         val PIP_AUTO_ENTER_ENABLED = booleanPreferencesKey("pip_auto_enter_enabled")
         val LAST_SYNC_EPG = longPreferencesKey("last_sync_epg")
@@ -146,33 +130,30 @@ class SettingsRepository @Inject constructor(
         val HIDDEN_SECTIONS = stringSetPreferencesKey("hidden_sections")
         val CATEGORY_ORDER_MAP = stringPreferencesKey("category_order_map")
         val HIDDEN_CATEGORIES_MAP = stringPreferencesKey("hidden_categories_map")
+        val MOVIE_CATEGORY_MODE_MAP = stringPreferencesKey("movie_category_mode_map")
+        val SERIES_CATEGORY_MODE_MAP = stringPreferencesKey("series_category_mode_map")
+        val MOVIE_CATEGORY_PROMPT_DISMISSED_MAP = stringPreferencesKey("movie_category_prompt_dismissed_map")
+        val SERIES_CATEGORY_PROMPT_DISMISSED_MAP = stringPreferencesKey("series_category_prompt_dismissed_map")
+        val PREPARATION_SPEED = stringPreferencesKey("preparation_speed")
     }
 
     data class AppSettings(
         val credentials: XtreamCredentials?,
         val accounts: List<XtreamCredentials> = emptyList(),
         val currentAccountIndex: Int = 0,
-        val playerEngine: String = "EXO",
         val isLiveLoaded: Boolean = false,
         val isVodLoaded: Boolean = false,
         val isSeriesLoaded: Boolean = false,
         val lastSyncLive: Long = 0L,
         val lastSyncVod: Long = 0L,
         val lastSyncSeries: Long = 0L,
-        val bufferStrategy: String = "Stable",
-        val useOledTheme: Boolean = true,
-        val dataSaverMode: Boolean = false,
         val uiZoom: Float = 1.0f,
         val language: String = "auto",
         val lastSyncTimestamp: Long,
         val syncIntervalHours: Int,
-        val appPin: String? = null,
+        val groupLiveChannels: Boolean = true,
+        val preferredChannelQuality: String = "AUTO",
         val autoPlayEnabled: Boolean = true,
-        val defaultResizeMode: Int = 0, // RESIZE_MODE_FIT
-        val showDiagnostics: Boolean = true,
-        val compactMode: Boolean = true,
-        val hideBlockedCategories: Boolean = true,
-        val appLockEnabled: Boolean = false,
         val downloadWifiOnly: Boolean = true,
         val smartDownloadsEnabled: Boolean = true,
         val preferredAudioLang: String? = null,
@@ -180,7 +161,6 @@ class SettingsRepository @Inject constructor(
         val activeProfileId: String = "default",
         val profiles: List<UserProfile> = listOf(UserProfile("default", "Usuário 1")),
         val profileImageUrl: String? = null,
-        val detailedNotifications: Boolean = true,
         val backgroundPlaybackEnabled: Boolean = false,
         val pipAutoEnterEnabled: Boolean = true,
         val lastSyncEpg: Long = 0L,
@@ -199,10 +179,35 @@ class SettingsRepository @Inject constructor(
         val displayNamesMap: Map<String, String> = emptyMap(),
         val hiddenSections: Set<String> = emptySet(),
         val categoryOrderMap: Map<String, List<String>> = emptyMap(),
-        val hiddenCategoriesMap: Map<String, Set<String>> = emptyMap()
+        val hiddenCategoriesMap: Map<String, Set<String>> = emptyMap(),
+        val movieCategoryModeMap: Map<String, String> = emptyMap(),
+        val seriesCategoryModeMap: Map<String, String> = emptyMap(),
+        val moviePromptDismissedMap: Map<String, Boolean> = emptyMap(),
+        val seriesPromptDismissedMap: Map<String, Boolean> = emptyMap(),
+        val preparationSpeed: String = "NORMAL"
     ) {
         val currentDisplayName: String?
             get() = credentials?.username?.lowercase()?.let { displayNamesMap[it] }
+
+        fun getMovieCategoryMode(accountKey: String, profileId: String): rsv.squitv.domain.model.CategoryMode {
+            val key = "${accountKey}_$profileId"
+            return rsv.squitv.domain.model.CategoryMode.fromString(movieCategoryModeMap[key])
+        }
+
+        fun getSeriesCategoryMode(accountKey: String, profileId: String): rsv.squitv.domain.model.CategoryMode {
+            val key = "${accountKey}_$profileId"
+            return rsv.squitv.domain.model.CategoryMode.fromString(seriesCategoryModeMap[key])
+        }
+
+        fun isMoviePromptDismissed(accountKey: String, profileId: String): Boolean {
+            val key = "${accountKey}_$profileId"
+            return moviePromptDismissedMap[key] == true
+        }
+
+        fun isSeriesPromptDismissed(accountKey: String, profileId: String): Boolean {
+            val key = "${accountKey}_$profileId"
+            return seriesPromptDismissedMap[key] == true
+        }
     }
 
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.onStart { ensureStorageMigration() }.map(::readSettings)
@@ -219,16 +224,12 @@ class SettingsRepository @Inject constructor(
         }
         val currentIndex = preferences[PreferencesKeys.CURRENT_ACCOUNT_INDEX] ?: 0
         
-        val playerEngine = preferences[PreferencesKeys.PLAYER_ENGINE] ?: "EXO"
         val isLiveLoaded = preferences[PreferencesKeys.IS_LIVE_LOADED] ?: false
         val isVodLoaded = preferences[PreferencesKeys.IS_VOD_LOADED] ?: false
         val isSeriesLoaded = preferences[PreferencesKeys.IS_SERIES_LOADED] ?: false
         val lastSyncLive = preferences[PreferencesKeys.LAST_SYNC_LIVE] ?: 0L
         val lastSyncVod = preferences[PreferencesKeys.LAST_SYNC_VOD] ?: 0L
         val lastSyncSeries = preferences[PreferencesKeys.LAST_SYNC_SERIES] ?: 0L
-        val bufferStrat = preferences[PreferencesKeys.BUFFER_STRATEGY] ?: "Stable"
-        val oledTheme = preferences[PreferencesKeys.USE_OLED_THEME] ?: true
-        val dataSaver = preferences[PreferencesKeys.DATA_SAVER_MODE] ?: false
         val zoom = preferences[PreferencesKeys.UI_ZOOM] ?: 1.0f
         val language = preferences[PreferencesKeys.LANGUAGE] ?: "auto"
         val downloadWifiOnly = preferences[PreferencesKeys.DOWNLOAD_WIFI_ONLY] ?: true
@@ -240,19 +241,11 @@ class SettingsRepository @Inject constructor(
         val baseUrl = preferences[PreferencesKeys.BASE_URL]
         val lastSync = preferences[PreferencesKeys.LAST_SYNC_TIMESTAMP] ?: 0L
         val interval = preferences[PreferencesKeys.SYNC_INTERVAL_HOURS] ?: 24
-        val encryptedPin = preferences[PreferencesKeys.APP_PIN]
-        val pin = SecurityHelper.decrypt(encryptedPin)
         
         val autoPlay = preferences[PreferencesKeys.AUTO_PLAY_ENABLED] ?: true
-        val resizeMode = preferences[PreferencesKeys.DEFAULT_RESIZE_MODE] ?: 0
-        val diagnostics = preferences[PreferencesKeys.SHOW_DIAGNOSTICS] ?: true
-        val compact = preferences[PreferencesKeys.COMPACT_MODE] ?: true
-        val hideBlocked = preferences[PreferencesKeys.HIDE_BLOCKED_CATEGORIES] ?: true
-        val appLock = preferences[PreferencesKeys.APP_LOCK_ENABLED] ?: false
         val audioLang = preferences[PreferencesKeys.PREFERRED_AUDIO_LANG]
         val subLang = preferences[PreferencesKeys.PREFERRED_SUBTITLE_LANG]
         val profileId = preferences[PreferencesKeys.ACTIVE_PROFILE_ID] ?: "default"
-        val detailedNotifs = preferences[PreferencesKeys.DETAILED_NOTIFICATIONS] ?: true
         val bgPlaybackEnabled = preferences[PreferencesKeys.BACKGROUND_PLAYBACK_ENABLED] ?: false
         
         val lastLive = preferences[PreferencesKeys.LAST_LIVE_CATEGORY]
@@ -293,7 +286,7 @@ class SettingsRepository @Inject constructor(
         val displayNamesMap = try {
             if (displayNamesJson != null) Json.decodeFromString<Map<String, String>>(displayNamesJson) else emptyMap()
         } catch (_: Exception) { emptyMap() }
-        val hiddenSections = preferences[PreferencesKeys.HIDDEN_SECTIONS] ?: emptySet()
+        val hiddenSections = (preferences[PreferencesKeys.HIDDEN_SECTIONS] ?: emptySet()) - "EPG"
 
         val categoryOrderJson = preferences[PreferencesKeys.CATEGORY_ORDER_MAP]
         val categoryOrderMap = try {
@@ -303,6 +296,26 @@ class SettingsRepository @Inject constructor(
         val hiddenCategoriesJson = preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP]
         val hiddenCategoriesMap = try {
             if (hiddenCategoriesJson != null) Json.decodeFromString<Map<String, Set<String>>>(hiddenCategoriesJson) else emptyMap()
+        } catch (_: Exception) { emptyMap() }
+
+        val movieCategoryModeJson = preferences[PreferencesKeys.MOVIE_CATEGORY_MODE_MAP]
+        val movieCategoryModeMap = try {
+            if (movieCategoryModeJson != null) Json.decodeFromString<Map<String, String>>(movieCategoryModeJson) else emptyMap()
+        } catch (_: Exception) { emptyMap() }
+
+        val seriesCategoryModeJson = preferences[PreferencesKeys.SERIES_CATEGORY_MODE_MAP]
+        val seriesCategoryModeMap = try {
+            if (seriesCategoryModeJson != null) Json.decodeFromString<Map<String, String>>(seriesCategoryModeJson) else emptyMap()
+        } catch (_: Exception) { emptyMap() }
+
+        val moviePromptDismissedJson = preferences[PreferencesKeys.MOVIE_CATEGORY_PROMPT_DISMISSED_MAP]
+        val moviePromptDismissedMap = try {
+            if (moviePromptDismissedJson != null) Json.decodeFromString<Map<String, Boolean>>(moviePromptDismissedJson) else emptyMap()
+        } catch (_: Exception) { emptyMap() }
+
+        val seriesPromptDismissedJson = preferences[PreferencesKeys.SERIES_CATEGORY_PROMPT_DISMISSED_MAP]
+        val seriesPromptDismissedMap = try {
+            if (seriesPromptDismissedJson != null) Json.decodeFromString<Map<String, Boolean>>(seriesPromptDismissedJson) else emptyMap()
         } catch (_: Exception) { emptyMap() }
 
         val creds = if (username != null && password != null && baseUrl != null) {
@@ -317,27 +330,19 @@ class SettingsRepository @Inject constructor(
             credentials = creds,
             accounts = accounts,
             currentAccountIndex = currentIndex,
-            playerEngine = playerEngine,
             isLiveLoaded = isLiveLoaded,
             isVodLoaded = isVodLoaded,
             isSeriesLoaded = isSeriesLoaded,
             lastSyncLive = lastSyncLive,
             lastSyncVod = lastSyncVod,
             lastSyncSeries = lastSyncSeries,
-            bufferStrategy = bufferStrat,
-            useOledTheme = oledTheme,
-            dataSaverMode = dataSaver,
             uiZoom = zoom,
             language = language,
             lastSyncTimestamp = lastSync,
             syncIntervalHours = interval,
-            appPin = pin,
+            groupLiveChannels = preferences[PreferencesKeys.GROUP_LIVE_CHANNELS] ?: true,
+            preferredChannelQuality = rsv.squitv.domain.model.ChannelQuality.fromPreference(preferences[PreferencesKeys.PREFERRED_CHANNEL_QUALITY] ?: "AUTO").name,
             autoPlayEnabled = autoPlay,
-            defaultResizeMode = resizeMode,
-            showDiagnostics = diagnostics,
-            compactMode = compact,
-            hideBlockedCategories = hideBlocked,
-            appLockEnabled = appLock,
             downloadWifiOnly = downloadWifiOnly,
             smartDownloadsEnabled = smartDownloads,
             preferredAudioLang = audioLang,
@@ -345,7 +350,6 @@ class SettingsRepository @Inject constructor(
             activeProfileId = profileId,
             profiles = readProfiles(preferences),
             profileImageUrl = preferences[PreferencesKeys.PROFILE_PICTURE],
-            detailedNotifications = detailedNotifs,
             backgroundPlaybackEnabled = bgPlaybackEnabled,
             pipAutoEnterEnabled = preferences[PreferencesKeys.PIP_AUTO_ENTER_ENABLED] ?: true,
             lastSyncEpg = preferences[PreferencesKeys.LAST_SYNC_EPG] ?: 0L,
@@ -364,7 +368,12 @@ class SettingsRepository @Inject constructor(
             displayNamesMap = displayNamesMap,
             hiddenSections = hiddenSections,
             categoryOrderMap = categoryOrderMap,
-            hiddenCategoriesMap = hiddenCategoriesMap
+            hiddenCategoriesMap = hiddenCategoriesMap,
+            movieCategoryModeMap = movieCategoryModeMap,
+            seriesCategoryModeMap = seriesCategoryModeMap,
+            moviePromptDismissedMap = moviePromptDismissedMap,
+            seriesPromptDismissedMap = seriesPromptDismissedMap,
+            preparationSpeed = preferences[PreferencesKeys.PREPARATION_SPEED] ?: "NORMAL"
         )
     }
 
@@ -489,12 +498,6 @@ class SettingsRepository @Inject constructor(
         }
     }
 
-    suspend fun updatePlayerEngine(engine: String) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.PLAYER_ENGINE] = engine
-        }
-    }
-
     suspend fun updateSyncState(type: String, loaded: Boolean) {
         context.dataStore.edit { preferences ->
             val now = System.currentTimeMillis()
@@ -513,24 +516,6 @@ class SettingsRepository @Inject constructor(
                     if (loaded) preferences[PreferencesKeys.LAST_SYNC_SERIES] = now
                 }
             }
-        }
-    }
-
-    suspend fun updateBufferStrategy(strategy: String) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.BUFFER_STRATEGY] = strategy
-        }
-    }
-
-    suspend fun updateUseOledTheme(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.USE_OLED_THEME] = enabled
-        }
-    }
-
-    suspend fun updateDataSaverMode(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.DATA_SAVER_MODE] = enabled
         }
     }
 
@@ -580,49 +565,18 @@ class SettingsRepository @Inject constructor(
         }
     }
 
-    suspend fun updatePin(pin: String?) {
-        context.dataStore.edit { preferences ->
-            if (pin == null) preferences.remove(PreferencesKeys.APP_PIN)
-            else {
-                val encryptedPin = SecurityHelper.encrypt(pin) ?: pin
-                preferences[PreferencesKeys.APP_PIN] = encryptedPin
-            }
-        }
+    suspend fun updateGroupLiveChannels(enabled: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.GROUP_LIVE_CHANNELS] = enabled }
+    }
+
+    suspend fun updatePreferredChannelQuality(quality: String) {
+        require(rsv.squitv.domain.model.ChannelQuality.entries.any { it.name == quality })
+        context.dataStore.edit { it[PreferencesKeys.PREFERRED_CHANNEL_QUALITY] = quality }
     }
 
     suspend fun updateAutoPlay(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.AUTO_PLAY_ENABLED] = enabled
-        }
-    }
-
-    suspend fun updateDefaultResizeMode(mode: Int) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.DEFAULT_RESIZE_MODE] = mode
-        }
-    }
-
-    suspend fun updateShowDiagnostics(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.SHOW_DIAGNOSTICS] = enabled
-        }
-    }
-
-    suspend fun updateCompactMode(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.COMPACT_MODE] = enabled
-        }
-    }
-
-    suspend fun updateHideBlockedCategories(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.HIDE_BLOCKED_CATEGORIES] = enabled
-        }
-    }
-
-    suspend fun updateAppLockEnabled(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.APP_LOCK_ENABLED] = enabled
         }
     }
 
@@ -667,12 +621,6 @@ class SettingsRepository @Inject constructor(
     suspend fun updateActiveProfileId(profileId: String) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.ACTIVE_PROFILE_ID] = profileId
-        }
-    }
-
-    suspend fun updateDetailedNotifications(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.DETAILED_NOTIFICATIONS] = enabled
         }
     }
 
@@ -790,7 +738,7 @@ class SettingsRepository @Inject constructor(
 
     suspend fun updateHiddenSections(hidden: Set<String>) {
         context.dataStore.edit { preferences ->
-            preferences[PreferencesKeys.HIDDEN_SECTIONS] = hidden
+            preferences[PreferencesKeys.HIDDEN_SECTIONS] = hidden - "EPG"
         }
     }
 
@@ -871,36 +819,29 @@ class SettingsRepository @Inject constructor(
                 account.displayName?.let { if (it.isBlank()) names.remove(key) else names[key] = it }
             }
             with(backup.preferences) {
-                playerEngine?.let { preferences[PreferencesKeys.PLAYER_ENGINE] = it }
-                bufferStrategy?.let { preferences[PreferencesKeys.BUFFER_STRATEGY] = it }
-                useOledTheme?.let { preferences[PreferencesKeys.USE_OLED_THEME] = it }
-                dataSaverMode?.let { preferences[PreferencesKeys.DATA_SAVER_MODE] = it }
+                groupLiveChannels?.let { preferences[PreferencesKeys.GROUP_LIVE_CHANNELS] = it }
+                preferredChannelQuality?.let { preferences[PreferencesKeys.PREFERRED_CHANNEL_QUALITY] = it }
                 uiZoom?.let { preferences[PreferencesKeys.UI_ZOOM] = it }
                 language?.let { preferences[PreferencesKeys.LANGUAGE] = it }
                 syncIntervalHours?.let { preferences[PreferencesKeys.SYNC_INTERVAL_HOURS] = it }
                 autoPlayEnabled?.let { preferences[PreferencesKeys.AUTO_PLAY_ENABLED] = it }
-                defaultResizeMode?.let { preferences[PreferencesKeys.DEFAULT_RESIZE_MODE] = it }
-                showDiagnostics?.let { preferences[PreferencesKeys.SHOW_DIAGNOSTICS] = it }
-                compactMode?.let { preferences[PreferencesKeys.COMPACT_MODE] = it }
-                hideBlockedCategories?.let { preferences[PreferencesKeys.HIDE_BLOCKED_CATEGORIES] = it }
                 downloadWifiOnly?.let { preferences[PreferencesKeys.DOWNLOAD_WIFI_ONLY] = it }
                 smartDownloadsEnabled?.let { preferences[PreferencesKeys.SMART_DOWNLOADS_ENABLED] = it }
                 preferredAudioLang?.let { if (it.isEmpty()) preferences.remove(PreferencesKeys.PREFERRED_AUDIO_LANG) else preferences[PreferencesKeys.PREFERRED_AUDIO_LANG] = it }
                 preferredSubtitleLang?.let { if (it.isEmpty()) preferences.remove(PreferencesKeys.PREFERRED_SUBTITLE_LANG) else preferences[PreferencesKeys.PREFERRED_SUBTITLE_LANG] = it }
-                detailedNotifications?.let { preferences[PreferencesKeys.DETAILED_NOTIFICATIONS] = it }
                 backgroundPlaybackEnabled?.let { preferences[PreferencesKeys.BACKGROUND_PLAYBACK_ENABLED] = it }
                 pipAutoEnterEnabled?.let { preferences[PreferencesKeys.PIP_AUTO_ENTER_ENABLED] = it }
             }
             backup.profiles?.let { incoming ->
                 val profiles = readProfiles(preferences).associateBy { it.id }.toMutableMap()
                 incoming.forEach { profile ->
-                    profiles[profile.id] = UserProfile(profile.id, profile.name, profile.iconUrl, profile.isChild, profiles[profile.id]?.pin)
+                    profiles[profile.id] = UserProfile(profile.id, profile.name, profile.iconUrl, profile.isChild)
                 }
                 preferences[PreferencesKeys.LOCAL_PROFILES] = Json.encodeToString(profiles.values.toList())
                 backup.activeProfileId?.takeIf { it in profiles }?.let { preferences[PreferencesKeys.ACTIVE_PROFILE_ID] = it }
                 backup.profileImageUrl?.let { preferences[PreferencesKeys.PROFILE_PICTURE] = it }
             }
-            backup.hiddenSections?.let { preferences[PreferencesKeys.HIDDEN_SECTIONS] = it }
+            backup.hiddenSections?.let { preferences[PreferencesKeys.HIDDEN_SECTIONS] = it - "EPG" }
             preferences[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(orders)
             preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP] = Json.encodeToString(hidden)
             preferences[PreferencesKeys.DISPLAY_NAMES_MAP] = Json.encodeToString(names)
@@ -965,7 +906,7 @@ class SettingsRepository @Inject constructor(
 
     private fun readProfiles(preferences: Preferences): List<UserProfile> {
         val encoded = preferences[PreferencesKeys.LOCAL_PROFILES]
-        if (encoded != null) return Json.decodeFromString(encoded)
+        if (encoded != null) return profileJson.decodeFromString(encoded)
         val activeId = preferences[PreferencesKeys.ACTIVE_PROFILE_ID] ?: "default"
         return if (activeId == "default") listOf(UserProfile("default", "Usuário 1"))
             else listOf(UserProfile("default", "Usuário 1"), UserProfile(activeId, "Perfil recuperado"))
@@ -989,5 +930,61 @@ class SettingsRepository @Inject constructor(
 
     suspend fun updateProfilePicture(url: String) {
         context.dataStore.edit { it[PreferencesKeys.PROFILE_PICTURE] = url }
+    }
+
+    suspend fun updateMovieCategoryMode(accountKey: String, profileId: String, mode: rsv.squitv.domain.model.CategoryMode) {
+        val key = "${accountKey}_$profileId"
+        context.dataStore.edit { prefs ->
+            val currentModes = try {
+                prefs[PreferencesKeys.MOVIE_CATEGORY_MODE_MAP]?.let { Json.decodeFromString<Map<String, String>>(it) } ?: emptyMap()
+            } catch (_: Exception) { emptyMap() }
+            prefs[PreferencesKeys.MOVIE_CATEGORY_MODE_MAP] = Json.encodeToString(currentModes + (key to mode.name))
+
+            val currentDismissed = try {
+                prefs[PreferencesKeys.MOVIE_CATEGORY_PROMPT_DISMISSED_MAP]?.let { Json.decodeFromString<Map<String, Boolean>>(it) } ?: emptyMap()
+            } catch (_: Exception) { emptyMap() }
+            prefs[PreferencesKeys.MOVIE_CATEGORY_PROMPT_DISMISSED_MAP] = Json.encodeToString(currentDismissed + (key to true))
+        }
+    }
+
+    suspend fun updateSeriesCategoryMode(accountKey: String, profileId: String, mode: rsv.squitv.domain.model.CategoryMode) {
+        val key = "${accountKey}_$profileId"
+        context.dataStore.edit { prefs ->
+            val currentModes = try {
+                prefs[PreferencesKeys.SERIES_CATEGORY_MODE_MAP]?.let { Json.decodeFromString<Map<String, String>>(it) } ?: emptyMap()
+            } catch (_: Exception) { emptyMap() }
+            prefs[PreferencesKeys.SERIES_CATEGORY_MODE_MAP] = Json.encodeToString(currentModes + (key to mode.name))
+
+            val currentDismissed = try {
+                prefs[PreferencesKeys.SERIES_CATEGORY_PROMPT_DISMISSED_MAP]?.let { Json.decodeFromString<Map<String, Boolean>>(it) } ?: emptyMap()
+            } catch (_: Exception) { emptyMap() }
+            prefs[PreferencesKeys.SERIES_CATEGORY_PROMPT_DISMISSED_MAP] = Json.encodeToString(currentDismissed + (key to true))
+        }
+    }
+
+    suspend fun dismissMovieCategoryPrompt(accountKey: String, profileId: String) {
+        val key = "${accountKey}_$profileId"
+        context.dataStore.edit { prefs ->
+            val currentDismissed = try {
+                prefs[PreferencesKeys.MOVIE_CATEGORY_PROMPT_DISMISSED_MAP]?.let { Json.decodeFromString<Map<String, Boolean>>(it) } ?: emptyMap()
+            } catch (_: Exception) { emptyMap() }
+            prefs[PreferencesKeys.MOVIE_CATEGORY_PROMPT_DISMISSED_MAP] = Json.encodeToString(currentDismissed + (key to true))
+        }
+    }
+
+    suspend fun dismissSeriesCategoryPrompt(accountKey: String, profileId: String) {
+        val key = "${accountKey}_$profileId"
+        context.dataStore.edit { prefs ->
+            val currentDismissed = try {
+                prefs[PreferencesKeys.SERIES_CATEGORY_PROMPT_DISMISSED_MAP]?.let { Json.decodeFromString<Map<String, Boolean>>(it) } ?: emptyMap()
+            } catch (_: Exception) { emptyMap() }
+            prefs[PreferencesKeys.SERIES_CATEGORY_PROMPT_DISMISSED_MAP] = Json.encodeToString(currentDismissed + (key to true))
+        }
+    }
+
+    suspend fun updatePreparationSpeed(speed: rsv.squitv.domain.model.PreparationSpeed) {
+        context.dataStore.edit { prefs ->
+            prefs[PreferencesKeys.PREPARATION_SPEED] = speed.name
+        }
     }
 }

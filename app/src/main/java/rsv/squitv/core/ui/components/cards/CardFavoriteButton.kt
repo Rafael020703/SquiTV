@@ -1,6 +1,8 @@
 package rsv.squitv.core.ui.components.cards
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -22,14 +24,15 @@ internal fun CardFavoriteButton(isFavorite: Boolean, contentName: String, onClic
     IconButton(
         onClick = onClick,
         modifier = modifier.size(48.dp)
-            .background(tokens.colors.background.copy(alpha = 0.75f), CircleShape)
             .adaptiveFocus(shape = CircleShape, focusedScale = 1f)
     ) {
+        Box(Modifier.size(24.dp).background(tokens.colors.background.copy(alpha = 0.68f), CircleShape), contentAlignment = Alignment.Center) {
         Icon(
             imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
             contentDescription = "$contentName: ${stringResource(if (isFavorite) R.string.quick_favorite_remove else R.string.quick_favorite_add)}",
             tint = if (isFavorite) tokens.colors.error else tokens.colors.textPrimary,
-            modifier = Modifier.size(22.dp)
+            modifier = Modifier.size(16.dp)
         )
+        }
     }
 }

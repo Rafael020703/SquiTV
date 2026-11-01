@@ -3,24 +3,19 @@
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import rsv.squitv.core.data.repository.CatalogRepository
-import rsv.squitv.core.data.repository.EpgRepository
 import rsv.squitv.core.data.repository.StreamRepository
 import rsv.squitv.core.data.repository.UserRepository
 import rsv.squitv.data.local.entities.DownloadEntity
-import rsv.squitv.data.local.entities.EpgReminderEntity
 import rsv.squitv.data.repository.SettingsRepository
 import rsv.squitv.data.service.DownloadTracker
 import rsv.squitv.domain.model.ContentType
 import rsv.squitv.domain.model.IptvItem
 import rsv.squitv.domain.usecase.ToggleFavoriteUseCase
 import timber.log.Timber
-import rsv.squitv.worker.ReminderWorker
-import androidx.work.*
 import androidx.media3.common.MediaItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -36,10 +31,8 @@ import kotlinx.coroutines.delay
 @HiltViewModel
 @UnstableApi
 class LibraryViewModel @Inject constructor(
-    @ApplicationContext private val context: Context,
     private val catalogRepository: CatalogRepository,
     private val userRepository: UserRepository,
-    private val epgRepository: EpgRepository,
     private val streamRepository: StreamRepository,
     private val settingsRepository: SettingsRepository,
     private val downloadTracker: DownloadTracker,
@@ -52,8 +45,6 @@ class LibraryViewModel @Inject constructor(
     private val _downloads = MutableStateFlow<List<DownloadEntity>>(emptyList())
     val downloads: StateFlow<List<DownloadEntity>> = _downloads.asStateFlow()
 
-    private val _reminders = MutableStateFlow<List<EpgReminderEntity>>(emptyList())
-    val reminders: StateFlow<List<EpgReminderEntity>> = _reminders.asStateFlow()
 
     private val _watchProgress = MutableStateFlow<Map<Int, Float>>(emptyMap())
     val watchProgress: StateFlow<Map<Int, Float>> = _watchProgress.asStateFlow()
@@ -91,16 +82,17 @@ class LibraryViewModel @Inject constructor(
             userRepository.getAllDownloadsFlow().collect { _downloads.value = it }
         }
 
-        viewModelScope.launch {
-            epgRepository.getAllRemindersFlow().collect { _reminders.value = it }
-        }
     }
 
     fun toggleFavorite(item: IptvItem, isFav: Boolean) {
         viewModelScope.launch { 
             val settings = settingsRepository.settingsFlow.first()
             val profileId = settings.activeProfileId
-            toggleFavoriteUseCase(item, isFav, profileId)
+            val matching = _favorites.value.filter { favorite ->
+                favorite.type == item.type && item.containsStream(favorite.id)
+            }
+            if (!isFav) matching.forEach { toggleFavoriteUseCase(it, false, profileId) }
+            else if (matching.isEmpty()) toggleFavoriteUseCase(item, true, profileId)
         }
     }
 
@@ -174,39 +166,6 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    fun addReminder(streamId: Int, programTitle: String, startTimeMillis: Long, channelName: String, channelIcon: String?) {
-        viewModelScope.launch {
-            val reminder = EpgReminderEntity(
-                streamId = streamId,
-                programTitle = programTitle,
-                startTime = startTimeMillis,
-                channelName = channelName,
-                channelIcon = channelIcon
-            )
-            epgRepository.insertReminder(reminder)
-            scheduleReminderWorker(reminder)
-        }
-    }
-
-    fun removeReminder(streamId: Int, startTimeMillis: Long) {
-        viewModelScope.launch {
-            epgRepository.deleteReminder(streamId, startTimeMillis)
-            WorkManager.getInstance(context).cancelUniqueWork("reminder_${streamId}_${startTimeMillis}")
-        }
-    }
-
-    private fun scheduleReminderWorker(reminder: EpgReminderEntity) {
-        val delay = reminder.startTime - System.currentTimeMillis()
-        if (delay <= 0) return
-        val workRequest = OneTimeWorkRequestBuilder<ReminderWorker>()
-            .setInitialDelay(delay, TimeUnit.MILLISECONDS)
-            .setInputData(workDataOf(
-                ReminderWorker.KEY_PROGRAM_TITLE to reminder.programTitle,
-                ReminderWorker.KEY_CHANNEL_NAME to reminder.channelName,
-                ReminderWorker.KEY_STREAM_ID to reminder.streamId
-            )).build()
-        WorkManager.getInstance(context).enqueueUniqueWork("reminder_${reminder.streamId}_${reminder.startTime}", ExistingWorkPolicy.REPLACE, workRequest)
-    }
 
     fun clearWatchProgress() {
         viewModelScope.launch { 

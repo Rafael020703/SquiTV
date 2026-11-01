@@ -9,7 +9,6 @@ import javax.inject.Singleton
 class ThemeManager @Inject constructor(
     private val settingsRepository: SettingsRepository
 ) {
-    val useOledTheme: Flow<Boolean> = settingsRepository.settingsFlow.map { it.useOledTheme }
     val uiZoom: Flow<Float> = settingsRepository.settingsFlow.map { it.uiZoom }
     val language: Flow<String> = settingsRepository.settingsFlow.map { it.language }
 }

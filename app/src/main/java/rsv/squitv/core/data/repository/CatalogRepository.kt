@@ -274,7 +274,27 @@ class CatalogRepository @Inject constructor(
     suspend fun getSeriesMetadata(credentials: XtreamCredentials, seriesId: Int): XtreamSeries? {
         return try {
             val response = xtreamService.getSeriesEpisodes(credentials.username, credentials.password, seriesId = seriesId)
-            response.info
+            val info = response.info
+            if (info != null) {
+                withContext(Dispatchers.IO) {
+                    try {
+                        iptvDao.updateDetailedStreamMetadata(
+                            id = seriesId,
+                            type = "SERIES",
+                            genre = info.genre,
+                            cast = info.cast,
+                            director = info.director,
+                            plot = info.plot,
+                            duration = null,
+                            backdrop = info.backdropPath?.firstOrNull(),
+                            trailer = info.youtubeTrailer
+                        )
+                    } catch (e: Exception) {
+                        Timber.e(e, "Error updating SERIES metadata in Room for ID $seriesId")
+                    }
+                }
+            }
+            info
         } catch (e: Exception) { null }
     }
 
@@ -302,20 +322,9 @@ class CatalogRepository @Inject constructor(
         ).flow.map { pagingData -> pagingData.map { it.toIptvItem() } }
     }
 
-    suspend fun searchStreams(query: String, type: String, blockedIds: Set<String> = emptySet()): List<IptvStreamEntity> {
-        val blockedList = blockedIds.toList()
-        return if (type == "ALL") {
-            if (blockedList.isEmpty()) iptvDao.searchAllStreamsFiltered(query, listOf("DUMMY_ID_THAT_DOES_NOT_EXIST")) 
-            else iptvDao.searchAllStreamsFiltered(query, blockedList)
-        } else {
-            if (query.length >= 2) {
-                iptvDao.searchStreamsFtsFiltered(query, type, blockedList)
-            } else {
-                if (blockedList.isEmpty()) iptvDao.searchStreamsFtsFiltered("", type, listOf("DUMMY_ID_THAT_DOES_NOT_EXIST"))
-                else iptvDao.searchStreamsFtsFiltered("", type, blockedList)
-            }
-        }
-    }
+    suspend fun searchStreams(query: String, type: String): List<IptvStreamEntity> =
+        if (type == "ALL") iptvDao.searchAllStreams(query)
+        else iptvDao.searchStreamsFts(query, type)
     
     suspend fun hasLocalContent(): Boolean = iptvDao.hasAnyContent()
 
@@ -333,7 +342,6 @@ class CatalogRepository @Inject constructor(
         iptvDao.updateDetailedStreamMetadata(id, type, genre, cast, director, plot, duration, backdrop, trailer)
     }
 
-    suspend fun updateCategoryLock(id: String, type: String, locked: Boolean) = iptvDao.updateCategoryLock(id, type, locked)
     suspend fun updateCategoryPinned(id: String, type: String, pinned: Boolean) = iptvDao.updateCategoryPinned(id, type, pinned)
     suspend fun getStreamCountByCategory(categoryId: String, type: String): Int = iptvDao.getStreamCountByCategory(categoryId, type)
 
@@ -341,9 +349,7 @@ class CatalogRepository @Inject constructor(
         return iptvDao.getCategoryCounts(type.uppercase()).associate { it.categoryId to it.count }
     }
 
-    suspend fun searchEpisodes(query: String, blockedIds: Set<String> = emptySet()): List<EpisodeEntity> {
-        return if (blockedIds.isEmpty()) iptvDao.searchEpisodes(query) else iptvDao.searchEpisodesFiltered(query, blockedIds.toList())
-    }
+    suspend fun searchEpisodes(query: String): List<EpisodeEntity> = iptvDao.searchEpisodes(query)
 
     suspend fun getStats(): Triple<Int, Int, Int> = Triple(iptvDao.getLiveCount(), iptvDao.getMovieCount(), iptvDao.getSeriesCount())
     
@@ -459,15 +465,14 @@ class CatalogRepository @Inject constructor(
         return Pair(seasons.sortedBy { it.seasonNumber }, episodesMap)
     }
 
-    fun groupLiveStreams(streams: List<XtreamStream>): List<IptvItem> {
-        val qualityTags = listOf("4K", "FHD", "HD", "SD", "H265", "HEVC", "1080P", "720P", "LOW")
-        val regex = Regex("\\s*(\\(|\\[|\\|)?\\s*(${qualityTags.joinToString("|")})\\s*(\\)|\\]|\\|)?\\s*", RegexOption.IGNORE_CASE)
-        return streams.groupBy { it.name?.replace(regex, " ")?.trim()?.uppercase() ?: "" }.map { (baseName, group) ->
-            val main = group.sortedByDescending { s -> val n = s.name?.uppercase() ?: ""; when { n.contains("4K") -> 4; n.contains("FHD") -> 3; n.contains("HD") -> 2; n.contains("SD") -> 1; else -> 0 } }.first()
-            val qualities = group.associate { s -> val n = s.name?.uppercase() ?: ""; val q = when { n.contains("4K") -> "4K"; n.contains("FHD") -> "FHD"; n.contains("HD") -> "HD"; n.contains("SD") -> "SD"; else -> "AUTO" }; q to (s.streamId ?: 0) }
-            IptvItem(main.streamId.toString(), baseName.lowercase().split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }, main.streamIcon, ContentType.LIVE, main.epgChannelId, qualities = qualities, categoryId = main.categoryId)
-        }
-    }
+    fun groupLiveStreams(streams: List<XtreamStream>, scope: String = "", preferred: rsv.squitv.domain.model.ChannelQuality = rsv.squitv.domain.model.ChannelQuality.AUTO): List<IptvItem> =
+        rsv.squitv.domain.model.LiveChannelGrouping.group(streams.map { it.toIptvItem() }, scope, preferred)
+
+    /** Local content and metadata updates drive navigation; no per-category network requests. */
+    fun observeBrowseCatalog(type: String) = kotlinx.coroutines.flow.combine(
+        iptvDao.observeCategoriesByType(if (type == "movie") "VOD" else type.uppercase()),
+        iptvDao.observeStreamsByType(if (type == "movie") "VOD" else type.uppercase())
+    ) { categories, streams -> categories to streams }
 
     suspend fun getAvailableGenres(type: String): List<String> = withContext(Dispatchers.IO) {
         val streamType = if (type == "movie") "VOD" else type.uppercase()

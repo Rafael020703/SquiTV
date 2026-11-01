@@ -180,7 +180,6 @@ fun PreviewDesignSystemMolecules() {
                     SettingsGridCard(label = "Conta", icon = Icons.Rounded.AccountCircle, onClick = {})
                     SettingsGridCard(label = "Sair", icon = Icons.AutoMirrored.Rounded.Logout, isDestructive = true, onClick = {})
                 }
-                SettingsToggle(label = "Tema Escuro", checked = true, onCheckedChange = {})
                 SettingsActionItem(label = "Alterar Idioma", icon = Icons.Rounded.Language, trailingText = "Português", onClick = {})
                 Row(horizontalArrangement = Arrangement.spacedBy(tokens.spacing.large)) {
                     SettingsStatCard(label = "Conexões", value = "2/4", icon = Icons.Rounded.Dns, modifier = Modifier.weight(1f))
@@ -218,5 +217,39 @@ private fun ColorBox(label: String, color: Color) {
         Box(modifier = Modifier.size(60.dp).background(color, tokens.shapes.medium))
         Spacer(modifier = Modifier.height(tokens.spacing.tiny))
         Text(label, style = tokens.typography.caption, color = tokens.colors.textSecondary)
+    }
+}
+
+@Preview(name = "Ícones • celular, tablet, TV e notificações", widthDp = 860, heightDp = 340)
+@Composable
+fun PreviewAppIcons() {
+    MeusCanaisTheme {
+        Column(
+            Modifier.fillMaxSize().background(AppDesignSystem.colors.background).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+                listOf(
+                    rsv.squitv.R.drawable.ic_launcher_legacy to "Legado",
+                    rsv.squitv.R.drawable.ic_launcher_round_legacy to "Redondo",
+                    rsv.squitv.R.drawable.ic_launcher_monochrome to "Monocromático",
+                    rsv.squitv.R.drawable.ic_notification to "Notificação"
+                ).forEach { (resource, label) ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        androidx.compose.foundation.Image(
+                            painter = androidx.compose.ui.res.painterResource(resource),
+                            contentDescription = label,
+                            modifier = Modifier.size(if (label == "Notificação") 24.dp else 72.dp)
+                        )
+                        Text(label, color = AppDesignSystem.colors.textPrimary)
+                    }
+                }
+            }
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(rsv.squitv.R.drawable.banner_tv),
+                contentDescription = "Banner Android TV / Fire TV",
+                modifier = Modifier.size(280.dp, 157.5.dp)
+            )
+        }
     }
 }

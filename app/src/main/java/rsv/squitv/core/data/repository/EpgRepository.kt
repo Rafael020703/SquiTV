@@ -135,9 +135,6 @@ class EpgRepository @Inject constructor(
     fun getEpgForChannel(channelId: String): Flow<List<EpgProgramEntity>> =
         iptvDao.getEpgForChannel(channelId, System.currentTimeMillis() / 1000)
 
-    suspend fun getEpgInRange(startTime: Long, stopTime: Long): List<EpgProgramEntity> =
-        iptvDao.getEpgInRange(startTime, stopTime)
-
     suspend fun getShortEpg(credentials: XtreamCredentials, streamId: Int): XtreamShortEpg {
         val response = xtreamService.getShortEpg(credentials.username, credentials.password, streamId = streamId)
         return response.copy(
@@ -172,14 +169,6 @@ class EpgRepository @Inject constructor(
             text
         }
     }
-
-    suspend fun insertReminder(reminder: EpgReminderEntity) = iptvDao.insertReminder(reminder)
-
-    fun getAllRemindersFlow(): Flow<List<EpgReminderEntity>> = iptvDao.getAllRemindersFlow()
-
-    suspend fun deleteReminder(streamId: Int, startTime: Long) = iptvDao.deleteReminder(streamId, startTime)
-
-    suspend fun hasReminder(streamId: Int, startTime: Long): Boolean = iptvDao.hasReminder(streamId, startTime)
 
     suspend fun clearAllEpg() = epgMutex.withLock { iptvDao.clearAllEpg() }
 }

@@ -42,9 +42,9 @@ class MainViewModel @Inject constructor(
     private val authManager: AuthManager,
     private val syncManager: SyncManager,
     private val profileManager: ProfileManager,
-    private val securityManager: SecurityManager,
     private val themeManager: ThemeManager,
-    val appStateManager: AppStateManager
+    val appStateManager: AppStateManager,
+    val catalogPrepCoordinator: CatalogPreparationCoordinator
 ) : ViewModel() {
 
     // Global UI State
@@ -56,6 +56,52 @@ class MainViewModel @Inject constructor(
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    val prepState = catalogPrepCoordinator.state
+
+    fun pausePrep() = catalogPrepCoordinator.requestPause()
+    fun resumePrep() = catalogPrepCoordinator.requestStartOrResume()
+    fun retryPrepFailed() = catalogPrepCoordinator.retryFailed()
+
+    fun updateMovieCategoryMode(mode: rsv.squitv.domain.model.CategoryMode) {
+        viewModelScope.launch {
+            val settings = settingsRepository.settingsFlow.first()
+            val accountKey = settings.credentials?.let { SettingsBackupCodec.accountKey(it) } ?: ""
+            settingsRepository.updateMovieCategoryMode(accountKey, settings.activeProfileId, mode)
+        }
+    }
+
+    fun updateSeriesCategoryMode(mode: rsv.squitv.domain.model.CategoryMode) {
+        viewModelScope.launch {
+            val settings = settingsRepository.settingsFlow.first()
+            val accountKey = settings.credentials?.let { SettingsBackupCodec.accountKey(it) } ?: ""
+            settingsRepository.updateSeriesCategoryMode(accountKey, settings.activeProfileId, mode)
+        }
+    }
+
+    fun dismissMoviePrompt() {
+        viewModelScope.launch {
+            val settings = settingsRepository.settingsFlow.first()
+            val accountKey = settings.credentials?.let { SettingsBackupCodec.accountKey(it) } ?: ""
+            settingsRepository.dismissMovieCategoryPrompt(accountKey, settings.activeProfileId)
+        }
+    }
+
+    fun dismissSeriesPrompt() {
+        viewModelScope.launch {
+            val settings = settingsRepository.settingsFlow.first()
+            val accountKey = settings.credentials?.let { SettingsBackupCodec.accountKey(it) } ?: ""
+            settingsRepository.dismissSeriesCategoryPrompt(accountKey, settings.activeProfileId)
+        }
+    }
+
+    fun setPrepActiveType(type: String) = catalogPrepCoordinator.setActiveContentType(type)
+
+    fun setPreparationSpeed(speed: rsv.squitv.domain.model.PreparationSpeed) {
+        viewModelScope.launch {
+            settingsRepository.updatePreparationSpeed(speed)
+        }
+    }
 
     // Delegated States
     val appState: StateFlow<AppState> = appStateManager.appState
@@ -75,10 +121,6 @@ class MainViewModel @Inject constructor(
     val allLiveStreams = syncManager.allLiveStreams
     val categories = syncManager.categories
 
-    val isAppLocked = securityManager.isAppLocked
-    val blockedCategoryIds = securityManager.blockedCategoryIds
-
-    val useOledTheme = themeManager.useOledTheme.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val uiZoom = themeManager.uiZoom.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
     val language = themeManager.language.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "pt")
 
@@ -146,49 +188,6 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.resetHiddenSections()
         }
-    }
-
-    fun getCustomizedCategoriesFlow(contentType: String): Flow<List<XtreamCategory>> {
-        val normType = if (contentType == "movie") "vod" else contentType.lowercase()
-        return combine(
-            appSettings,
-            blockedCategoryIds,
-            catalogRevision
-        ) { settings, blocked, _ ->
-            val creds = settings.credentials ?: return@combine emptyList()
-            val rawEntities = try {
-                when (normType) {
-                    "live" -> catalogRepository.getLiveCategories(creds)
-                    "vod" -> catalogRepository.getVodCategories(creds)
-                    "series" -> catalogRepository.getSeriesCategories(creds)
-                    else -> emptyList()
-                }
-            } catch (_: Exception) { emptyList() }
-
-            val simpleUser = creds.username.trim().lowercase()
-            val cleanUrl = creds.baseUrl.trim().lowercase().removeSuffix("/")
-            val accountKey = if (cleanUrl.isNotBlank()) "$cleanUrl#$simpleUser" else simpleUser
-            val typeKey = "${accountKey}_${normType}"
-
-            val customOrder = settings.categoryOrderMap[typeKey]
-            val hiddenCategories = settings.hiddenCategoriesMap[typeKey]
-
-            val filteredBlocked = if (settings.hideBlockedCategories) rawEntities.filter { it.id !in blocked } else rawEntities
-            val customized = catalogRepository.applyCategoryCustomization(
-                categories = filteredBlocked,
-                customOrder = customOrder,
-                hiddenCategories = hiddenCategories
-            )
-
-            val resultList = mutableListOf<XtreamCategory>()
-            if (normType != "live") {
-                resultList.add(XtreamCategory(categoryId = "CONTINUE_WATCHING", categoryName = "Continuar Assistindo"))
-            }
-            resultList.add(XtreamCategory(categoryId = "FAVORITES", categoryName = "Favoritos"))
-            resultList.add(XtreamCategory(categoryId = "RECENTS", categoryName = "Adicionados Recentemente"))
-            customized.mapTo(resultList) { XtreamCategory(categoryId = it.id, categoryName = it.name) }
-            resultList
-        }.flowOn(Dispatchers.IO)
     }
 
     fun moveCategoryUp(contentType: String, categoryId: String, currentCategories: List<rsv.squitv.data.local.entities.IptvCategoryEntity>) =
@@ -341,9 +340,6 @@ class MainViewModel @Inject constructor(
         profileManager.addProfile(name, iconUrl, isChild)
     fun deleteProfile(profileId: String) = profileManager.deleteProfile(profileId)
     fun updateProfilePicture(url: String) = profileManager.updateProfilePicture(url)
-
-    fun unlockApp(pin: String) = securityManager.unlockApp(pin)
-    fun unlockCategory(catId: String) = securityManager.unlockCategory(catId)
 
     fun loadData(force: Boolean = false) = syncManager.startSync(force)
     fun loadAllLiveStreams() {

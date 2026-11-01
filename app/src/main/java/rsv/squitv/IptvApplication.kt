@@ -39,7 +39,6 @@ import rsv.squitv.data.repository.SettingsRepository
 import rsv.squitv.core.debug.DebugLogger
 import rsv.squitv.core.debug.DebugExceptionHandler
 import rsv.squitv.core.debug.DebugLifecycleObserver
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import javax.inject.Inject
@@ -214,23 +213,14 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
         lastPollTime[id] = now
 
         applicationScope.launch(Dispatchers.IO) {
-            val entity = database.iptvDao().getDownload(download.request.id.toInt())
-            if (entity != null) {
-                val progressDiff = kotlin.math.abs(entity.progress - download.percentDownloaded)
-                val statusChanged = entity.status != status
-                val bytesChanged = entity.downloadedBytes != download.bytesDownloaded
-                if (statusChanged || progressDiff >= 0.5f || bytesChanged || status == "COMPLETED" || status == "FAILED") {
-                    database.iptvDao().insertDownload(
-                        entity.copy(
-                            status = status,
-                            progress = download.percentDownloaded,
-                            size = download.contentLength,
-                            downloadedBytes = download.bytesDownloaded,
-                            downloadSpeedMbps = speedMbps
-                        )
-                    )
-                }
-            }
+            database.iptvDao().updateDownloadProgress(
+                streamId = id.toInt(),
+                status = status,
+                progress = download.percentDownloaded,
+                size = download.contentLength,
+                downloadedBytes = download.bytesDownloaded,
+                downloadSpeedMbps = speedMbps
+            )
         }
     }
 
@@ -248,15 +238,17 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
         }
 
         applicationScope.launch {
-            settingsRepository.settingsFlow.collectLatest { settings ->
-                val networkRequirement = if (settings.downloadWifiOnly) {
-                    2 // Requirements.NETWORK_UNMETERED
-                } else {
-                    1 // Requirements.NETWORK_CONNECTED
+            settingsRepository.settingsFlow
+                .map { it.downloadWifiOnly }
+                .distinctUntilChanged()
+                .collect { downloadWifiOnly ->
+                    val networkRequirement = if (downloadWifiOnly) {
+                        Requirements.NETWORK_UNMETERED
+                    } else {
+                        Requirements.NETWORK
+                    }
+                    downloadManager.requirements = Requirements(networkRequirement)
                 }
-                downloadManager.requirements = Requirements(networkRequirement)
-
-            }
         }
         applicationScope.launch {
             settingsRepository.settingsFlow.map { it.syncIntervalHours }.distinctUntilChanged()

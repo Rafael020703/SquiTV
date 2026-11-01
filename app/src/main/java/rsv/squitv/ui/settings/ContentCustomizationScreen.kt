@@ -210,7 +210,6 @@ fun DashboardSectionsCustomizer(
         "LIVE_TV" to "TV Ao Vivo",
         "MOVIES" to "Filmes",
         "SERIES" to "Séries",
-        "EPG" to "Guia TV (EPG)",
         "MULTI_VIEW" to "Multi-View",
         "DOWNLOADS" to "Downloads",
         "FAVORITES" to "Favoritos"

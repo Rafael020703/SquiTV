@@ -91,10 +91,19 @@ class PlaybackManager @Inject constructor(
         }
     }
 
+    private val _isPlaybackActive = MutableStateFlow(false)
+    val isPlaybackActive: StateFlow<Boolean> = _isPlaybackActive.asStateFlow()
+
+    private fun updatePlaybackActiveState() {
+        val active = _player?.let { it.isPlaying || it.playbackState == Player.STATE_BUFFERING } ?: false
+        _isPlaybackActive.value = active
+    }
+
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
             val mediaId = _player?.currentMediaItem?.mediaId
             Timber.d("[PLAYBACK_MANAGER][instance=$instanceId] onPlaybackStateChanged -> state=$playbackState, mediaId=$mediaId")
+            updatePlaybackActiveState()
             _events.tryEmit(Event.PlaybackStateChanged(playbackState, mediaId))
         }
 
@@ -107,6 +116,7 @@ class PlaybackManager @Inject constructor(
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             val mediaId = _player?.currentMediaItem?.mediaId
             Timber.d("[PLAYBACK_MANAGER][instance=$instanceId] onIsPlayingChanged -> isPlaying=$isPlaying, mediaId=$mediaId")
+            updatePlaybackActiveState()
             _events.tryEmit(Event.IsPlayingChanged(isPlaying, mediaId))
         }
 
@@ -164,6 +174,7 @@ class PlaybackManager @Inject constructor(
         controllerFuture = null
         _player = null
         _playerState.value = null
+        _isPlaybackActive.value = false
     }
 
     /**
@@ -263,14 +274,6 @@ class PlaybackManager @Inject constructor(
         _player?.trackSelectionParameters = parameters
     }
 
-    fun clearTrackOverrides() {
-        _player?.let { p ->
-            p.trackSelectionParameters = p.trackSelectionParameters
-                .buildUpon()
-                .clearOverrides()
-                .build()
-        }
-    }
 
     fun requestNextChannel() {
         _events.tryEmit(Event.NextChannelRequested)

@@ -13,9 +13,6 @@ sealed interface AppState {
     /** Sincronização em progresso. */
     data object Synchronizing : AppState
     
-    /** App bloqueado por PIN de segurança. Ir para Lock Screen. */
-    data object Locked : AppState
-    
     /** App pronto para uso. Ir para Dashboard. */
     data object Ready : AppState
     

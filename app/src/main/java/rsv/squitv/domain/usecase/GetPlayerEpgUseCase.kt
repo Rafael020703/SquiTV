@@ -56,14 +56,14 @@ class GetPlayerEpgUseCase @Inject constructor(
             val stop = prog.stopTimestamp ?: 0L
             start != 0L && stop != 0L && nowTimestamp >= start && nowTimestamp < stop
         }?.let {
-            EpgProgramme(it.start ?: "", it.end ?: "", streamId.toString(), it.title, it.description)
+            EpgProgramme(it.startTimestamp?.toString() ?: it.start.orEmpty(), it.stopTimestamp?.toString() ?: it.end.orEmpty(), streamId.toString(), it.title, it.description)
         }
 
         val next = listings.filter { (it.startTimestamp ?: 0L) > nowTimestamp }
             .sortedBy { it.startTimestamp }
             .take(5)
             .map {
-                EpgProgramme(it.start ?: "", it.end ?: "", streamId.toString(), it.title, it.description)
+                EpgProgramme(it.startTimestamp?.toString() ?: it.start.orEmpty(), it.stopTimestamp?.toString() ?: it.end.orEmpty(), streamId.toString(), it.title, it.description)
             }
 
         return Result(current, next, listings)

@@ -67,12 +67,12 @@ fun EpgMiniProgress(program: EpgProgramme, isTv: Boolean) {
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
              Text(
-                 text = program.start.takeLast(5), 
+                 text = formatProgramTime(program.start),
                  style = tokens.typography.caption, 
                  color = tokens.colors.textSecondary.copy(alpha = 0.5f)
              )
              Text(
-                 text = program.stop.takeLast(5), 
+                 text = formatProgramTime(program.stop),
                  style = tokens.typography.caption, 
                  color = tokens.colors.textSecondary.copy(alpha = 0.5f)
              )
@@ -80,35 +80,6 @@ fun EpgMiniProgress(program: EpgProgramme, isTv: Boolean) {
     }
 }
 
-@Composable
-fun QualityBadge(name: String?) {
-    val tokens = AppDesignSystem
-    val qualityTags = listOf("4K", "FHD", "HD", "SD", "H265", "HEVC", "1080P", "720P")
-    val tag = qualityTags.find { name?.uppercase()?.contains(it) == true } ?: return
-
-    val color = when (tag) {
-        "4K" -> Color(0xFFFFD700)
-        "FHD", "1080P" -> tokens.colors.primary
-        "HD", "720P" -> tokens.colors.success
-        else -> tokens.colors.textSecondary
-    }
-
-    Surface(
-        color = color.copy(alpha = 0.15f),
-        shape = tokens.shapes.small,
-        border = BorderStroke(1.dp, color.copy(alpha = 0.4f)),
-        modifier = Modifier.padding(start = 8.dp)
-    ) {
-        Text(
-            text = tag,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            style = tokens.typography.caption,
-            fontWeight = FontWeight.Black,
-            color = color,
-            fontSize = 9.sp
-        )
-    }
-}
 
 fun calculateProgramProgress(prog: EpgProgramme): Float {
     try {
@@ -130,4 +101,11 @@ fun formatTime(ms: Long, forceHours: Boolean = false): String {
     } else {
         String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
     }
+}
+
+fun formatProgramTime(value: String): String {
+    val seconds = value.toLongOrNull()
+    return if (seconds != null && seconds > 0L)
+        java.text.SimpleDateFormat("HH:mm", Locale.getDefault()).format(java.util.Date(seconds * 1000L))
+    else value.substringAfter(' ').take(5)
 }

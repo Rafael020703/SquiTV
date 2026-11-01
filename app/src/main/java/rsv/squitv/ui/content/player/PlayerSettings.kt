@@ -4,6 +4,8 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,16 +40,20 @@ import kotlinx.coroutines.delay
 fun PlayerSettingsDialog(
     tracks: Tracks?,
     sleepTimer: Int?,
-    subtitleSize: Float,
     currentSpeed: Float = 1.0f,
     initialTab: Int = 0,
     onDismiss: () -> Unit,
     onSelectTrack: (Int, Int, Int) -> Unit,
     onClearOverride: (Int) -> Unit,
     onSetSleepTimer: (Int?) -> Unit,
-    onSetSubtitleSize: (Float) -> Unit,
     onSetSpeed: (Float) -> Unit = {},
-    onToggleResizeMode: () -> Unit = {}
+    onToggleResizeMode: () -> Unit = {},
+    isLive: Boolean = false,
+    groupChannels: Boolean = true,
+    versions: List<rsv.squitv.domain.model.ChannelVersion> = emptyList(),
+    selectedVersionId: Int? = null,
+    onGroupingChanged: (Boolean) -> Unit = {},
+    onVersionSelected: (Int) -> Unit = {}
 ) {
     val tokens = AppDesignSystem
     var selectedTab by remember { mutableStateOf(initialTab) }
@@ -75,12 +81,13 @@ fun PlayerSettingsDialog(
         // TV-First Settings Side Panel
         Surface(
             modifier = Modifier
-                .width(540.dp)
-                .fillMaxHeight(0.88f)
-                .padding(end = 40.dp),
+                .widthIn(max = 460.dp)
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.84f)
+                .padding(end = 12.dp),
             shape = RoundedCornerShape(24.dp),
-            color = Color(0xFF0D121C),
-            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.15f)),
+            color = tokens.colors.surface,
+            border = BorderStroke(1.dp, tokens.colors.border.copy(alpha = 0.35f)),
             shadowElevation = 24.dp
         ) {
             Column(
@@ -126,14 +133,15 @@ fun PlayerSettingsDialog(
                     // Left Side Category Menu
                     Column(
                         modifier = Modifier
-                            .width(180.dp)
+                            .width(144.dp)
                             .fillMaxHeight()
+                            .verticalScroll(rememberScrollState())
                             .background(Color.Black.copy(alpha = 0.2f))
                             .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        val categories = listOf(
-                            Triple(0, "VÍDEO", Icons.Rounded.VideoSettings),
+                        val categories = (if (isLive) listOf(Triple(5, stringResource(R.string.channel_version), Icons.Rounded.LiveTv)) else emptyList()) + listOf(
+                            Triple(0, stringResource(R.string.video_track), Icons.Rounded.VideoSettings),
                             Triple(1, "ÁUDIO", Icons.Rounded.InterpreterMode),
                             Triple(2, "LEGENDAS", Icons.Rounded.ClosedCaption),
                             Triple(3, "VELOCIDADE", Icons.Rounded.Speed),
@@ -161,6 +169,7 @@ fun PlayerSettingsDialog(
                             .padding(20.dp)
                     ) {
                         when (selectedTab) {
+                            5 -> ChannelVersionsSection(groupChannels, versions, selectedVersionId, onGroupingChanged, onVersionSelected)
                             0 -> VideoQualitySettingsSection(
                                 tracks = tracks,
                                 onSelectTrack = onSelectTrack,
@@ -174,10 +183,8 @@ fun PlayerSettingsDialog(
                             )
                             2 -> SubtitleSettingsSection(
                                 tracks = tracks,
-                                subtitleSize = subtitleSize,
                                 onSelectTrack = onSelectTrack,
-                                onClearOverride = onClearOverride,
-                                onSetSubtitleSize = onSetSubtitleSize
+                                onClearOverride = onClearOverride
                             )
                             3 -> PlaybackSpeedSettingsSection(
                                 currentSpeed = currentSpeed,
@@ -245,11 +252,39 @@ private fun SettingsCategoryTab(
             Text(
                 text = title,
                 color = contentColor,
-                style = tokens.typography.label,
+                style = tokens.typography.label.copy(fontSize = 11.sp),
                 fontWeight = if (isSelected || isFocused) FontWeight.Black else FontWeight.Bold,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+    }
+}
+
+@Composable
+private fun ChannelVersionsSection(
+    grouped: Boolean,
+    versions: List<rsv.squitv.domain.model.ChannelVersion>,
+    selectedId: Int?,
+    onGroupingChanged: (Boolean) -> Unit,
+    onVersionSelected: (Int) -> Unit
+) {
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            rsv.squitv.core.ui.components.settings.SettingsToggle(
+                label = stringResource(R.string.group_live_channels), checked = grouped,
+                onCheckedChange = onGroupingChanged)
+            Text(stringResource(R.string.channel_version_hint), style = MaterialTheme.typography.bodySmall,
+                color = AppDesignSystem.colors.textSecondary)
+        }
+        itemsIndexed(versions, key = { _, version -> version.streamId }) { _, version ->
+            val resolution = version.resolution?.let { rsv.squitv.core.ui.components.settings.channelQualityLabel(it) }
+                ?: stringResource(R.string.channel_version_unknown)
+            TvOptionRowItem(
+                label = listOfNotNull(resolution, version.codec).joinToString(" • "),
+                sublabel = "${version.name} • #${version.streamId}",
+                isSelected = version.streamId == selectedId,
+                onClick = { onVersionSelected(version.streamId) })
         }
     }
 }
@@ -266,7 +301,7 @@ private fun VideoQualitySettingsSection(
     
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
-            text = "QUALIDADE DE VÍDEO & TELA",
+            text = stringResource(R.string.video_track),
             style = tokens.typography.title,
             color = tokens.colors.primary,
             fontWeight = FontWeight.Black,
@@ -293,8 +328,8 @@ private fun VideoQualitySettingsSection(
             // Option 1: AUTOMÁTICO
             item {
                 TvOptionRowItem(
-                    label = "AUTOMÁTICO (RECOMENDADO)",
-                    sublabel = "Ajusta a resolução dinamicamente conforme a conexão",
+                    label = stringResource(R.string.video_track_default),
+                    sublabel = stringResource(R.string.video_track_hint),
                     isSelected = isAutoSelected,
                     onClick = { onClearOverride(C.TRACK_TYPE_VIDEO) }
                 )
@@ -307,8 +342,10 @@ private fun VideoQualitySettingsSection(
                     val isSelected = group.isTrackSelected(trackIdx)
                     
                     val height = format.height
-                    val label = if (height > 0) "${height}p (${format.frameRate.toInt().coerceAtLeast(24)} fps)" else "Qualidade Padrão"
-                    val sublabel = if (height >= 1080) "Alta Definição (Full HD)" else if (height >= 720) "Alta Definição (HD)" else "Definição Padrão (SD)"
+                    val label = listOfNotNull(if (height > 0) "${height}p" else null,
+                        format.frameRate.takeIf { it > 0f }?.let { "$it fps" }, format.codecs)
+                        .joinToString(" • ").ifBlank { stringResource(R.string.channel_version_unknown) }
+                    val sublabel = format.label.orEmpty()
 
                     TvOptionRowItem(
                         label = label,
@@ -385,10 +422,8 @@ private fun AudioTrackSettingsSection(
 @Composable
 private fun SubtitleSettingsSection(
     tracks: Tracks?,
-    subtitleSize: Float,
     onSelectTrack: (Int, Int, Int) -> Unit,
-    onClearOverride: (Int) -> Unit,
-    onSetSubtitleSize: (Float) -> Unit
+    onClearOverride: (Int) -> Unit
 ) {
     val tokens = AppDesignSystem
 
@@ -431,34 +466,7 @@ private fun SubtitleSettingsSection(
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
 
-        Text(
-            text = "TAMANHO DA FONTE DAS LEGENDAS",
-            style = tokens.typography.body,
-            color = tokens.colors.textSecondary,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            val sizes = listOf(
-                0.8f to "PEQUENA",
-                1.0f to "MÉDIA",
-                1.3f to "GRANDE"
-            )
-            sizes.forEach { (size, label) ->
-                TvChipItem(
-                    label = label,
-                    isSelected = subtitleSize == size,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onSetSubtitleSize(size) }
-                )
-            }
-        }
     }
 }
 
@@ -590,52 +598,6 @@ fun TvOptionRowItem(
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun TvChipItem(
-    label: String,
-    isSelected: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    val tokens = AppDesignSystem
-    var isFocused by remember { mutableStateOf(false) }
-
-    val bgColor by animateColorAsState(
-        if (isFocused) tokens.colors.primary
-        else if (isSelected) tokens.colors.primary.copy(alpha = 0.2f)
-        else Color.White.copy(alpha = 0.05f),
-        label = "chipBg"
-    )
-    val contentColor by animateColorAsState(
-        if (isFocused) Color.Black
-        else tokens.colors.textPrimary,
-        label = "chipText"
-    )
-
-    Surface(
-        onClick = onClick,
-        color = bgColor,
-        shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(
-            if (isFocused) 2.dp else if (isSelected) 1.dp else 0.dp,
-            if (isFocused) FocusGlowCyan else if (isSelected) tokens.colors.primary else Color.Transparent
-        ),
-        modifier = modifier.adaptiveFocus(shape = RoundedCornerShape(10.dp), onFocus = { isFocused = it })
-    ) {
-        Box(
-            modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = label,
-                style = tokens.typography.label,
-                fontWeight = FontWeight.Black,
-                color = contentColor
-            )
         }
     }
 }
@@ -781,6 +743,24 @@ fun PlayerSpeedDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+@androidx.compose.ui.tooling.preview.Preview(widthDp = 960, heightDp = 540, showBackground = true)
+@Composable
+private fun ChannelVersionSettingsPreview() {
+    MeusCanaisTheme {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            PlayerSettingsDialog(
+                tracks = null, sleepTimer = null, initialTab = 5,
+                onDismiss = {}, onSelectTrack = { _, _, _ -> }, onClearOverride = {},
+                onSetSleepTimer = {}, isLive = true, groupChannels = true,
+                versions = listOf(
+                    rsv.squitv.domain.model.ChannelVersion(101, "Canal SP HD", rsv.squitv.domain.model.ChannelQuality.HD),
+                    rsv.squitv.domain.model.ChannelVersion(102, "Canal SP FHD HEVC", rsv.squitv.domain.model.ChannelQuality.FHD, "H.265")
+                ),
+                selectedVersionId = 101)
         }
     }
 }

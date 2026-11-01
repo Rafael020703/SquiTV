@@ -30,6 +30,11 @@ import rsv.squitv.domain.usecase.SmartDownloadUseCase
 import rsv.squitv.domain.usecase.SyncWatchProgressUseCase
 import rsv.squitv.domain.usecase.ToggleFavoriteUseCase
 import rsv.squitv.appfunctions.AppFunctionActionBus
+import rsv.squitv.domain.model.ChannelVersion
+import rsv.squitv.domain.model.ChannelQuality
+import rsv.squitv.domain.model.LiveChannelGrouping
+import rsv.squitv.core.data.repository.PlaybackSourceRepository
+import rsv.squitv.core.data.mapper.favoriteToIptvItem
 import rsv.squitv.core.data.mapper.toIptvItem
 import rsv.squitv.domain.model.ContentType
 import rsv.squitv.domain.model.IptvItem
@@ -68,7 +73,7 @@ sealed class PlayerUiState(
         val bandwidthMbps: Double = 0.0,
         val bufferDelaySeconds: Long = 0,
         val bufferedPosition: Long = 0L,
-        val availableQualities: Map<String, Int> = emptyMap(),
+        val availableVersions: List<ChannelVersion> = emptyList(),
         val epgId: String? = null,
         val streamId: Int? = null,
         val resolution: String? = null,
@@ -97,6 +102,7 @@ class PlayerViewModel @Inject constructor(
     private val syncWatchProgressUseCase: SyncWatchProgressUseCase,
     private val getPlayerEpgUseCase: GetPlayerEpgUseCase,
     private val getQuickSwitchUseCase: GetQuickSwitchUseCase,
+    private val playbackSources: PlaybackSourceRepository,
     private val performDnsFailoverUseCase: PerformDnsFailoverUseCase,
     private val preparePlaybackSessionUseCase: PreparePlaybackSessionUseCase,
     private val smartDownloadUseCase: SmartDownloadUseCase,
@@ -251,11 +257,11 @@ class PlayerViewModel @Inject constructor(
                 nextEpisodeStreamId = nextEpisodeStreamId,
                 nextEpisodeName = nextEpisodeName,
                 tracks = p.currentTracks,
-                availableQualities = _availableQualities.value,
+                availableVersions = _channelVersions.value,
                 epgId = currentEpgId,
                 streamId = currentStreamId,
-                resolution = videoFormat?.let { "${it.width}x${it.height}" },
-                frameRate = videoFormat?.frameRate,
+                resolution = videoFormat?.takeIf { it.width > 0 && it.height > 0 }?.let { "${it.width}x${it.height}" },
+                frameRate = videoFormat?.frameRate?.takeIf { it > 0f },
                 videoCodec = videoFormat?.sampleMimeType,
                 audioCodec = audioFormat?.sampleMimeType,
                 playbackSpeed = if (p.playbackParameters.speed > 0f) p.playbackParameters.speed else _playbackSpeed.value
@@ -273,11 +279,11 @@ class PlayerViewModel @Inject constructor(
                 nextEpisodeStreamId = nextEpisodeStreamId,
                 nextEpisodeName = nextEpisodeName,
                 tracks = p.currentTracks,
-                availableQualities = _availableQualities.value,
+                availableVersions = _channelVersions.value,
                 epgId = currentEpgId,
                 streamId = currentStreamId,
-                resolution = videoFormat?.let { "${it.width}x${it.height}" },
-                frameRate = videoFormat?.frameRate,
+                resolution = videoFormat?.takeIf { it.width > 0 && it.height > 0 }?.let { "${it.width}x${it.height}" },
+                frameRate = videoFormat?.frameRate?.takeIf { it > 0f },
                 videoCodec = videoFormat?.sampleMimeType,
                 audioCodec = audioFormat?.sampleMimeType,
                 playbackSpeed = if (p.playbackParameters.speed > 0f) p.playbackParameters.speed else _playbackSpeed.value
@@ -572,8 +578,6 @@ class PlayerViewModel @Inject constructor(
     val sleepTimer: StateFlow<Int?> = _sleepTimer.asStateFlow()
     private var sleepTimerJob: Job? = null
 
-    private val _subtitleSize = MutableStateFlow(1f) // 1.0f is normal
-    val subtitleSize: StateFlow<Float> = _subtitleSize.asStateFlow()
 
     private val _playbackSpeed = MutableStateFlow(1.0f)
     val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
@@ -587,8 +591,80 @@ class PlayerViewModel @Inject constructor(
     private val _resizeMode = MutableStateFlow(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT)
     val resizeMode: StateFlow<Int> = _resizeMode.asStateFlow()
 
-    private val _availableQualities = MutableStateFlow<Map<String, Int>>(emptyMap())
-    val availableQualities: StateFlow<Map<String, Int>> = _availableQualities.asStateFlow()
+    private val _channelVersions = MutableStateFlow<List<ChannelVersion>>(emptyList())
+    val channelVersions: StateFlow<List<ChannelVersion>> = _channelVersions.asStateFlow()
+    private var rawSourceItems: List<IptvItem> = emptyList()
+    private var groupedSourceItems: List<IptvItem> = emptyList()
+    private var visibleSourceItems: List<IptvItem> = emptyList()
+    private var currentSourceId: String? = null
+    private var sourceScope: String = ""
+    private var groupChannels = true
+    private var preferredQuality = ChannelQuality.AUTO
+
+    init {
+        viewModelScope.launch {
+            settingsRepository.settingsFlow.map {
+                Triple(it.groupLiveChannels, ChannelQuality.fromPreference(it.preferredChannelQuality), PlaybackSourceRepository.scope(it))
+            }.distinctUntilChanged().collect { (grouped, quality, scope) ->
+                groupChannels = grouped
+                preferredQuality = quality
+                if (sourceScope.isNotEmpty() && sourceScope != scope) rawSourceItems = emptyList()
+                sourceScope = scope
+                rebuildSource()
+            }
+        }
+    }
+
+    fun updateGroupLiveChannels(enabled: Boolean) {
+        groupChannels = enabled
+        rebuildSource()
+        viewModelScope.launch { settingsRepository.updateGroupLiveChannels(enabled) }
+    }
+
+    private fun rebuildSource() {
+        groupedSourceItems = LiveChannelGrouping.group(rawSourceItems, sourceScope, preferredQuality)
+        visibleSourceItems = if (groupChannels) groupedSourceItems else rawSourceItems
+        refreshChannelVersions()
+    }
+
+    private fun refreshChannelVersions() {
+        val group = groupedSourceItems.firstOrNull { it.containsStream(currentStreamId?.toString()) }
+        _channelVersions.value = if (currentType == ContentType.LIVE) group?.versions ?: currentStreamId?.takeIf { it > 0 }?.let { id ->
+            val label = LiveChannelGrouping.parse(currentDisplayName.orEmpty())
+            listOf(ChannelVersion(id, currentDisplayName.orEmpty(), label.resolution, label.codec,
+                currentEpgId, currentStreamIcon, currentCategoryId, currentContainer))
+        }.orEmpty() else emptyList()
+        _quickSwitchStreams.value = visibleSourceItems.map { item ->
+            val current = item.versions.firstOrNull { it.streamId == currentStreamId }
+            XtreamStream(streamId = current?.streamId ?: item.id.toIntOrNull(),
+                name = item.name, categoryId = item.categoryId,
+                epgChannelId = current?.epgId ?: item.epgId, streamIcon = current?.icon ?: item.icon)
+        }
+        val state = _uiState.value
+        if (state is PlayerUiState.Playing) _uiState.value = state.copy(availableVersions = _channelVersions.value)
+    }
+
+    fun selectChannelVersion(streamId: Int) {
+        if (currentType != ContentType.LIVE || streamId == currentStreamId) return
+        val version = _channelVersions.value.firstOrNull { it.streamId == streamId } ?: return
+        playLiveVersion(version)
+    }
+
+    fun switchChannel(stream: XtreamStream) {
+        if (stream.streamId == currentStreamId) return
+        val item = visibleSourceItems.firstOrNull { it.containsStream(stream.streamId?.toString()) } ?: return
+        val version = if (item.versions.isEmpty()) LiveChannelGrouping.version(item)
+            else LiveChannelGrouping.choose(item.versions, preferredQuality)
+        playLiveVersion(version)
+    }
+
+    private fun playLiveVersion(version: ChannelVersion) {
+        if (version.streamId == currentStreamId) return
+        showZappingBanner(XtreamStream(streamId = version.streamId, name = version.name, streamIcon = version.icon))
+        playStream(version.streamId, ContentType.LIVE, version.container, version.epgId,
+            categoryId = currentCategoryId, displayName = version.name, streamIcon = version.icon,
+            isZapping = true, sourceId = currentSourceId)
+    }
 
     private var recoveryCount = 0
     private var consecutiveStallCount = 0
@@ -604,7 +680,6 @@ class PlayerViewModel @Inject constructor(
     private var nextEpisodeStreamId: Int? = null
     private var nextEpisodeName: String? = null
     private var savedProgressPosition: Long? = null
-    private var lastQualities: Map<String, Int> = emptyMap()
     private var currentIsFavorite: Boolean = false
 
     private fun isFavoriteInList(
@@ -613,7 +688,7 @@ class PlayerViewModel @Inject constructor(
         type: ContentType
     ): Boolean {
         return when (type) {
-            ContentType.LIVE -> favList.any { it.streamId == targetId && it.streamType.equals("LIVE", ignoreCase = true) }
+            ContentType.LIVE -> favList.any { favorite -> (favorite.streamId == targetId || _channelVersions.value.any { it.streamId == favorite.streamId }) && favorite.streamType.equals("LIVE", ignoreCase = true) }
             ContentType.MOVIE -> favList.any { it.streamId == targetId && (it.streamType.equals("MOVIE", ignoreCase = true) || it.streamType.equals("VOD", ignoreCase = true)) }
             ContentType.SERIES -> favList.any { it.streamId == targetId && it.streamType.equals("SERIES", ignoreCase = true) }
             else -> false
@@ -663,13 +738,13 @@ class PlayerViewModel @Inject constructor(
         epgId: String?,
         seriesId: Int? = null,
         seasonNumber: Int? = null,
-        qualities: Map<String, Int> = emptyMap(),
         categoryId: String? = null,
         displayName: String? = null,
         streamIcon: String? = null,
         isRecovery: Boolean = false,
         isZapping: Boolean = false,
-        existingChannelSwitchId: String? = null
+        existingChannelSwitchId: String? = null,
+        sourceId: String? = null
     ) {
         val t0 = System.currentTimeMillis()
         zapStartTimeMs = t0
@@ -757,6 +832,14 @@ class PlayerViewModel @Inject constructor(
         currentEpgId = epgId
         currentSeriesId = seriesId
         currentSeasonNumber = seasonNumber
+        if (!isRecovery && !isZapping && (currentSourceId != sourceId || currentCategoryId != categoryId)) {
+            rawSourceItems = emptyList()
+            groupedSourceItems = emptyList()
+            visibleSourceItems = emptyList()
+            _quickSwitchStreams.value = emptyList()
+            lastLoadedCategoryId = null
+        }
+        if (!isRecovery && !isZapping) currentSourceId = sourceId
         currentCategoryId = categoryId
         nextEpisodeStreamId = null
         nextEpisodeName = null
@@ -766,8 +849,7 @@ class PlayerViewModel @Inject constructor(
                 settingsRepository.updateLastChannel("live", categoryId ?: "", streamId.toString(), displayName ?: "")
             }
         }
-        lastQualities = qualities
-        _availableQualities.value = qualities
+        refreshChannelVersions()
 
         // Update UI State instantly with metadata even before loading starts
         if (type == ContentType.LIVE) {
@@ -776,6 +858,7 @@ class PlayerViewModel @Inject constructor(
             
             _uiState.value = PlayerUiState.Playing(
                 isPlaying = false,
+                availableVersions = _channelVersions.value,
                 contentType = type,
                 isLive = true,
                 epgId = epgId,
@@ -1018,7 +1101,6 @@ class PlayerViewModel @Inject constructor(
             epgId = currentEpgId,
             seriesId = currentSeriesId,
             seasonNumber = currentSeasonNumber,
-            qualities = lastQualities,
             categoryId = currentCategoryId,
             displayName = currentDisplayName,
             streamIcon = currentStreamIcon,
@@ -1049,10 +1131,6 @@ class PlayerViewModel @Inject constructor(
                 _sleepTimer.value = null
             }
         }
-    }
-
-    fun setSubtitleSize(size: Float) {
-        _subtitleSize.value = size
     }
 
     private var nextEpisodeSeasonNumber: Int? = null
@@ -1153,8 +1231,8 @@ class PlayerViewModel @Inject constructor(
                             bandwidthMbps = bandwidth,
                             bufferDelaySeconds = delay.coerceAtLeast(0),
                             bufferedPosition = bufferedPos,
-                            resolution = videoFormat?.let { "${it.width}x${it.height}" },
-                            frameRate = videoFormat?.frameRate,
+                            resolution = videoFormat?.takeIf { it.width > 0 && it.height > 0 }?.let { "${it.width}x${it.height}" },
+                            frameRate = videoFormat?.frameRate?.takeIf { it > 0f },
                             videoCodec = videoFormat?.sampleMimeType,
                             audioCodec = audioFormat?.sampleMimeType,
                             signalHealth = health
@@ -1191,98 +1269,19 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun playByNumber(number: String) {
-        viewModelScope.launch {
-            try {
-                val num = number.toIntOrNull() ?: return@launch
-                val streams = _quickSwitchStreams.value
-                if (streams.isEmpty()) return@launch
-                
-                // Try to find by 'num' property first, then by index
-                val target = streams.find { it.num == num } 
-                    ?: if (num > 0 && num <= streams.size) streams[num - 1] else null
-                
-                target?.let {
-                    playStream(
-                        streamId = it.streamId ?: 0,
-                        type = ContentType.LIVE,
-                        container = null,
-                        epgId = it.epgChannelId,
-                        categoryId = currentCategoryId,
-                        displayName = it.name,
-                        streamIcon = it.streamIcon,
-                        isZapping = true
-                    )
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Erro ao reproduzir por número")
-            }
-        }
+        val index = number.toIntOrNull()?.minus(1) ?: return
+        _quickSwitchStreams.value.getOrNull(index)?.let(::switchChannel)
     }
 
-    fun playNextChannel() {
-        val streams = _quickSwitchStreams.value
-        val currentId = currentStreamId
-        Timber.d("[ZAPPING_TRACE] NEXT requested -> streams.size=${streams.size}, currentStreamId=$currentId, categoryId=$currentCategoryId, session=${_zappingSessionId.value}")
-        if (streams.isEmpty()) {
-            Timber.w("[ZAPPING] Cannot switch channel: quick switch list for category '$currentCategoryId' is empty.")
-            return
-        }
-        val currentIndex = if (currentId != null) streams.indexOfFirst { it.streamId == currentId } else -1
-        val nextIndex = if (currentIndex == -1) {
-            Timber.i("[ZAPPING] Current channel $currentId not found in category '$currentCategoryId' list. Starting from first channel.")
-            0
-        } else {
-            (currentIndex + 1) % streams.size
-        }
-        val target = streams[nextIndex]
-        
-        Timber.i("[ZAPPING] NEXT -> currentId=$currentId (index $currentIndex) -> targetId=${target.streamId} '${target.name}' (index $nextIndex of ${streams.size}, Session: ${_zappingSessionId.value + 1})")
-        showZappingBanner(target)
-        
-        playStream(
-            streamId = target.streamId ?: 0,
-            type = ContentType.LIVE,
-            container = null,
-            epgId = target.epgChannelId,
-            categoryId = currentCategoryId,
-            displayName = target.name,
-            streamIcon = target.streamIcon,
-            isZapping = true
-        )
-    }
+    fun playNextChannel() = stepChannel(1)
+    fun playPreviousChannel() = stepChannel(-1)
 
-    fun playPreviousChannel() {
-        val streams = _quickSwitchStreams.value
-        val currentId = currentStreamId
-        Timber.d("[ZAPPING_TRACE] PREVIOUS requested -> streams.size=${streams.size}, currentStreamId=$currentId, categoryId=$currentCategoryId, session=${_zappingSessionId.value}")
-        if (streams.isEmpty()) {
-            Timber.w("[ZAPPING] Cannot switch channel: quick switch list for category '$currentCategoryId' is empty.")
-            return
-        }
-        val currentIndex = if (currentId != null) streams.indexOfFirst { it.streamId == currentId } else -1
-        val prevIndex = if (currentIndex <= 0) {
-            if (currentIndex == -1) {
-                Timber.i("[ZAPPING] Current channel $currentId not found in category '$currentCategoryId' list. Starting from last channel.")
-            }
-            streams.size - 1
-        } else {
-            currentIndex - 1
-        }
-        val target = streams[prevIndex]
-        
-        Timber.i("[ZAPPING] PREVIOUS -> currentId=$currentId (index $currentIndex) -> targetId=${target.streamId} '${target.name}' (index $prevIndex of ${streams.size}, Session: ${_zappingSessionId.value + 1})")
-        showZappingBanner(target)
-        
-        playStream(
-            streamId = target.streamId ?: 0,
-            type = ContentType.LIVE,
-            container = null,
-            epgId = target.epgChannelId,
-            categoryId = currentCategoryId,
-            displayName = target.name,
-            streamIcon = target.streamIcon,
-            isZapping = true
-        )
+    private fun stepChannel(offset: Int) {
+        if (currentType != ContentType.LIVE) return
+        val item = LiveChannelGrouping.adjacent(visibleSourceItems, currentStreamId?.toString(), offset) ?: return
+        val version = if (item.versions.isEmpty()) LiveChannelGrouping.version(item)
+            else LiveChannelGrouping.choose(item.versions, preferredQuality)
+        playLiveVersion(version)
     }
 
     fun setPlaybackSpeed(speed: Float) {
@@ -1332,7 +1331,6 @@ class PlayerViewModel @Inject constructor(
             epgId = currentEpgId,
             seriesId = seriesId,
             seasonNumber = nextSeason,
-            qualities = lastQualities,
             categoryId = currentCategoryId,
             displayName = nextName
         )
@@ -1348,7 +1346,12 @@ class PlayerViewModel @Inject constructor(
                 val settings = settingsRepository.settingsFlow.first()
                 val profileId = settings.activeProfileId
 
-                if (currentType == ContentType.SERIES) {
+                if (currentType == ContentType.LIVE && !newFav) {
+                    val ids = _channelVersions.value.map { it.streamId }.toSet() + streamId
+                    userRepository.getFavoritesListFlow().first()
+                        .filter { it.streamType.equals("LIVE", true) && it.streamId in ids }
+                        .forEach { toggleFavoriteUseCase(it.favoriteToIptvItem(), false, profileId) }
+                } else if (currentType == ContentType.SERIES) {
                     val parentSeriesId = currentSeriesId ?: run {
                         val ep = userRepository.getEpisodeByStreamId(streamId)
                         ep?.seriesId
@@ -1411,28 +1414,36 @@ class PlayerViewModel @Inject constructor(
         epgJob?.cancel()
         val currentSession = _zappingSessionId.value
         epgJob = viewModelScope.launch {
-            try {
-                val result = getPlayerEpgUseCase(streamId)
-                if (_zappingSessionId.value != currentSession) return@launch
-                
-                _currentProgram.value = result.current
-                _nextPrograms.value = result.next
-                
-                val currentState = _uiState.value
-                if (currentState is PlayerUiState.Playing && currentState.streamId == streamId) {
-                    _uiState.value = currentState.copy(epgListings = result.allListings)
+            while (isActive && _zappingSessionId.value == currentSession && currentType == ContentType.LIVE) {
+                var refreshAfterMs = 60_000L
+                try {
+                    val result = getPlayerEpgUseCase(streamId)
+                    if (_zappingSessionId.value != currentSession) return@launch
+                    _currentProgram.value = result.current
+                    _nextPrograms.value = result.next
+                    val boundary = result.current?.stop?.toLongOrNull()
+                        ?: result.next.firstOrNull()?.start?.toLongOrNull()
+                    if (boundary != null) refreshAfterMs =
+                        (boundary * 1000L - System.currentTimeMillis() + 1000L).coerceIn(1000L, 60_000L)
+                    val state = _uiState.value
+                    if (state is PlayerUiState.Playing && state.streamId == streamId) {
+                        _uiState.value = state.copy(epgListings = result.allListings)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (_zappingSessionId.value != currentSession) return@launch
+                    Timber.e(e, "Erro ao carregar EPG")
+                    _currentProgram.value = null
+                    _nextPrograms.value = emptyList()
                 }
-            } catch (e: CancellationException) {
-                // Expected
-            } catch (e: Exception) {
-                if (_zappingSessionId.value != currentSession) return@launch
-                Timber.e(e, "Erro ao carregar EPG")
-                _currentProgram.value = null
+                delay(refreshAfterMs)
             }
         }
     }
 
     fun stopPlayback() {
+        epgJob?.cancel()
         syncFinalProgress()
         stopWatchdog()
         playbackManager.stopAndDisconnect()
@@ -1483,6 +1494,7 @@ class PlayerViewModel @Inject constructor(
                 playbackManager.setTrackSelectionParameters(
                     p.trackSelectionParameters
                         .buildUpon()
+                        .setTrackTypeDisabled(trackType, false)
                         .setOverrideForType(TrackSelectionOverride(trackGroup.mediaTrackGroup, trackIndex))
                         .build()
                 )
@@ -1538,8 +1550,16 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    fun clearTrackOverride(@Suppress("UNUSED_PARAMETER") trackType: Int) {
-        playbackManager.clearTrackOverrides()
+    fun clearTrackOverride(trackType: Int) {
+        val player = playbackManager.player ?: return
+        playbackManager.setTrackSelectionParameters(player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(trackType)
+            .setTrackTypeDisabled(trackType, trackType == C.TRACK_TYPE_TEXT)
+            .build())
+        viewModelScope.launch {
+            if (trackType == C.TRACK_TYPE_AUDIO) settingsRepository.updatePreferredAudioLang(null)
+            if (trackType == C.TRACK_TYPE_TEXT) settingsRepository.updatePreferredSubtitleLang(null)
+        }
     }
 
     private var zappingEpgJob: Job? = null
@@ -1548,8 +1568,29 @@ class PlayerViewModel @Inject constructor(
         zappingEpgJob?.cancel()
         zappingEpgJob = viewModelScope.launch {
             try {
-                val streams = getQuickSwitchUseCase.getStreams(categoryId)
-                _quickSwitchStreams.value = streams
+                val settings = settingsRepository.settingsFlow.first()
+                val scope = PlaybackSourceRepository.scope(settings)
+                val sourceId = currentSourceId
+                val items = if (sourceId != null) {
+                    // An expired/missing snapshot stays empty; it never broadens a special list.
+                    playbackSources.get(sourceId, scope).orEmpty()
+                } else getQuickSwitchUseCase.getStreams(categoryId).map { it.toIptvItem() }
+                val latestSettings = settingsRepository.settingsFlow.first()
+                if (categoryId != currentCategoryId || sourceId != currentSourceId ||
+                    scope != PlaybackSourceRepository.scope(latestSettings)) return@launch
+                sourceScope = scope
+                groupChannels = latestSettings.groupLiveChannels
+                preferredQuality = ChannelQuality.fromPreference(latestSettings.preferredChannelQuality)
+                rawSourceItems = LiveChannelGrouping.expand(items)
+                rebuildSource()
+                val favorites = userRepository.getFavoritesListFlow().first()
+                val streamId = currentStreamId
+                if (streamId != null) {
+                    currentIsFavorite = isFavoriteInList(favorites, streamId, currentType)
+                    val state = _uiState.value
+                    if (state is PlayerUiState.Playing) _uiState.value = state.copy(isFavorite = currentIsFavorite)
+                }
+                val streams = _quickSwitchStreams.value
                 if (streams.isEmpty()) {
                     Timber.w("[ZAPPING] Quick switch list for category '$categoryId' is empty.")
                 } else {

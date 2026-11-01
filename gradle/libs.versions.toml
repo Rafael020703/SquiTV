@@ -1,5 +1,5 @@
 [versions]
-agp = "9.4.0"
+agp = "9.5.0"
 appcompat = "1.7.1"
 media3 = "1.11.1"
 xmlutil = "1.0.2.1"

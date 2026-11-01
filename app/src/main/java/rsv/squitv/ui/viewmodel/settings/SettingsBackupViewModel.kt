@@ -75,7 +75,10 @@ class SettingsBackupViewModel @Inject constructor(
         val configured = SettingsBackupCodec.configuredAccounts(repository.settingsFlow.first())
         val matched = backup.accounts.count { it.fingerprint in configured }
         val available = SettingsBackupCodec.available(backup)
-        require(available.isNotEmpty())
+        if (available.isEmpty()) {
+            _state.update { it.copy(notice = R.string.settings_backup_no_supported_items, preview = null) }
+            return@perform
+        }
         _state.update { it.copy(preview = backup, matchedAccounts = matched,
             skippedAccounts = backup.accounts.size - matched, notice = null, importSelected = available) }
     }

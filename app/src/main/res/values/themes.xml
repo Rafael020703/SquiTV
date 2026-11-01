@@ -1,9 +1,19 @@
 <resources>
 
-    <style name="Theme.SquiTV" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
+    <style name="Theme.SquiTV.Base" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="android:windowBackground">#060607</item>
+        <item name="android:colorBackground">#060607</item>
+        <item name="android:statusBarColor">#060607</item>
+        <item name="android:navigationBarColor">#060607</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="colorSurface">#121214</item>
+        <item name="colorOnSurface">#E1E1E2</item>
+    </style>
+
+    <style name="Theme.SquiTV" parent="Theme.SquiTV.Base" />
 
     <style name="Theme.App.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">#1A237E</item>
+        <item name="windowSplashScreenBackground">#060607</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/squi_tv_icon_foreground</item>
         <item name="postSplashScreenTheme">@style/Theme.SquiTV</item>
     </style>

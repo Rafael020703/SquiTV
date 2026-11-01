@@ -54,7 +54,6 @@ val FocusGlowBlue = Color(0xFF2979FF)
 val ThemeLive = Color(0xFF00E5FF)
 val ThemeMovies = Color(0xFFFFAB00)
 val ThemeSeries = Color(0xFF7C4DFF)
-val ThemeEPG = Color(0xFF00E5FF)
 val ThemeMultiView = Color(0xFF7C4DFF)
 val ThemeDownloads = Color(0xFF00E676)
 val ThemeFavorites = Color(0xFF2979FF)
@@ -67,11 +66,3 @@ val GlassWhite = Color(0x26FFFFFF)
 val GlassBlack = Color(0x99000000)
 val GlassBorder = Color(0x33FFFFFF)
 val SpotlightOverlay = Color(0xCC000000)
-
-/**
- * WHITE THEME
- */
-val WhiteBackground = Color(0xFFF8F9FA)
-val WhiteSurface = Color(0xFFFFFFFF)
-val OnWhiteSurface = Color(0xFF1A1A1D)
-val OnWhiteMuted = Color(0xFF6C757D)

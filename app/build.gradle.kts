@@ -1,3 +1,13 @@
+import java.awt.BasicStroke
+import java.awt.Color
+import java.awt.RenderingHints
+import java.awt.geom.Ellipse2D
+import java.awt.geom.Line2D
+import java.awt.geom.Path2D
+import java.awt.geom.RoundRectangle2D
+import java.awt.image.BufferedImage
+import javax.imageio.ImageIO
+
 import java.util.Properties
 import java.io.FileInputStream
 
@@ -19,8 +29,8 @@ android {
         applicationId = "rsv.squitv"
         minSdk = 24
         targetSdk = 35
-        versionCode = 20
-        versionName = "1.19"
+        versionCode = 21
+        versionName = "1.20"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -164,4 +174,50 @@ dependencies {
     "ksp"(libs.androidx.room.compiler)
 
 
+}
+
+
+/** Generates real legacy launcher bitmaps for Android 7/Fire OS; API 26+ uses adaptive XML. */
+abstract class GenerateLauncherIcons : DefaultTask() {
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val densities = mapOf("mdpi" to 48, "hdpi" to 72, "xhdpi" to 96, "xxhdpi" to 144, "xxxhdpi" to 192)
+        densities.forEach { (density, pixels) ->
+            val folder = outputDirectory.dir("mipmap-$density").get().asFile.apply { mkdirs() }
+            for (round in listOf(false, true)) {
+                val image = BufferedImage(pixels, pixels, BufferedImage.TYPE_INT_ARGB)
+                val graphics = image.createGraphics()
+                try {
+                    graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                    graphics.scale(pixels / 108.0, pixels / 108.0)
+                    graphics.color = Color(5, 9, 20)
+                    if (round) graphics.fill(Ellipse2D.Float(0f, 0f, 108f, 108f))
+                    else graphics.fill(RoundRectangle2D.Float(0f, 0f, 108f, 108f, 20f, 20f))
+                    graphics.color = Color(255, 154, 54)
+                    graphics.stroke = BasicStroke(4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
+                    graphics.draw(Line2D.Float(43f, 38f, 38f, 30f))
+                    graphics.draw(Line2D.Float(65f, 38f, 70f, 30f))
+                    graphics.draw(RoundRectangle2D.Float(29f, 38f, 50f, 38f, 20f, 20f))
+                    graphics.color = Color(255, 107, 53)
+                    val play = Path2D.Float().apply {
+                        moveTo(49.0, 46.0); lineTo(66.0, 57.0); lineTo(49.0, 68.0); closePath()
+                    }
+                    graphics.fill(play)
+                } finally { graphics.dispose() }
+                val name = if (round) "ic_launcher_round.png" else "ic_launcher.png"
+                ImageIO.write(image, "png", folder.resolve(name))
+            }
+        }
+    }
+}
+
+androidComponents.onVariants { variant ->
+    val variantName = variant.name.replaceFirstChar { it.uppercase() }
+    val icons = tasks.register<GenerateLauncherIcons>("generate" + variantName + "LauncherIcons") {
+        outputDirectory.set(layout.buildDirectory.dir("generated/launcherIcons/" + variant.name))
+    }
+    variant.sources.res?.addGeneratedSourceDirectory(icons, GenerateLauncherIcons::outputDirectory)
 }

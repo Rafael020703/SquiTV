@@ -20,20 +20,16 @@ class SettingsViewModel @Inject constructor(
         initialValue = SettingsRepository.AppSettings(null, lastSyncTimestamp = 0L, syncIntervalHours = 24)
     )
 
-    fun updatePin(pin: String?) {
-        viewModelScope.launch { settingsRepository.updatePin(pin) }
+    fun updateGroupLiveChannels(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.updateGroupLiveChannels(enabled) }
+    }
+
+    fun updatePreferredChannelQuality(quality: String) {
+        viewModelScope.launch { settingsRepository.updatePreferredChannelQuality(quality) }
     }
 
     fun updateAutoPlay(enabled: Boolean) {
         viewModelScope.launch { settingsRepository.updateAutoPlay(enabled) }
-    }
-
-    fun updateShowDiagnostics(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.updateShowDiagnostics(enabled) }
-    }
-
-    fun updateHideBlockedCategories(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.updateHideBlockedCategories(enabled) }
     }
 
     fun addAccount(credentials: XtreamCredentials) {
@@ -46,18 +42,6 @@ class SettingsViewModel @Inject constructor(
 
     fun switchAccount(index: Int) {
         viewModelScope.launch { settingsRepository.switchAccount(index) }
-    }
-
-    fun updatePlayerEngine(engine: String) {
-        viewModelScope.launch { settingsRepository.updatePlayerEngine(engine) }
-    }
-
-    fun updateBufferStrategy(strategy: String) {
-        viewModelScope.launch { settingsRepository.updateBufferStrategy(strategy) }
-    }
-
-    fun updateUseOledTheme(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.updateUseOledTheme(enabled) }
     }
 
     fun updateUiZoom(zoom: Float) {

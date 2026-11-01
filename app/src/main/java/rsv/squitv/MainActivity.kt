@@ -127,7 +127,10 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.BLACK)
+        )
         lifecycleScope.launch {
             settingsRepository.settingsFlow
                 .map { it.backgroundPlaybackEnabled to it.pipAutoEnterEnabled }
@@ -171,7 +174,6 @@ class MainActivity : AppCompatActivity() {
             }
 
             val mainViewModel: MainViewModel = hiltViewModel()
-            val useOledTheme by mainViewModel.useOledTheme.collectAsStateWithLifecycle()
             val uiZoom by mainViewModel.uiZoom.collectAsStateWithLifecycle()
             val language by mainViewModel.language.collectAsStateWithLifecycle()
 
@@ -184,7 +186,7 @@ class MainActivity : AppCompatActivity() {
                 AppCompatDelegate.setApplicationLocales(appLocales)
             }
             
-            MeusCanaisTheme(useOledTheme = useOledTheme, uiZoom = uiZoom) {
+            MeusCanaisTheme(uiZoom = uiZoom) {
                 CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides dispatcherOwner) {
                     MainNavigation(
                         mainViewModel = mainViewModel,
@@ -202,10 +204,14 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var settingsRepository: SettingsRepository
 
+    @Inject
+    lateinit var catalogPrepCoordinator: rsv.squitv.core.domain.interactor.CatalogPreparationCoordinator
+
     override fun onStart() {
         super.onStart()
         isStopped = false
         pipExitJob?.cancel()
+        catalogPrepCoordinator.onAppForegroundChanged(true)
     }
 
     override fun onResume() {
@@ -225,6 +231,7 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
         isStopped = true
         pauseIfNeeded()
+        catalogPrepCoordinator.onAppForegroundChanged(false)
     }
 
     private fun pauseIfNeeded() {

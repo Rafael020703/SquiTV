@@ -32,12 +32,6 @@ fun InitialScreen(
             is AppState.Ready -> {
                 appController.navigate(Route.Dashboard, popUpToRoute = Route.Initial, inclusive = true)
             }
-            is AppState.Locked -> {
-                // If locked, we stay here until unlocked, 
-                // but AppLockScreen is usually an overlay in MainNavigation.
-                // We'll keep InitialScreen active with the loading/branded look
-                // while the overlay is shown.
-            }
             else -> {}
         }
     }

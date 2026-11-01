@@ -60,7 +60,6 @@ import kotlin.time.Duration.Companion.seconds
 fun PlayerScreen(
     viewModel: PlayerViewModel,
     streamName: String,
-    categoryId: String? = null,
     onBack: () -> Unit,
     onNavigateToPlayer: (Int, String, String, String?) -> Unit = { _, _, _, _ -> }
 ) {
@@ -80,18 +79,17 @@ fun PlayerScreen(
     val appSettings by viewModel.appSettings.collectAsStateWithLifecycle()
     val recentChannels by viewModel.recentChannels.collectAsStateWithLifecycle()
     val sleepTimer by viewModel.sleepTimer.collectAsStateWithLifecycle()
-    val subtitleSize by viewModel.subtitleSize.collectAsStateWithLifecycle()
     val zappingSessionId by viewModel.zappingSessionId.collectAsStateWithLifecycle()
     val zappingChannel by viewModel.zappingChannel.collectAsStateWithLifecycle()
     
     var isControlsVisible by remember { mutableStateOf(false) }
+    var isSeekingActive by remember { mutableStateOf(false) }
     var lastInteraction by remember { mutableStateOf(0L) }
     
     var showSettings by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
     var showSpeedMenu by remember { mutableStateOf(false) }
     var settingsInitialTab by remember { mutableStateOf(0) }
-    var isLocked by remember { mutableStateOf(false) }
     var digitBuffer by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
 
@@ -99,23 +97,25 @@ fun PlayerScreen(
     var isSplitView by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
-    var overlayTimerJob by remember { mutableStateOf<Job?>(null) }
+    val overlayController = remember { rsv.squitv.ui.content.player.PlayerOverlayController(5000L) }
 
     val hideOverlayImmediately: () -> Unit = {
-        overlayTimerJob?.cancel()
-        overlayTimerJob = null
-        isControlsVisible = false
+        overlayController.hideOverlayImmediately { isControlsVisible = it }
         viewModel.dismissZappingBanner()
     }
 
     val showOverlayWith5sTimer: () -> Unit = {
-        overlayTimerJob?.cancel()
         viewModel.dismissZappingBanner()
-        isControlsVisible = true
-        overlayTimerJob = coroutineScope.launch {
-            delay(5000L)
-            isControlsVisible = false
-        }
+        overlayController.showOverlayWithTimer(coroutineScope) { isControlsVisible = it }
+    }
+
+    val updateInteraction: () -> Unit = {
+        lastInteraction = System.currentTimeMillis()
+        overlayController.updateInteraction(coroutineScope) { isControlsVisible = it }
+    }
+
+    LaunchedEffect(isSeekingActive) {
+        overlayController.onSeekingStateChanged(isSeekingActive, coroutineScope) { isControlsVisible = it }
     }
 
     val onZapping = { isNext: Boolean ->
@@ -160,9 +160,7 @@ fun PlayerScreen(
         }
     }
 
-    MeusCanaisTheme(
-        useOledTheme = appSettings.useOledTheme
-    ) {
+    MeusCanaisTheme() {
         PlayerContent(
             streamName = streamName,
             uiState = uiState,
@@ -191,30 +189,17 @@ fun PlayerScreen(
             onSelectTrack = { g, t, ty -> viewModel.selectTrack(g, t, ty) },
             onClearTrackOverride = { viewModel.clearTrackOverride(it) },
             onSetSpeed = { viewModel.setPlaybackSpeed(it) },
-            onSwitchStream = { stream ->
-                val currentState = uiState as? PlayerUiState.Playing
-                viewModel.playStream(
-                    streamId = stream.streamId ?: 0, 
-                    type = ContentType.LIVE, 
-                    container = null, 
-                    epgId = stream.epgChannelId,
-                    qualities = currentState?.availableQualities ?: emptyMap(),
-                    categoryId = categoryId,
-                    displayName = stream.name,
-                    streamIcon = stream.streamIcon
-                )
-            },
-            onSetSubtitleSize = { viewModel.setSubtitleSize(it) },
+            onSwitchStream = viewModel::switchChannel,
+            groupChannels = appSettings.groupLiveChannels,
+            onGroupingChanged = viewModel::updateGroupLiveChannels,
+            onVersionSelected = viewModel::selectChannelVersion,
             onDismissZapping = { viewModel.dismissZappingBanner() },
             onZapping = onZapping,
             onSetSleepTimer = { viewModel.setSleepTimer(it) },
             recentChannels = recentChannels,
             sleepTimer = sleepTimer,
-            subtitleSize = subtitleSize,
             player = player,
             resizeMode = resizeMode,
-            isLocked = isLocked,
-            onToggleLock = { isLocked = !it },
             showSettings = showSettings,
             setShowSettings = { showSettings = it },
             showQualityMenu = showQualityMenu,
@@ -228,13 +213,13 @@ fun PlayerScreen(
             isTablet = isTablet,
             isExpanded = isExpanded,
             isTv = isTv,
-            updateInteraction = { lastInteraction = System.currentTimeMillis() },
+            updateInteraction = updateInteraction,
+            onSeekingStateChanged = { isSeekingActive = it },
             digitBuffer = digitBuffer,
             onDigitEntry = { digitBuffer += it },
             zappingSessionId = zappingSessionId,
             isSplitView = isSplitView,
             setSplitView = { isSplitView = it },
-            playerEngine = appSettings.playerEngine,
             zappingChannel = zappingChannel,
             isLiveContent = viewModel.isLiveContent,
             showOverlayWith5sTimer = showOverlayWith5sTimer,
@@ -277,14 +262,13 @@ fun PlayerContent(
     onZapping: (Boolean) -> Unit,
     onDismissZapping: () -> Unit,
     onSetSleepTimer: (Int?) -> Unit,
-    onSetSubtitleSize: (Float) -> Unit,
+    groupChannels: Boolean,
+    onGroupingChanged: (Boolean) -> Unit,
+    onVersionSelected: (Int) -> Unit,
     recentChannels: List<XtreamStream>,
     sleepTimer: Int?,
-    subtitleSize: Float,
     player: Player?,
     resizeMode: Int,
-    isLocked: Boolean,
-    onToggleLock: (Boolean) -> Unit,
     showSettings: Boolean,
     setShowSettings: (Boolean) -> Unit,
     showQualityMenu: Boolean,
@@ -304,13 +288,13 @@ fun PlayerContent(
     zappingSessionId: Int,
     isSplitView: Boolean,
     setSplitView: (Boolean) -> Unit,
-    playerEngine: String,
     zappingChannel: XtreamStream?,
     isLiveContent: Boolean = true,
     showOverlayWith5sTimer: () -> Unit = {},
     isInPip: Boolean = false,
     pipAvailable: Boolean = false,
-    onEnterPip: () -> Unit = {}
+    onEnterPip: () -> Unit = {},
+    onSeekingStateChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val tokens = AppDesignSystem
@@ -320,6 +304,10 @@ fun PlayerContent(
         modifier = Modifier
             .fillMaxSize()
             .background(tokens.colors.background)
+            .onPreviewKeyEvent {
+                updateInteraction()
+                false
+            }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { 
@@ -351,13 +339,13 @@ fun PlayerContent(
                         }
 
                         // Live Zapping Navigation when controls are NOT visible
-                        isLive && !isControlsVisible && (keyEvent.key == Key.DirectionDown || keyCode in listOf(166, 87, 92)) -> {
+                        isLive && ((!isControlsVisible && keyEvent.key == Key.DirectionDown) || keyCode in listOf(166, 87, 92)) -> {
                             updateInteraction()
                             onZapping(true)
                             true
                         }
 
-                        isLive && !isControlsVisible && (keyEvent.key == Key.DirectionUp || keyCode in listOf(167, 88, 93)) -> {
+                        isLive && ((!isControlsVisible && keyEvent.key == Key.DirectionUp) || keyCode in listOf(167, 88, 93)) -> {
                             updateInteraction()
                             onZapping(false)
                             true
@@ -459,11 +447,12 @@ fun PlayerContent(
                         streamName = state.name ?: streamName,
                         streamIcon = state.streamIcon,
                         currentProgram = currentProgram,
+                        nextPrograms = nextPrograms,
                         isControlsVisible = isControlsVisible,
                         isReconnecting = state.isReconnecting,
                         isFavorite = state.isFavorite,
                         onToggleFavorite = onToggleFavorite,
-                        onShowSettings = { setSettingsInitialTab(0); setShowSettings(true) },
+                        onShowSettings = { setSettingsInitialTab(5); setShowSettings(true) },
                         onEnterPip = onEnterPip.takeIf { pipAvailable }
                     )
 
@@ -502,11 +491,12 @@ fun PlayerContent(
                             onShowSpeed = { setShowSpeedMenu(true) },
                             onToggleFavorite = onToggleFavorite,
                             onToggleResizeMode = onToggleResizeMode,
-                            onToggleLock = { onToggleLock(true) },
                             onReload = onReload,
                             onEnterPip = onEnterPip,
                             pipAvailable = pipAvailable,
-                            onSwitchStream = onSwitchStream
+                            onSwitchStream = onSwitchStream,
+                            onInteraction = updateInteraction,
+                            onSeekingStateChanged = onSeekingStateChanged
                         )
                     }
                 }
@@ -551,9 +541,14 @@ fun PlayerContent(
             if ((showSettings || showQualityMenu) && uiState is PlayerUiState.Playing) { 
                 val state = uiState as PlayerUiState.Playing
                 PlayerSettingsDialog(
-                    tracks = state.tracks, 
+                    tracks = state.tracks,
+                    isLive = state.isLive,
+                    groupChannels = groupChannels,
+                    versions = state.availableVersions,
+                    selectedVersionId = state.streamId,
+                    onGroupingChanged = onGroupingChanged,
+                    onVersionSelected = onVersionSelected,
                     sleepTimer = sleepTimer,
-                    subtitleSize = subtitleSize,
                     currentSpeed = state.playbackSpeed,
                     initialTab = settingsInitialTab,
                     onDismiss = { 
@@ -563,7 +558,6 @@ fun PlayerContent(
                     onSelectTrack = onSelectTrack, 
                     onClearOverride = onClearTrackOverride,
                     onSetSleepTimer = onSetSleepTimer,
-                    onSetSubtitleSize = onSetSubtitleSize,
                     onSetSpeed = onSetSpeed,
                     onToggleResizeMode = onToggleResizeMode
                 ) 

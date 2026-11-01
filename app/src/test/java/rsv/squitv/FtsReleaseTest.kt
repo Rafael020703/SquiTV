@@ -27,15 +27,16 @@ class FtsReleaseTest {
     }
     @After fun cleanup() { db.close() }
     @Test fun sameNames() = runBlocking {
-        val result = db.iptvDao().searchStreamsFtsFiltered("Canal", "LIVE", listOf("none"))
+        val result = db.iptvDao().searchStreamsFts("Canal", "LIVE")
         assertEquals(2, result.size)
         assertEquals(setOf(1, 2), result.map { it.id }.toSet())
         assertTrue(result.all { it.streamType == "LIVE" })
     }
-    @Test fun blocked() = runBlocking {
-        val result = db.iptvDao().searchStreamsFtsFiltered("Canal", "LIVE", listOf("a"))
-        assertEquals(1, result.size)
-        assertEquals(2, result.single().id)
+    @Test fun legacyLocksDoNotFilterSearch() = runBlocking {
+        db.iptvDao().insertCategories(listOf(rsv.squitv.data.local.entities.IptvCategoryEntity(
+            "a", "Categoria antiga", "LIVE", isLocked = true)))
+        val result = db.iptvDao().searchStreamsFts("Canal", "LIVE")
+        assertEquals(setOf(1, 2), result.map { it.id }.toSet())
     }
     @Test fun pagedNames() = runBlocking {
         val source = db.iptvDao().searchStreamsFtsPaged("Canal", "LIVE")

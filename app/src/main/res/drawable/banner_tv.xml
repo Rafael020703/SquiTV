@@ -1,105 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
-    android:width="1280dp"
-    android:height="720dp"
-    android:viewportWidth="1280"
-    android:viewportHeight="720">
-
-    <!-- Cinematic Premium Background -->
-    <path android:pathData="M0,0h1280v720h-1280z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:startX="0"
-                android:startY="0"
-                android:endX="1280"
-                android:endY="720"
-                android:type="linear">
-                <item android:offset="0.0" android:color="#FF03060D" />
-                <item android:offset="0.5" android:color="#FF0A1120" />
-                <item android:offset="1.0" android:color="#FF040710" />
-            </gradient>
-        </aapt:attr>
-    </path>
-
-    <!-- Ambient Brand Glow Backdrop -->
-    <path
-        android:pathData="M350,360c0,-180 150,-320 340,-320c190,0 340,140 340,320c0,180 -150,320 -340,320c-190,0 -340,-140 -340,-320z"
-        android:fillAlpha="0.22">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:startX="350"
-                android:startY="40"
-                android:endX="1030"
-                android:endY="680"
-                android:type="linear">
-                <item android:offset="0.0" android:color="#FFFF8A00" />
-                <item android:offset="1.0" android:color="#FFFF5A1F" />
-            </gradient>
-        </aapt:attr>
-    </path>
-
-    <!-- Left side: Emblem Container (TV Box + Play + Waves) -->
-    <!-- Signal Arc Outer -->
-    <path
-        android:pathData="M350,360c0,-38 31,-69 69,-69"
-        android:strokeWidth="6"
-        android:strokeColor="#FF8A00"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000" />
-    <!-- Signal Arc Inner -->
-    <path
-        android:pathData="M370,360c0,-27 22,-49 49,-49"
-        android:strokeWidth="6"
-        android:strokeColor="#FF5A1F"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000" />
-
-    <!-- TV Outline Box -->
-    <path
-        android:pathData="M420,290h160c16,0 30,14 30,30v100c0,16 -14,30 -30,30H420c-16,0 -30,-14 -30,-30V320c0,-16 14,-30 30,-30z"
-        android:fillColor="#151D2A"
-        android:strokeWidth="4"
-        android:strokeColor="#FF8A00"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
-
-    <!-- Antenna Left -->
-    <path
-        android:pathData="M450,290 L420,240"
-        android:strokeWidth="6"
-        android:strokeColor="#FF8A00"
-        android:strokeLineCap="round" />
-    <!-- Antenna Right -->
-    <path
-        android:pathData="M570,290 L600,240"
-        android:strokeWidth="6"
-        android:strokeColor="#FF8A00"
-        android:strokeLineCap="round" />
-
-    <!-- Play Triangle Inside TV Box -->
-    <path
-        android:pathData="M470,335 L470,405 L535,370 Z"
-        android:fillColor="#FFFFFF" />
-
-    <!-- Right side: Professional Typography "SquiTV" -->
-    <!-- S -->
-    <path android:fillColor="#FFFFFF" android:pathData="M670,340c-4,-8 -12,-12 -24,-12c-12,0 -20,4 -20,12c0,8 8,12 20,16c20,4 32,12 32,28c0,20 -16,32 -40,32c-20,0 -36,-12 -40,-32h16c4,8 14,16 24,16c10,0 16,-4 16,-12c0,-8 -8,-12 -20,-16c-20,-4 -32,-12 -32,-28c0,-18 16,-32 36,-32c20,0 34,12 38,28z" />
-    <!-- q -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="320dp" android:height="180dp" android:viewportWidth="320" android:viewportHeight="180">
+    <path android:pathData="M0,0H320V180H0Z" android:fillColor="#080B10"/>
+    <group android:scaleX="1.35" android:scaleY="1.35" android:translateX="-5" android:translateY="18"><path android:pathData="M43,38L38,30M65,38L70,30" android:strokeColor="#FF9A36" android:strokeWidth="4" android:strokeLineCap="round" android:fillColor="#00000000"/>
+    <path android:pathData="M39,38H69A10,10 0,0 1,79 48V66A10,10 0,0 1,69 76H39A10,10 0,0 1,29 66V48A10,10 0,0 1,39 38Z" android:strokeColor="#FF9A36" android:strokeWidth="4" android:fillColor="#00000000"/>
+    <path android:pathData="M49,46L66,57L49,68Z" android:fillColor="#FF6B35"/></group>
+    <group android:scaleX="0.3" android:scaleY="0.3" android:translateX="-50" android:translateY="-18"><path android:fillColor="#FFFFFF" android:pathData="M670,340c-4,-8 -12,-12 -24,-12c-12,0 -20,4 -20,12c0,8 8,12 20,16c20,4 32,12 32,28c0,20 -16,32 -40,32c-20,0 -36,-12 -40,-32h16c4,8 14,16 24,16c10,0 16,-4 16,-12c0,-8 -8,-12 -20,-16c-20,-4 -32,-12 -32,-28c0,-18 16,-32 36,-32c20,0 34,12 38,28z" />
     <path android:fillColor="#FFFFFF" android:pathData="M720,328c-24,0 -40,16 -40,48c0,28 16,48 40,48c12,0 20,-4 28,-12l12,12h16l-16,-16c8,-8 8,-20 8,-32c0,-28 -16,-48 -48,-48zm0,16c16,0 24,12 24,32c0,20 -8,32 -24,32c-16,0 -24,-12 -24,-32c0,-20 8,-32 24,-32z" />
-    <!-- u -->
     <path android:fillColor="#FFFFFF" android:pathData="M784,328h16v60c0,16 8,24 24,24c16,0 24,-8 24,-24v-60h16v60c0,28 -16,40 -40,40c-24,0 -40,-12 -40,-40z" />
-    <!-- i -->
     <path android:fillColor="#FFFFFF" android:pathData="M884,328h16v96h-16z" />
-
-    <!-- T (Accent Color #FF8A00) -->
     <path android:fillColor="#FF8A00" android:pathData="M936,328h64v16h-24v80h-16v-80h-24z" />
-    <!-- V (Accent Color #FF8A00) -->
-    <path android:fillColor="#FF8A00" android:pathData="M1016,328h18l20,68l20,-68h18l-30,96h-16z" />
-
-    <!-- Subtitle Line -->
-    <path
-        android:pathData="M670,450h392"
-        android:strokeWidth="2"
-        android:strokeColor="#44FFFFFF" />
+    <path android:fillColor="#FF8A00" android:pathData="M1016,328h18l20,68l20,-68h18l-30,96h-16z" /></group>
 </vector>

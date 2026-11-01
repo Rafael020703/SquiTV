@@ -1,28 +1,62 @@
-# Gradle / Build
-*.iml
-.gradle
+# Gradle / generated build output (all modules)
+.gradle/
 .kotlin/
-/build
-app/build
-.externalNativeBuild
-.cxx
+**/build/
+.externalNativeBuild/
+.cxx/
+out/
 
-# Local Machine / IDE
+# Local machine / IDE
+*.iml
+.idea/
+.vscode/
 local.properties
-/.idea
 .DS_Store
-/captures
+Thumbs.db
+Desktop.ini
+/captures/
 
-# Keystores & Signing
+# Private signing material and environment settings
 *.jks
 *.keystore
-*.apk
+*.p12
+*.pfx
+key.properties
+keystore.properties
+signing.properties
+secrets.properties
+.env
+.env.*
+!.env.example
+!.env.sample
 
-# AI / Development Artifacts & Dumps
-/.artifacts
-/.agent
+# Distribution files belong in GitHub Releases, not in the source tree
+*.apk
+*.aab
+*.apks
+*.xapk
+*.idsig
+
+# Local diagnostics and temporary files
+*.log
+*.hprof
+*.heapdump
+*.jfr
+*.trace
+*.tmp
+*.bak
+/.artifacts/
+/.agent/
+/.codex/
+/tmp/
+/temp/
 *.artifact.md
 dependencies_output.txt
 ksp_deps.txt
 screenshot.png
-implementation_plan.artifact.md
+
+# Local Gemini task instructions and generated reports; keep files on disk
+/docs/plano-gemini-*.md
+/docs/relatorio-gemini-*.md
+
+# Keep Gradle Wrapper, Room schemas, source resources and release notes tracked.

@@ -11,9 +11,11 @@ class ContentGridState(
     val scroll: LazyGridState = LazyGridState(),
     focusedItem: String = "",
     hasInteracted: Boolean = false,
-    focusedIndex: Int = 0
+    focusedIndex: Int = 0,
+    focusedStreamKey: String = ""
 ) {
     var focusedItem by mutableStateOf(focusedItem)
+    var focusedStreamKey by mutableStateOf(focusedStreamKey)
     var hasInteracted by mutableStateOf(hasInteracted)
     var focusedIndex by mutableIntStateOf(focusedIndex)
 
@@ -21,10 +23,10 @@ class ContentGridState(
         val Saver = listSaver<ContentGridState, Any>(
             save = {
                 listOf(it.scroll.firstVisibleItemIndex, it.scroll.firstVisibleItemScrollOffset,
-                    it.focusedItem, it.hasInteracted, it.focusedIndex)
+                    it.focusedItem, it.hasInteracted, it.focusedIndex, it.focusedStreamKey)
             },
             restore = {
-                ContentGridState(LazyGridState(it[0] as Int, it[1] as Int), it[2] as String, it[3] as Boolean, it[4] as Int)
+                ContentGridState(LazyGridState(it[0] as Int, it[1] as Int), it[2] as String, it[3] as Boolean, it[4] as Int, it.getOrNull(5) as? String ?: "")
             }
         )
     }

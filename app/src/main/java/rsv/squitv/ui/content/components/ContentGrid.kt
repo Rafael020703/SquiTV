@@ -20,7 +20,7 @@ import rsv.squitv.domain.model.ContentType
 import rsv.squitv.domain.model.IptvItem
 import rsv.squitv.util.rememberWindowInfo
 
-private val IptvItem.gridKey: String get() = "${type.name}:$id"
+private val IptvItem.gridKey: String get() = stableKey
 
 @UnstableApi
 @Composable
@@ -49,8 +49,11 @@ fun ContentGrid(
     val favoriteKeys = remember(favorites) {
         favorites.mapTo(HashSet(favorites.size)) { it.id to it.type }
     }
-    val savedIndex = remember(items, state.focusedItem) { items.indexOfFirst { it.gridKey == state.focusedItem } }
-    val explicitIndex = remember(items, targetItemId) { items.indexOfFirst { it.id == targetItemId } }
+    val savedIndex = remember(items, state.focusedItem, state.focusedStreamKey) {
+        items.indexOfFirst { it.gridKey == state.focusedItem }.takeIf { it >= 0 }
+            ?: items.indexOfFirst { it.matchesStreamKey(state.focusedStreamKey) }
+    }
+    val explicitIndex = remember(items, targetItemId) { items.indexOfFirst { it.containsStream(targetItemId) } }
     val focusIndex = when {
         savedIndex >= 0 -> savedIndex
         state.hasInteracted -> state.focusedIndex.coerceIn(0, items.lastIndex.coerceAtLeast(0))
@@ -84,7 +87,7 @@ fun ContentGrid(
 
     // Removing the focused favourite keeps navigation on the neighbouring card.
     LaunchedEffect(items) {
-        if (items.isNotEmpty() && state.focusedItem.isNotEmpty() && savedIndex < 0) {
+        if (items.isNotEmpty() && state.focusedItem.isNotEmpty() && (savedIndex < 0 || items.getOrNull(savedIndex)?.gridKey != state.focusedItem)) {
             state.focusedItem = items[focusIndex].gridKey
             if (useFocus) {
                 if (state.scroll.layoutInfo.visibleItemsInfo.none { it.index == focusIndex }) {
@@ -108,17 +111,19 @@ fun ContentGrid(
         horizontalArrangement = Arrangement.spacedBy(responsive.dp(tokens.spacing.large))
     ) {
         itemsIndexed(items, key = { _, item -> item.gridKey }) { index, item ->
-            val isFavorite = favoriteKeys.contains(item.id to item.type)
+            val isFavorite = favoriteKeys.contains(item.id to item.type) || item.versions.any { favoriteKeys.contains(it.streamId.toString() to item.type) }
             val itemModifier = (if (index == focusIndex) Modifier.focusRequester(gridFocusRequester) else Modifier)
                 .onFocusChanged {
                     if (it.hasFocus) {
                         state.focusedItem = item.gridKey
+                        state.focusedStreamKey = "${item.type.name}:${item.id}"
                         state.focusedIndex = index
                         state.hasInteracted = true
                     }
                 }
             val onOpen = {
                 state.focusedItem = item.gridKey
+                        state.focusedStreamKey = "${item.type.name}:${item.id}"
                 state.focusedIndex = index
                 state.hasInteracted = true
                 onItemClick(item)

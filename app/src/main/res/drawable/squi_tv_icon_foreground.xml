@@ -1,35 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-
-    <!-- Antennas safely positioned inside the 66dp safe area (y: 22 to 86) -->
-    <path
-        android:pathData="M46,32 L40,23"
-        android:strokeWidth="4"
-        android:strokeColor="#FF9A00"
-        android:strokeLineCap="round" />
-
-    <path
-        android:pathData="M62,32 L68,23"
-        android:strokeWidth="4"
-        android:strokeColor="#FF9A00"
-        android:strokeLineCap="round" />
-
-    <!-- Main TV Body -->
-    <path
-        android:pathData="M37,32 L71,32 C78,32 84,37 84,44 L84,69 C84,76 78,82 71,82 L37,82 C30,82 24,76 24,69 L24,44 C24,37 30,32 37,32 Z"
-        android:fillColor="@android:color/transparent"
-        android:strokeWidth="5"
-        android:strokeColor="#FF8A00"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
-
-    <!-- Play Button Triangle inside -->
-    <path
-        android:fillColor="#FF5A1F"
-        android:pathData="M44,46 L44,68 C44,70 46,71 48,70 L67,57 C69,56 69,54 67,53 L48,41 C46,40 44,42 44,46 Z" />
-
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M43,38L38,30M65,38L70,30" android:strokeColor="#FF9A36" android:strokeWidth="4" android:strokeLineCap="round" android:fillColor="#00000000"/>
+    <path android:pathData="M39,38H69A10,10 0,0 1,79 48V66A10,10 0,0 1,69 76H39A10,10 0,0 1,29 66V48A10,10 0,0 1,39 38Z" android:strokeColor="#FF9A36" android:strokeWidth="4" android:fillColor="#00000000"/>
+    <path android:pathData="M49,46L66,57L49,68Z" android:fillColor="#FF6B35"/>
 </vector>

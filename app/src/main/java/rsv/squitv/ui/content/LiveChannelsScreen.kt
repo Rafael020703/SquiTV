@@ -23,7 +23,6 @@ import rsv.squitv.ui.dashboard.PortalBackground
 import rsv.squitv.ui.viewmodel.CategoryViewModel
 import rsv.squitv.ui.viewmodel.MainViewModel
 import rsv.squitv.ui.content.components.ContentGrid
-import rsv.squitv.ui.content.components.PinUnlockDialog
 import rsv.squitv.ui.content.components.SortMenuDialog
 import rsv.squitv.ui.viewmodel.settings.SettingsViewModel
 import rsv.squitv.util.WindowSize
@@ -41,60 +40,32 @@ fun LiveChannelsScreen(
     settingsViewModel: SettingsViewModel,
     libraryViewModel: LibraryViewModel = hiltViewModel(),
     onBack: () -> Unit,
-    onPlay: (Int, String, String, String?, Map<String, Int>, String?, String?) -> Unit,
+    onPlay: (Int, String, String, String?, String?, String?, String?) -> Unit,
     onCategoryClick: (String, String?) -> Unit,
     onNavigateToSearch: () -> Unit
 ) {
     val contentRows by categoryViewModel.currentContentRows.collectAsStateWithLifecycle()
     val favorites by libraryViewModel.favorites.collectAsStateWithLifecycle()
-    val categoriesFlow = remember(viewModel) { viewModel.getCustomizedCategoriesFlow("live") }
-    val categories by categoriesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
-    val categoryCounts by categoryViewModel.categoryCounts.collectAsStateWithLifecycle()
+    val categories by categoryViewModel.navigationCategories.collectAsStateWithLifecycle()
     val isLoading by categoryViewModel.isLoading.collectAsStateWithLifecycle()
     val sortOrder by categoryViewModel.sortOrder.collectAsStateWithLifecycle()
-    val blockedIds by viewModel.blockedCategoryIds.collectAsStateWithLifecycle()
     val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
     
     var showSortMenu by remember { mutableStateOf(false) }
-    var pendingCategoryToUnlock by remember { mutableStateOf<String?>(null) }
     
     val windowInfo = rememberWindowInfo()
     val isCompact = windowInfo.widthSize == WindowSize.COMPACT
     
     val sidebarFocusRequester = remember { FocusRequester() }
     val gridFocusRequester = remember { FocusRequester() }
-    var wasPinDialogActive by remember { mutableStateOf(false) }
 
-    val ids = remember(settings.hideBlockedCategories, blockedIds) {
-        if (settings.hideBlockedCategories) blockedIds else emptySet()
-    }
 
-    var selectedCategoryId by rememberSaveable { mutableStateOf(categoryViewModel.activeCategoryId.value ?: settings.lastLiveCategory) }
+    val selectedCategoryId by categoryViewModel.activeCategoryId.collectAsStateWithLifecycle()
     val gridState = rememberContentGridState("${settings.credentials?.baseUrl}#${settings.credentials?.username}/live/$selectedCategoryId")
 
-    LaunchedEffect(contentRows) {
-        val loadedCatId = contentRows.firstOrNull()?.catId
-        if (loadedCatId != null && selectedCategoryId != loadedCatId) {
-            selectedCategoryId = loadedCatId
-        }
-    }
 
     var isInitialLoad by rememberSaveable { mutableStateOf(true) }
 
-    LaunchedEffect(categories, settings.lastLiveCategory) {
-        if (categories.isNotEmpty()) {
-            val savedCat = settings.lastLiveCategory
-            val isSavedValid = savedCat != null && (savedCat == "RECENTS" || savedCat == "FAVORITES" || categories.any { it.categoryId == savedCat })
-            if (!isSavedValid) {
-                val fallbackCatId = categories.firstOrNull()?.categoryId ?: "RECENTS"
-                if (selectedCategoryId != fallbackCatId) {
-                    selectedCategoryId = fallbackCatId
-                    viewModel.saveLastCategory("live", fallbackCatId)
-                    categoryViewModel.loadContent("live", fallbackCatId, ids)
-                }
-            }
-        }
-    }
 
     LaunchedEffect(isLoading) {
         if (!isLoading && isInitialLoad) {
@@ -102,7 +73,7 @@ fun LiveChannelsScreen(
             delay(200)
             try {
                 val items = contentRows.flatMap { it.items }
-                val hasSavedChannel = settings.lastLiveChannelId != null && items.any { it.id == settings.lastLiveChannelId }
+                val hasSavedChannel = settings.lastLiveChannelId != null && items.any { it.containsStream(settings.lastLiveChannelId) }
                 if (hasSavedChannel) {
                     gridFocusRequester.requestFocus()
                 } else {
@@ -112,57 +83,44 @@ fun LiveChannelsScreen(
         }
     }
 
-    LaunchedEffect(pendingCategoryToUnlock) {
-        if (pendingCategoryToUnlock != null) {
-            wasPinDialogActive = true
-        } else if (wasPinDialogActive) {
-            wasPinDialogActive = false
-            delay(150)
-            try {
-                sidebarFocusRequester.requestFocus()
-            } catch (_: Exception) {}
-        }
-    }
-
     val handleCategorySelect: (String) -> Unit = { catId ->
-        if (blockedIds.contains(catId) && !settings.hideBlockedCategories) {
-            pendingCategoryToUnlock = catId
-        } else {
-            selectedCategoryId = catId
-            viewModel.saveLastCategory("live", catId)
-            categoryViewModel.loadContent("live", catId, ids)
-        }
+        viewModel.saveLastCategory("live", catId)
+        categoryViewModel.loadContent("live", catId)
     }
 
     PortalBackground {
         Column(modifier = Modifier.fillMaxSize()) {
             val activeCat = categories.find { cat -> 
-                cat.categoryId == selectedCategoryId || contentRows.any { it.catId == cat.categoryId } 
+                cat.id == selectedCategoryId || contentRows.any { it.catId == cat.id }
             }
             AppHeader(
                 title = stringResource(R.string.live_tv_nav_title),
-                subtitle = activeCat?.categoryName ?: stringResource(R.string.all_categories_label),
+                subtitle = activeCat?.name ?: stringResource(R.string.all_categories_label),
                 actions = {
                     AppIconButton(Icons.AutoMirrored.Rounded.Sort, { showSortMenu = true })
                     AppIconButton(Icons.Rounded.Search, onNavigateToSearch)
                 }
             )
 
+            if (isCompact) {
+                rsv.squitv.ui.content.components.ContentCategoryStrip(
+                    categories, selectedCategoryId, handleCategorySelect
+                )
+            }
             Row(modifier = Modifier.fillMaxSize()) {
                 if (!isCompact) {
                     AppSidebar(
                         items = categories,
                         selectedItemPredicate = { cat -> 
-                            cat.categoryId == selectedCategoryId || (selectedCategoryId == null && contentRows.any { it.catId == cat.categoryId })
+                            cat.id == selectedCategoryId || (selectedCategoryId == null && contentRows.any { it.catId == cat.id })
                         },
-                        itemLabel = { it.categoryName ?: "" },
-                        itemCount = { cat -> cat.categoryId?.let { categoryCounts[it] } },
+                        itemLabel = { it.name },
+                        itemCount = { it.count },
+                        itemKey = { it.id },
                         onItemClick = { cat ->
-                            cat.categoryId?.let { catId ->
+                            cat.id.let { catId ->
                                 handleCategorySelect(catId)
-                                if (!blockedIds.contains(catId) || settings.hideBlockedCategories) {
-                                    try { gridFocusRequester.requestFocus() } catch (_: Exception) {}
-                                }
+                                try { gridFocusRequester.requestFocus() } catch (_: Exception) {}
                             }
                         },
                         onItemFocus = { _ ->
@@ -183,16 +141,16 @@ fun LiveChannelsScreen(
                         )
                     } else {
                         val allItems = remember(contentRows) { contentRows.flatMap { it.items } }
-                        val activeCatId = selectedCategoryId ?: activeCat?.categoryId ?: settings.lastLiveCategory ?: categories.firstOrNull()?.categoryId ?: "RECENTS"
+                        val activeCatId = selectedCategoryId ?: activeCat?.id ?: settings.lastLiveCategory ?: categories.firstOrNull()?.id ?: "RECENTS"
                         val targetChannelId = remember(allItems, activeCatId, settings.lastLiveChannelId, settings.lastLiveCategory, settings.lastLiveCategoryChannels) {
                             val globalId = settings.lastLiveChannelId
                             val globalCat = settings.lastLiveCategory
-                            if (globalId != null && globalCat == activeCatId && allItems.any { it.id == globalId }) {
+                            if (globalId != null && globalCat == activeCatId && allItems.any { it.containsStream(globalId) }) {
                                 Timber.i("GLOBAL_CHANNEL_PRIORITY_APPLIED: categoryId=$activeCatId, channelId=$globalId")
                                 globalId
                             } else {
                                 val catSpecificId = settings.lastLiveCategoryChannels[activeCatId]
-                                if (catSpecificId != null && allItems.any { it.id == catSpecificId }) {
+                                if (catSpecificId != null && allItems.any { it.containsStream(catSpecificId) }) {
                                     Timber.i("CATEGORY_CHANNEL_MEMORY_HIT: categoryId=$activeCatId, channelId=$catSpecificId")
                                     catSpecificId
                                 } else {
@@ -216,7 +174,7 @@ fun LiveChannelsScreen(
                             onItemClick = { item ->
                                 Timber.i("PLAYBACK_REQUESTED_BY_USER: channelId=${item.id}, name=${item.name}")
                                 viewModel.saveLastChannel("live", activeCatId, item.id, item.name)
-                                onPlay(item.id.toInt(), item.name, item.type.toString(), item.epgId, item.qualities, item.icon, activeCatId)
+                                onPlay(item.id.toInt(), item.name, item.type.toString(), item.epgId, categoryViewModel.capturePlaybackSource(), item.icon, activeCatId)
                             }
                         )
                     }
@@ -233,19 +191,4 @@ fun LiveChannelsScreen(
         )
     }
 
-    if (pendingCategoryToUnlock != null) {
-        PinUnlockDialog(
-            onDismiss = { pendingCategoryToUnlock = null },
-            onConfirm = { pin ->
-                if (pin == settings.appPin) {
-                    val unlockedCat = pendingCategoryToUnlock!!
-                    viewModel.unlockCategory(unlockedCat)
-                    selectedCategoryId = unlockedCat
-                    viewModel.saveLastCategory("live", unlockedCat)
-                    categoryViewModel.loadContent("live", unlockedCat, ids)
-                    pendingCategoryToUnlock = null
-                }
-            }
-        )
-    }
 }

@@ -37,7 +37,6 @@ enum class HomeCardType {
     LIVE_TV,
     MOVIES,
     SERIES,
-    EPG,
     MULTI_VIEW,
     DOWNLOADS,
     FAVORITES
@@ -239,7 +238,6 @@ private fun HomeCardGraphic(
             HomeCardType.LIVE_TV -> drawLiveTvGraphic(w, h, themeColor, strokeAlpha, fillAlpha)
             HomeCardType.MOVIES -> drawMoviesGraphic(w, h, themeColor, strokeAlpha, fillAlpha)
             HomeCardType.SERIES -> drawSeriesGraphic(w, h, themeColor, strokeAlpha, fillAlpha)
-            HomeCardType.EPG -> drawEpgGraphic(w, h, themeColor, strokeAlpha, fillAlpha)
             HomeCardType.MULTI_VIEW -> drawMultiViewGraphic(w, h, themeColor, strokeAlpha, fillAlpha)
             HomeCardType.DOWNLOADS -> drawDownloadsGraphic(w, h, themeColor, strokeAlpha, fillAlpha)
             HomeCardType.FAVORITES -> drawFavoritesGraphic(w, h, themeColor, strokeAlpha, fillAlpha)
@@ -435,78 +433,6 @@ private fun DrawScope.drawSeriesGraphic(
         close()
     }
     drawPath(playPath, color = color.copy(alpha = strokeAlpha))
-}
-
-// 4. EPG: Programming Timeline Grid
-private fun DrawScope.drawEpgGraphic(
-    w: Float, h: Float, color: Color, strokeAlpha: Float, fillAlpha: Float
-) {
-    val gridX = w * 0.45f
-    val gridY = h * 0.12f
-    val gridW = w * 0.48f
-    val gridH = h * 0.42f
-
-    // Grid Container Frame
-    drawRoundRect(
-        color = color.copy(alpha = strokeAlpha * 0.5f),
-        topLeft = Offset(gridX, gridY),
-        size = Size(gridW, gridH),
-        cornerRadius = CornerRadius(8f, 8f),
-        style = Stroke(width = 2f)
-    )
-
-    // Header timeline bar
-    drawRect(
-        color = color.copy(alpha = fillAlpha),
-        topLeft = Offset(gridX, gridY),
-        size = Size(gridW, gridH * 0.25f)
-    )
-    for (i in 1..3) {
-        val tx = gridX + (gridW / 4) * i
-        drawLine(
-            color = color.copy(alpha = strokeAlpha * 0.4f),
-            start = Offset(tx, gridY + 4f),
-            end = Offset(tx, gridY + gridH * 0.25f - 4f),
-            strokeWidth = 2f
-        )
-    }
-
-    // Row 1 Block (Active program highlighted)
-    drawRoundRect(
-        color = color.copy(alpha = fillAlpha * 2.5f),
-        topLeft = Offset(gridX + 8f, gridY + gridH * 0.32f),
-        size = Size(gridW * 0.55f, gridH * 0.28f),
-        cornerRadius = CornerRadius(6f, 6f)
-    )
-    drawRoundRect(
-        color = color.copy(alpha = strokeAlpha),
-        topLeft = Offset(gridX + 8f, gridY + gridH * 0.32f),
-        size = Size(gridW * 0.55f, gridH * 0.28f),
-        cornerRadius = CornerRadius(6f, 6f),
-        style = Stroke(width = 2.5f)
-    )
-
-    // Row 1 Next Block
-    drawRoundRect(
-        color = color.copy(alpha = fillAlpha * 0.8f),
-        topLeft = Offset(gridX + gridW * 0.60f, gridY + gridH * 0.32f),
-        size = Size(gridW * 0.35f, gridH * 0.28f),
-        cornerRadius = CornerRadius(6f, 6f)
-    )
-
-    // Row 2 Block
-    drawRoundRect(
-        color = color.copy(alpha = fillAlpha * 0.8f),
-        topLeft = Offset(gridX + 8f, gridY + gridH * 0.66f),
-        size = Size(gridW * 0.40f, gridH * 0.28f),
-        cornerRadius = CornerRadius(6f, 6f)
-    )
-    drawRoundRect(
-        color = color.copy(alpha = fillAlpha * 1.2f),
-        topLeft = Offset(gridX + gridW * 0.45f, gridY + gridH * 0.66f),
-        size = Size(gridW * 0.50f, gridH * 0.28f),
-        cornerRadius = CornerRadius(6f, 6f)
-    )
 }
 
 // 5. MULTI-VIEW: 4 Mini Screen Grid

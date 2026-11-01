@@ -50,8 +50,8 @@ interface IptvDao {
     @Query("SELECT * FROM iptv_categories WHERE type = :type ORDER BY isPinned DESC, name ASC")
     suspend fun getCategoriesByType(type: String): List<IptvCategoryEntity>
 
-    @Query("UPDATE iptv_categories SET isLocked = :locked WHERE id = :id AND type = :type")
-    suspend fun updateCategoryLock(id: String, type: String, locked: Boolean)
+    @Query("SELECT * FROM iptv_categories WHERE type = :type ORDER BY isPinned DESC, name ASC")
+    fun observeCategoriesByType(type: String): Flow<List<IptvCategoryEntity>>
 
     @Query("UPDATE iptv_categories SET isPinned = :pinned WHERE id = :id AND type = :type")
     suspend fun updateCategoryPinned(id: String, type: String, pinned: Boolean)
@@ -142,6 +142,9 @@ interface IptvDao {
     @Query("SELECT * FROM iptv_streams WHERE streamType = :type")
     suspend fun getStreamsByType(type: String): List<IptvStreamEntity>
 
+    @Query("SELECT * FROM iptv_streams WHERE streamType = :type ORDER BY name ASC, id ASC")
+    fun observeStreamsByType(type: String): Flow<List<IptvStreamEntity>>
+
     @Query("SELECT * FROM iptv_streams WHERE streamType = :type AND added IS NOT NULL AND added != '' ORDER BY added DESC, id DESC LIMIT :limit")
     suspend fun getRecentStreamsCandidatesByType(type: String, limit: Int): List<IptvStreamEntity>
 
@@ -165,12 +168,11 @@ interface IptvDao {
         JOIN iptv_streams_fts f ON s.rowid = f.rowid
         WHERE iptv_streams_fts MATCH :query || '*'
         AND s.streamType = :type
-        AND s.categoryId NOT IN (:blockedIds)
     """)
-    suspend fun searchStreamsFtsFiltered(query: String, type: String, blockedIds: List<String>): List<IptvStreamEntity>
+    suspend fun searchStreamsFts(query: String, type: String): List<IptvStreamEntity>
 
-    @Query("SELECT * FROM iptv_streams WHERE name LIKE '%' || :query || '%' AND categoryId NOT IN (:blockedIds)")
-    suspend fun searchAllStreamsFiltered(query: String, blockedIds: List<String>): List<IptvStreamEntity>
+    @Query("SELECT * FROM iptv_streams WHERE name LIKE '%' || :query || '%'")
+    suspend fun searchAllStreams(query: String): List<IptvStreamEntity>
 
     @Query("SELECT * FROM iptv_streams WHERE id IN (:ids)")
     suspend fun getStreamsByIds(ids: List<Int>): List<IptvStreamEntity>
@@ -231,14 +233,6 @@ interface IptvDao {
     @Query("SELECT * FROM episodes WHERE title LIKE '%' || :query || '%'")
     suspend fun searchEpisodes(query: String): List<EpisodeEntity>
 
-    @Transaction
-    @Query("""
-        SELECT e.* FROM episodes e 
-        INNER JOIN iptv_streams s ON e.seriesId = s.id AND e.streamType = s.streamType 
-        WHERE e.title LIKE '%' || :query || '%' AND s.categoryId NOT IN (:blockedIds)
-    """)
-    suspend fun searchEpisodesFiltered(query: String, blockedIds: List<String>): List<EpisodeEntity>
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSeasons(seasons: List<SeasonEntity>)
 
@@ -280,6 +274,25 @@ interface IptvDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDownload(download: DownloadEntity)
+
+    // Progress must never recreate a download removed while persistence was pending.
+    @Query("""
+        UPDATE downloads
+        SET status = :status, progress = :progress, size = :size,
+            downloadedBytes = :downloadedBytes, downloadSpeedMbps = :downloadSpeedMbps
+        WHERE streamId = :streamId AND (
+            status != :status OR ABS(progress - :progress) >= 0.5
+            OR downloadedBytes != :downloadedBytes OR :status IN ('COMPLETED', 'FAILED')
+        )
+    """)
+    suspend fun updateDownloadProgress(
+        streamId: Int,
+        status: String,
+        progress: Float,
+        size: Long,
+        downloadedBytes: Long,
+        downloadSpeedMbps: Double
+    )
 
     @Query("SELECT * FROM downloads")
     fun getAllDownloadsFlow(): kotlinx.coroutines.flow.Flow<List<DownloadEntity>>
@@ -349,27 +362,48 @@ interface IptvDao {
     @Update
     suspend fun updateStream(stream: IptvStreamEntity)
 
-    @Query("UPDATE iptv_streams SET genre = COALESCE(:genre, genre), `cast` = :cast, director = :director, plot = :plot, duration = :duration, backdrop = :backdrop, youtubeTrailer = :trailer WHERE id = :id AND (UPPER(streamType) = UPPER(:type) OR (UPPER(:type) = 'VOD' AND UPPER(streamType) = 'MOVIE') OR (UPPER(:type) = 'MOVIE' AND UPPER(streamType) = 'VOD'))")
+    @Query("UPDATE iptv_streams SET genre = COALESCE(:genre, genre), `cast` = COALESCE(:cast, `cast`), director = COALESCE(:director, director), plot = COALESCE(:plot, plot), duration = COALESCE(:duration, duration), backdrop = COALESCE(:backdrop, backdrop), youtubeTrailer = COALESCE(:trailer, youtubeTrailer) WHERE id = :id AND (UPPER(streamType) = UPPER(:type) OR (UPPER(:type) = 'VOD' AND UPPER(streamType) = 'MOVIE') OR (UPPER(:type) = 'MOVIE' AND UPPER(streamType) = 'VOD'))")
     suspend fun updateDetailedStreamMetadata(id: Int, type: String, genre: String?, cast: String?, director: String?, plot: String?, duration: String?, backdrop: String?, trailer: String?)
 
-    @Query("UPDATE iptv_streams SET `cast` = :cast, director = :director WHERE id = :id AND streamType = :type")
+    @Query("UPDATE iptv_streams SET `cast` = COALESCE(:cast, `cast`), director = COALESCE(:director, director) WHERE id = :id AND streamType = :type")
     suspend fun updateStreamMetadata(id: Int, type: String, cast: String?, director: String?)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateMetadataCache(entry: rsv.squitv.data.local.entities.CatalogMetadataEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateMetadataCacheList(entries: List<rsv.squitv.data.local.entities.CatalogMetadataEntity>)
+
+    @Query("SELECT * FROM catalog_metadata_cache WHERE accountKey = :accountKey AND streamType = :type AND streamId = :id")
+    suspend fun getMetadataCache(accountKey: String, type: String, id: Int): rsv.squitv.data.local.entities.CatalogMetadataEntity?
+
+    @Query("SELECT * FROM catalog_metadata_cache WHERE accountKey = :accountKey AND streamType = :type")
+    suspend fun getAllMetadataCacheForAccount(accountKey: String, type: String): List<rsv.squitv.data.local.entities.CatalogMetadataEntity>
+
+    @Query("""
+        SELECT c.* FROM catalog_metadata_cache c
+        INNER JOIN iptv_streams s ON c.streamId = s.id AND (c.streamType = s.streamType OR (c.streamType = 'VOD' AND s.streamType = 'MOVIE') OR (c.streamType = 'SERIES' AND s.streamType = 'SERIES'))
+        WHERE c.accountKey = :accountKey
+          AND (c.streamType = :type OR (:type = 'VOD' AND s.streamType = 'MOVIE') OR (:type = 'SERIES' AND s.streamType = 'SERIES'))
+          AND c.status IN ('PENDING', 'FAILED_TEMPORARY', 'NO_DATA')
+          AND c.nextEligibleAt <= :now
+        ORDER BY s.name ASC, c.streamId ASC
+        LIMIT :limit
+    """)
+    suspend fun getPendingMetadataItems(accountKey: String, type: String, now: Long, limit: Int): List<rsv.squitv.data.local.entities.CatalogMetadataEntity>
+
+    @Query("SELECT COUNT(*) FROM catalog_metadata_cache WHERE accountKey = :accountKey AND streamType = :type AND status = :status")
+    suspend fun getMetadataCountByStatus(accountKey: String, type: String, status: String): Int
+
+    @Query("SELECT COUNT(*) FROM catalog_metadata_cache WHERE accountKey = :accountKey AND streamType = :type")
+    suspend fun getTotalMetadataCount(accountKey: String, type: String): Int
+
+    @Query("SELECT * FROM iptv_streams WHERE streamType IN ('VOD', 'MOVIE', 'SERIES')")
+    suspend fun getVodAndSeriesStreams(): List<IptvStreamEntity>
 
     @Transaction
     @Query("SELECT * FROM iptv_streams WHERE (streamType = 'VOD' OR streamType = 'SERIES') AND `cast` LIKE '%' || :actor || '%'")
     suspend fun getStreamsByActor(actor: String): List<IptvStreamEntity>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertReminder(reminder: EpgReminderEntity)
-
-    @Query("SELECT * FROM epg_reminders")
-    fun getAllRemindersFlow(): kotlinx.coroutines.flow.Flow<List<EpgReminderEntity>>
-
-    @Query("DELETE FROM epg_reminders WHERE streamId = :streamId AND startTime = :startTime")
-    suspend fun deleteReminder(streamId: Int, startTime: Long)
-
-    @Query("SELECT EXISTS(SELECT 1 FROM epg_reminders WHERE streamId = :streamId AND startTime = :startTime)")
-    suspend fun hasReminder(streamId: Int, startTime: Long): Boolean
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEpgPrograms(programs: List<EpgProgramEntity>)
@@ -379,9 +413,6 @@ interface IptvDao {
 
     @Query("SELECT * FROM epg_programs WHERE channelId = :channelId AND stopTime > :currentTime ORDER BY startTime ASC")
     fun getEpgForChannel(channelId: String, currentTime: Long): kotlinx.coroutines.flow.Flow<List<EpgProgramEntity>>
-
-    @Query("SELECT * FROM epg_programs WHERE stopTime > :startTime AND startTime < :stopTime ORDER BY startTime ASC")
-    suspend fun getEpgInRange(startTime: Long, stopTime: Long): List<EpgProgramEntity>
 
     @Query("DELETE FROM epg_programs")
     suspend fun clearAllEpg()

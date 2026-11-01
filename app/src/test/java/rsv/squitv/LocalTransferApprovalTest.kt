@@ -34,10 +34,10 @@ class LocalTransferApprovalTest {
     private lateinit var sender: LocalTransferViewModel
     private lateinit var receiverBackups: SettingsBackupRepository
     private val advertisedPort = AtomicInteger()
-    private val sent = setOf(BackupOption.THEME, BackupOption.COMPACT_MODE)
-    private val allowed = setOf(BackupOption.THEME)
+    private val sent = setOf(BackupOption.GROUP_CHANNELS, BackupOption.CHANNEL_QUALITY)
+    private val allowed = setOf(BackupOption.GROUP_CHANNELS)
     private val backup = SettingsBackup("SquiTV.Settings", 2, 1L,
-        BackupPreferences(useOledTheme = false, compactMode = false))
+        BackupPreferences(groupLiveChannels = false, preferredChannelQuality = "HD"))
 
     @Before fun preparePeers() = runBlocking {
         Dispatchers.setMain(UnconfinedTestDispatcher())

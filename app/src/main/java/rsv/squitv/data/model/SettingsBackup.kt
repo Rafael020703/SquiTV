@@ -25,25 +25,21 @@ data class SettingsBackup(
 /** Explicit preference allowlist; credentials and PINs are never serialized. */
 @Serializable
 data class BackupPreferences(
-    val playerEngine: String? = null,
-    val bufferStrategy: String? = null,
-    val useOledTheme: Boolean? = null,
-    val dataSaverMode: Boolean? = null,
+    val groupLiveChannels: Boolean? = null,
+    val preferredChannelQuality: String? = null,
     val uiZoom: Float? = null,
     val language: String? = null,
     val syncIntervalHours: Int? = null,
     val autoPlayEnabled: Boolean? = null,
-    val defaultResizeMode: Int? = null,
-    val showDiagnostics: Boolean? = null,
-    val compactMode: Boolean? = null,
-    val hideBlockedCategories: Boolean? = null,
     val downloadWifiOnly: Boolean? = null,
     val smartDownloadsEnabled: Boolean? = null,
     val preferredAudioLang: String? = null,
     val preferredSubtitleLang: String? = null,
-    val detailedNotifications: Boolean? = null,
     val backgroundPlaybackEnabled: Boolean? = null,
-    val pipAutoEnterEnabled: Boolean? = null
+    val pipAutoEnterEnabled: Boolean? = null,
+    val movieCategoryMode: String? = null,
+    val seriesCategoryMode: String? = null,
+    val preparationSpeed: String? = null
 )
 
 @Serializable
@@ -60,13 +56,15 @@ data class BackupCategories(val order: List<String>? = null, val hidden: Set<Str
 data class BackupProfile(val id: String, val name: String, val iconUrl: String? = null, val isChild: Boolean = false)
 
 enum class BackupOption(val preferenceKey: String? = null) {
-    PLAYER_ENGINE("playerEngine"), BUFFER("bufferStrategy"), THEME("useOledTheme"),
-    DATA_SAVER("dataSaverMode"), ZOOM("uiZoom"), LANGUAGE("language"), SYNC_INTERVAL("syncIntervalHours"),
-    AUTO_PLAY("autoPlayEnabled"), RESIZE_MODE("defaultResizeMode"), DIAGNOSTICS("showDiagnostics"),
-    COMPACT_MODE("compactMode"), HIDE_BLOCKED("hideBlockedCategories"), WIFI_ONLY("downloadWifiOnly"),
+    GROUP_CHANNELS("groupLiveChannels"), CHANNEL_QUALITY("preferredChannelQuality"),
+    ZOOM("uiZoom"), LANGUAGE("language"), SYNC_INTERVAL("syncIntervalHours"),
+    AUTO_PLAY("autoPlayEnabled"),
+    WIFI_ONLY("downloadWifiOnly"),
     SMART_DOWNLOADS("smartDownloadsEnabled"), AUDIO_LANGUAGE("preferredAudioLang"),
-    SUBTITLE_LANGUAGE("preferredSubtitleLang"), NOTIFICATIONS("detailedNotifications"),
+    SUBTITLE_LANGUAGE("preferredSubtitleLang"),
     BACKGROUND_AUDIO("backgroundPlaybackEnabled"), PIP("pipAutoEnterEnabled"),
+    MOVIE_CATEGORY_MODE("movieCategoryMode"), SERIES_CATEGORY_MODE("seriesCategoryMode"),
+    PREPARATION_SPEED("preparationSpeed"),
     CATEGORY_ORDER, HIDDEN_CATEGORIES, HOME_SECTIONS, DISPLAY_NAMES, PROFILES, FAVORITES
 }
 
@@ -74,7 +72,7 @@ object SettingsBackupCodec {
     const val MAX_BYTES = 10 * 1024 * 1024
     private const val FORMAT = "SquiTV.Settings"
     private val types = setOf("live", "vod", "series")
-    private val json = Json { prettyPrint = true; explicitNulls = false }
+    private val json = Json { prettyPrint = true; explicitNulls = false; ignoreUnknownKeys = true }
 
     fun accountKey(credentials: XtreamCredentials): String {
         val user = credentials.username.trim().lowercase(Locale.ROOT)
@@ -105,23 +103,24 @@ object SettingsBackupCodec {
             types.forEach { type -> categories[type] = BackupCategories(
                 settings.categoryOrderMap["${account}_$type"].orEmpty(), settings.hiddenCategoriesMap["${account}_$type"].orEmpty()) }
         }
+        val currentAccountKey = settings.credentials?.let { accountKey(it) } ?: ""
         return SettingsBackup(
-            FORMAT, 2, System.currentTimeMillis(),
+            FORMAT, 3, System.currentTimeMillis(),
             BackupPreferences(
-                playerEngine = settings.playerEngine, bufferStrategy = settings.bufferStrategy,
-                useOledTheme = settings.useOledTheme, dataSaverMode = settings.dataSaverMode,
+                groupLiveChannels = settings.groupLiveChannels, preferredChannelQuality = settings.preferredChannelQuality,
                 uiZoom = settings.uiZoom, language = settings.language.ifBlank { "auto" },
                 syncIntervalHours = settings.syncIntervalHours, autoPlayEnabled = settings.autoPlayEnabled,
-                defaultResizeMode = settings.defaultResizeMode, showDiagnostics = settings.showDiagnostics,
-                compactMode = settings.compactMode, hideBlockedCategories = settings.hideBlockedCategories,
                 downloadWifiOnly = settings.downloadWifiOnly, smartDownloadsEnabled = settings.smartDownloadsEnabled,
                 preferredAudioLang = settings.preferredAudioLang.orEmpty(), preferredSubtitleLang = settings.preferredSubtitleLang.orEmpty(),
-                detailedNotifications = settings.detailedNotifications, backgroundPlaybackEnabled = settings.backgroundPlaybackEnabled,
-                pipAutoEnterEnabled = settings.pipAutoEnterEnabled
+                backgroundPlaybackEnabled = settings.backgroundPlaybackEnabled,
+                pipAutoEnterEnabled = settings.pipAutoEnterEnabled,
+                movieCategoryMode = settings.getMovieCategoryMode(currentAccountKey, settings.activeProfileId).name,
+                seriesCategoryMode = settings.getSeriesCategoryMode(currentAccountKey, settings.activeProfileId).name,
+                preparationSpeed = settings.preparationSpeed
             ),
             groups.map { (account, categories) ->
                 BackupAccount(fingerprint(account), categories, settings.displayNamesMap[account].orEmpty())
-            }, settings.hiddenSections,
+            }, settings.hiddenSections - "EPG",
             profiles = settings.profiles.map { BackupProfile(it.id, it.name, it.iconUrl, it.isChild) },
             activeProfileId = settings.activeProfileId, profileImageUrl = settings.profileImageUrl.orEmpty()
         ).also(::validate)
@@ -131,7 +130,8 @@ object SettingsBackupCodec {
 
     fun decode(text: String): SettingsBackup {
         require(text.toByteArray(Charsets.UTF_8).size <= MAX_BYTES)
-        return json.decodeFromString<SettingsBackup>(text.removePrefix("\uFEFF")).also(::validate)
+        return json.decodeFromString<SettingsBackup>(text.removePrefix("\uFEFF"))
+            .let { it.copy(hiddenSections = it.hiddenSections?.minus("EPG")) }.also(::validate)
     }
 
     fun select(backup: SettingsBackup, selected: Set<BackupOption>): SettingsBackup {
@@ -166,14 +166,12 @@ object SettingsBackupCodec {
     }
 
     fun validate(backup: SettingsBackup) {
-        require(backup.format == FORMAT && backup.schemaVersion in 1..2 && backup.createdAt > 0)
+        require(backup.format == FORMAT && backup.schemaVersion in 1..3 && backup.createdAt > 0)
         with(backup.preferences) {
-            playerEngine?.let { require(it in setOf("EXO", "VLC", "IJK")) }
-            bufferStrategy?.let { require(it in setOf("Stable", "Fast", "Safe")) }
+            preferredChannelQuality?.let { require(it in setOf("AUTO", "SD", "HD", "FHD", "UHD")) }
             uiZoom?.let { require(it.isFinite() && it in 0.5f..2f) }
             language?.let { require(it in setOf("auto", "pt", "en", "es")) }
             syncIntervalHours?.let { require(it in 1..8760) }
-            defaultResizeMode?.let { require(it in 0..4) }
             preferredAudioLang?.let { require(it.length <= 64) }
             preferredSubtitleLang?.let { require(it.length <= 64) }
         }

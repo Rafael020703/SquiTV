@@ -48,7 +48,8 @@ fun MainNavigation(
     val loadingMessage by mainViewModel.loadingMessage.collectAsStateWithLifecycle()
     val tokens = AppDesignSystem
     
-    val navController = rememberNavController()
+    // A new save-state namespace avoids restoring retired EPG/player route schemas after an update.
+    val navController = key("navigation-simplification-v1") { rememberNavController() }
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
 
@@ -59,7 +60,7 @@ fun MainNavigation(
     LaunchedEffect(externalRoute, appState, currentRoute) {
         val target = externalRoute ?: return@LaunchedEffect
         val route = currentRoute ?: return@LaunchedEffect
-        if (route.contains("Initial") || appState is AppState.Initializing || appState is AppState.Locked ||
+        if (route.contains("Initial") || appState is AppState.Initializing ||
             appState is AppState.SyncRequired) return@LaunchedEffect
         if (appState is AppState.Ready && (route.contains("Sync") || route.contains("Login"))) return@LaunchedEffect
         if (appState is AppState.LoginRequired && !route.contains("Login") && !route.contains("Updates")) return@LaunchedEffect
@@ -82,9 +83,6 @@ fun MainNavigation(
         appController.actions.collect { action ->
             when (action) {
                 is AppAction.Back -> {
-                    // Safety check for UI lock
-                    if (appState is AppState.Locked) return@collect
-
                     if (showExitDialog) {
                         showExitDialog = false
                         return@collect
@@ -126,7 +124,7 @@ fun MainNavigation(
                         streamType = action.type,
                         epgId = action.epgId,
                         container = action.container,
-                        qualitiesJson = null
+                        sourceId = null
                     )
                 )
             }
@@ -162,11 +160,6 @@ fun MainNavigation(
             }
             else -> {}
         }
-    }
-
-    // Full Screen Overlays
-    if (appState is AppState.Locked) {
-        AppLockScreen(onUnlock = { pin -> mainViewModel.unlockApp(pin) })
     }
 
     if (showExitDialog) {

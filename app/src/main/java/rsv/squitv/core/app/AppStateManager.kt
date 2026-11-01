@@ -1,7 +1,6 @@
 ﻿package rsv.squitv.core.app
 
 import rsv.squitv.core.domain.interactor.AuthManager
-import rsv.squitv.core.domain.interactor.SecurityManager
 import rsv.squitv.core.domain.interactor.SyncManager
 import rsv.squitv.core.domain.state.AppState
 import kotlinx.coroutines.CoroutineScope
@@ -15,24 +14,21 @@ import javax.inject.Singleton
 @Singleton
 class AppStateManager @Inject constructor(
     private val authManager: AuthManager,
-    private val syncManager: SyncManager,
-    private val securityManager: SecurityManager
+    private val syncManager: SyncManager
 ) {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     val appState: StateFlow<AppState> = combine(
         authManager.isLoggedIn,
-        syncManager.isContentReady,
-        securityManager.isAppLocked
-    ) { isLoggedIn, isContentReady, isAppLocked ->
+        syncManager.isContentReady
+    ) { isLoggedIn, isContentReady ->
         val state = when {
             isLoggedIn == null -> AppState.Initializing
             isLoggedIn == false -> AppState.LoginRequired
-            isAppLocked -> AppState.Locked
             !isContentReady -> AppState.SyncRequired
             else -> AppState.Ready
         }
-        Timber.i("AppStateManager: Calculated State -> $state (isLoggedIn=$isLoggedIn, isContentReady=$isContentReady, isAppLocked=$isAppLocked)")
+        Timber.i("AppStateManager: Calculated State -> $state (isLoggedIn=$isLoggedIn, isContentReady=$isContentReady)")
         state
     }.stateIn(appScope, SharingStarted.Eagerly, AppState.Initializing)
 }

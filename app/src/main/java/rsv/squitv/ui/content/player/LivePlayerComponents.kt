@@ -73,6 +73,7 @@ fun BoxScope.LiveBottomOverlay(
     streamName: String,
     streamIcon: String?,
     currentProgram: EpgProgramme?,
+    nextPrograms: List<EpgProgramme> = emptyList(),
     isControlsVisible: Boolean,
     isReconnecting: Boolean = false,
     isFavorite: Boolean = false,
@@ -102,7 +103,7 @@ fun BoxScope.LiveBottomOverlay(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(if (isExpanded) tokens.spacing.extraLarge * 2 else tokens.spacing.large)
+                .padding(if (isExpanded) 20.dp else 12.dp)
                 .background(
                     Brush.verticalGradient(
                         listOf(Color.Transparent, tokens.colors.backgroundSecondary.copy(alpha = 0.95f))
@@ -162,7 +163,7 @@ fun BoxScope.LiveBottomOverlay(
                     ControlIconButton(
                         icon = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                         onClick = onToggleFavorite,
-                        contentDescription = "Favorito",
+                        contentDescription = stringResource(if (isFavorite) R.string.quick_favorite_remove else R.string.quick_favorite_add),
                         tint = if (isFavorite) tokens.colors.error else Color.White,
                         modifier = Modifier.focusRequester(firstBtnFocusRequester)
                     )
@@ -181,6 +182,11 @@ fun BoxScope.LiveBottomOverlay(
             if (currentProgram != null) {
                 Spacer(modifier = Modifier.height(tokens.spacing.large))
                 EpgMiniProgress(currentProgram, isExpanded)
+            }
+            nextPrograms.take(2).forEach { program ->
+                Text(stringResource(R.string.upcoming_program, formatProgramTime(program.start), program.title.orEmpty()),
+                    style = tokens.typography.caption, color = tokens.colors.textSecondary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

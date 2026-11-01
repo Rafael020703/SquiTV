@@ -51,10 +51,6 @@ fun CategoryListItem(
         label = "bgColor"
     )
 
-    val displayText = remember(name, count) {
-        if (count != null) "$name ($count)" else name
-    }
-
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -72,14 +68,23 @@ fun CategoryListItem(
             .background(backgroundColor, tokens.shapes.medium)
             .padding(vertical = responsive.dp(tokens.spacing.medium), horizontal = responsive.dp(tokens.spacing.large))
     ) {
-        Text(
-            text = displayText.uppercase(),
-            color = textColor,
-            style = tokens.typography.label.copy(fontSize = responsive.sp(tokens.typography.label.fontSize)),
-            fontWeight = if (isFocused || isSelected) FontWeight.Black else FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = name.uppercase(),
+                color = textColor,
+                style = tokens.typography.label.copy(fontSize = responsive.sp(tokens.typography.label.fontSize)),
+                fontWeight = if (isFocused || isSelected) FontWeight.Black else FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            if (count != null) Text(
+                text = count.toString(),
+                color = textColor,
+                style = tokens.typography.caption,
+                maxLines = 1
+            )
+        }
     }
 }
 
@@ -141,62 +146,6 @@ fun SortMenuDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text("FECHAR", color = tokens.colors.textSecondary, fontWeight = FontWeight.Bold)
-            }
-        },
-        containerColor = tokens.colors.backgroundSecondary,
-        shape = tokens.shapes.extraLarge
-    )
-}
-
-@Composable
-fun PinUnlockDialog(
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
-) {
-    val tokens = AppDesignSystem
-    var pinValue by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { 
-            Text(
-                text = stringResource(R.string.locked_category_title).uppercase(),
-                style = tokens.typography.headline,
-                fontWeight = FontWeight.Black,
-                color = tokens.colors.primary
-            ) 
-        },
-        text = {
-            Column {
-                Text(
-                    text = stringResource(R.string.locked_category_msg),
-                    style = tokens.typography.body,
-                    color = tokens.colors.textSecondary
-                )
-                Spacer(modifier = Modifier.height(tokens.spacing.large))
-                OutlinedTextField(
-                    value = pinValue,
-                    onValueChange = { if (it.length <= 4) pinValue = it },
-                    label = { Text(stringResource(R.string.pin_label)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    shape = tokens.shapes.medium,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = tokens.colors.primary,
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    )
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(pinValue) },
-                colors = ButtonDefaults.buttonColors(containerColor = tokens.colors.primary, contentColor = Color.Black),
-                shape = tokens.shapes.medium
-            ) {
-                Text(stringResource(R.string.unlock_button).uppercase(), fontWeight = FontWeight.Black)
             }
         },
         containerColor = tokens.colors.backgroundSecondary,

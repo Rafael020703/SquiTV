@@ -9,6 +9,5 @@ data class UserProfile(
     val id: String,
     val name: String,
     val iconUrl: String? = null,
-    val isChild: Boolean = false,
-    val pin: String? = null
+    val isChild: Boolean = false
 )

@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -137,10 +136,11 @@ fun SearchScreenContent(
     val gridState = rememberContentGridState("search/$query/$selectedType")
     val useFocus = windowInfo.isTv || LocalInputModeManager.current.inputMode == InputMode.Keyboard
     fun resultKey(result: SearchResult) = when (result) {
-        is SearchResult.Stream -> "s_${result.stream.streamType}_${result.stream.id}"
+        is SearchResult.Stream -> result.item.stableKey
         is SearchResult.Episode -> "e_${result.episode.episodeId}"
     }
-    val savedIndex = results.indexOfFirst { resultKey(it) == gridState.focusedItem }
+    val savedIndex = results.indexOfFirst { resultKey(it) == gridState.focusedItem }.takeIf { it >= 0 }
+        ?: results.indexOfFirst { it is SearchResult.Stream && it.item.matchesStreamKey(gridState.focusedStreamKey) }
     val focusIndex = if (savedIndex >= 0) savedIndex else gridState.focusedIndex.coerceIn(0, results.lastIndex.coerceAtLeast(0))
 
     LaunchedEffect(Unit) {
@@ -150,7 +150,7 @@ fun SearchScreenContent(
         }
     }
 
-    LaunchedEffect(gridState, isLoading, results.isNotEmpty()) {
+    LaunchedEffect(gridState, isLoading, results) {
         if (!isLoading && results.isNotEmpty() && gridState.hasInteracted && useFocus) {
             withFrameNanos { }
             if (gridState.scroll.layoutInfo.visibleItemsInfo.none { it.index == focusIndex }) {
@@ -253,12 +253,12 @@ fun SearchScreenContent(
                 ) {
                     itemsIndexed(results, key = { _, it -> 
                         when(it) {
-                            is SearchResult.Stream -> "s_${it.stream.streamType}_${it.stream.id}"
+                            is SearchResult.Stream -> it.item.stableKey
                             is SearchResult.Episode -> "e_${it.episode.episodeId}"
                         }
                     }) { index, result ->
                         val item = when(result) {
-                            is SearchResult.Stream -> result.stream.toIptvItem()
+                            is SearchResult.Stream -> result.item
                             is SearchResult.Episode -> IptvItem(
                                 id = result.episode.streamId.toString(),
                                 name = result.episode.title,
@@ -267,10 +267,11 @@ fun SearchScreenContent(
                             )
                         }
 
-                        val isFav = result is SearchResult.Stream && favoriteKeys.contains(item.id to item.type)
+                        val isFav = result is SearchResult.Stream && (favoriteKeys.contains(item.id to item.type) || item.versions.any { favoriteKeys.contains(it.streamId.toString() to item.type) })
                         val onFavorite = if (result is SearchResult.Stream) onToggleFavorite?.let { toggle -> { toggle(item, !isFav) } } else null
                         fun rememberSelection() {
                             gridState.focusedItem = resultKey(result)
+                            gridState.focusedStreamKey = "${item.type.name}:${item.id}"
                             gridState.focusedIndex = index
                             gridState.hasInteracted = true
                         }
@@ -278,7 +279,7 @@ fun SearchScreenContent(
                             .onFocusChanged { if (it.hasFocus) rememberSelection() }
                         
                         if (item.type == ContentType.LIVE) {
-                            val sId = (result as? SearchResult.Stream)?.stream?.id ?: 0
+                            val sId = item.id.toInt()
                             ChannelCard(
                                 item = item.copy(isFavorite = isFav),
                                 modifier = itemModifier,

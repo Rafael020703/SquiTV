@@ -54,9 +54,6 @@ sealed interface Route {
     data object DnsTester : Route
 
     @Serializable
-    data object EpgGrid : Route
-
-    @Serializable
     data class Search(val query: String? = null) : Route
 
     @Serializable
@@ -92,7 +89,7 @@ sealed interface Route {
         val epgId: String? = null,
         val seriesId: Int? = null,
         val seasonNumber: Int? = null,
-        val qualitiesJson: String? = null,
+        val sourceId: String? = null,
         val categoryId: String? = null,
         val streamIcon: String? = null
     ) : Route

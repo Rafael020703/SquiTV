@@ -23,6 +23,7 @@ fun IptvStreamEntity.toIptvItem() = IptvItem(
     name = name,
     icon = logo,
     type = ContentType.fromString(streamType),
+    epgId = if (streamType.equals("LIVE", true)) url else null,
     containerExtension = containerExtension,
     rating = rating,
     releaseDate = releaseDate,

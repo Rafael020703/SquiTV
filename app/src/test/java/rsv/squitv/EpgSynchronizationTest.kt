@@ -49,14 +49,14 @@ class EpgSynchronizationTest {
     @Test fun networkFailureIsPropagatedAndKeepsThePreviousGuide() = runBlocking {
         doAnswer { throw IOException("offline") }.`when`(service).getEpg(url)
         try { repository.syncFullEpg(credentials); fail("Expected network failure") } catch (_: IOException) { }
-        assertEquals("Existing", dao.getEpgInRange(now, now + 7200).single().title)
+        assertEquals("Existing", dao.getEpgForChannel("old", now).first().single().title)
     }
 
     @Test fun emptyGuideIsRejectedWithoutErasingPreviousProgramsAndClosesResponse() = runBlocking {
         val response = spy("<tv/>".toResponseBody("text/xml".toMediaType()))
         doReturn(response).`when`(service).getEpg(url)
         try { repository.syncFullEpg(credentials); fail("Expected empty guide failure") } catch (_: IllegalArgumentException) { }
-        assertEquals("Existing", dao.getEpgInRange(now, now + 7200).single().title)
+        assertEquals("Existing", dao.getEpgForChannel("old", now).first().single().title)
         verify(response).close()
     }
 
@@ -68,7 +68,7 @@ class EpgSynchronizationTest {
     @Test fun validatedGuideIsPublishedAndReturnsActualProgramCount() = runBlocking {
         doReturn(validXml().toResponseBody("text/xml".toMediaType())).`when`(service).getEpg(url)
         assertEquals(1, repository.syncFullEpg(credentials))
-        assertEquals("Updated", dao.getEpgInRange(now, now + 7200).single().title)
+        assertEquals("Updated", dao.getEpgForChannel("new", now).first().single().title)
         assertTrue(dao.getEpgForChannel("old", now).first().isEmpty())
     }
 
@@ -78,6 +78,6 @@ class EpgSynchronizationTest {
             repository.syncFullEpg(credentials) { throw CancellationException("Account changed") }
             fail("Expected cancellation")
         } catch (_: CancellationException) { }
-        assertEquals("Existing", dao.getEpgInRange(now, now + 7200).single().title)
+        assertEquals("Existing", dao.getEpgForChannel("old", now).first().single().title)
     }
 }

@@ -17,11 +17,11 @@ class SettingsBackupCodecTest {
             categoryOrderMap = mapOf("${key}_vod" to listOf("80", "2", "1")),
             hiddenCategoriesMap = mapOf("${key}_vod" to setOf("3")),
             displayNamesMap = mapOf(key to "Minha conta"), hiddenSections = setOf("RECENTS"),
-            profiles = listOf(UserProfile("default", "Perfil", pin = "7491")))
+            profiles = listOf(UserProfile("default", "Perfil")))
         return SettingsBackupCodec.create(settings).copy(favorites = listOf(FavoriteEntity(
             streamId = 101, streamType = "MOVIE", name = "Ação", timestamp = 100L, accountId = accountId, profileId = "default")))
     }
-    @Test fun completeBackup_roundTripsAndOffersAll25Options() {
+    @Test fun completeBackup_roundTripsAndOffersAllActiveOptions() {
         val backup = backup()
         assertEquals(backup, SettingsBackupCodec.decode(SettingsBackupCodec.encode(backup)))
         assertEquals(BackupOption.entries.toSet(), SettingsBackupCodec.available(backup))
@@ -53,7 +53,7 @@ class SettingsBackupCodecTest {
     }
     @Test fun receiverSelection_intersectsWithItemsActuallySent() {
         val sent = SettingsBackupCodec.select(backup(), setOf(BackupOption.FAVORITES, BackupOption.CATEGORY_ORDER))
-        val allowed = setOf(BackupOption.FAVORITES, BackupOption.THEME)
+        val allowed = setOf(BackupOption.FAVORITES, BackupOption.CHANNEL_QUALITY)
         val received = SettingsBackupCodec.select(sent, SettingsBackupCodec.available(sent).intersect(allowed))
         assertEquals(setOf(BackupOption.FAVORITES), SettingsBackupCodec.available(received))
     }
@@ -70,6 +70,35 @@ class SettingsBackupCodecTest {
         val legacy = backup().copy(schemaVersion = 1, profiles = null, activeProfileId = null, profileImageUrl = null, favorites = null)
         assertEquals(legacy, SettingsBackupCodec.decode(SettingsBackupCodec.encode(legacy)))
     }
+    @Test fun retiredFieldsInSchemasOneAndTwoAreIgnoredAndNeverReexported() {
+        for (schema in listOf(1, 2)) {
+            val text = """{"format":"SquiTV.Settings","schemaVersion":$schema,"createdAt":1,
+                "preferences":{"playerEngine":"VLC","bufferStrategy":"Fast","useOledTheme":false,
+                    "dataSaverMode":true,"defaultResizeMode":4,"showDiagnostics":true,"compactMode":false,
+                    "hideBlockedCategories":true,"appPin":"1234","appLockEnabled":true,
+                    "detailedNotifications":false,"autoPlayEnabled":false},
+                "profiles":[{"id":"default","name":"Perfil","pin":"9999"}],
+                "hiddenSections":["EPG","MOVIES"]}"""
+            val decoded = SettingsBackupCodec.decode(text)
+            assertEquals(false, decoded.preferences.autoPlayEnabled)
+            assertNull(decoded.preferences.groupLiveChannels)
+            val encoded = SettingsBackupCodec.encode(decoded)
+            listOf("playerEngine", "bufferStrategy", "useOledTheme", "dataSaverMode", "defaultResizeMode",
+                "showDiagnostics", "compactMode", "hideBlockedCategories", "appPin", "appLockEnabled", "detailedNotifications", "pin")
+                .forEach { key -> assertFalse(encoded.contains('"' + key + '"')) }
+        }
+    }
+    @Test fun channelPreferencesRoundTripAndSelectionPreservesFalse() {
+        val changed = backup().copy(preferences = BackupPreferences(groupLiveChannels = false, preferredChannelQuality = "HD"))
+        val selected = SettingsBackupCodec.select(changed, setOf(BackupOption.GROUP_CHANNELS, BackupOption.CHANNEL_QUALITY))
+        val decoded = SettingsBackupCodec.decode(SettingsBackupCodec.encode(selected))
+        assertEquals(false, decoded.preferences.groupLiveChannels)
+        assertEquals("HD", decoded.preferences.preferredChannelQuality)
+        assertEquals(setOf(BackupOption.GROUP_CHANNELS, BackupOption.CHANNEL_QUALITY), SettingsBackupCodec.available(decoded))
+        assertThrows(IllegalArgumentException::class.java) {
+            SettingsBackupCodec.validate(changed.copy(preferences = BackupPreferences(preferredChannelQuality = "8K")))
+        }
+    }
     @Test fun emptySelection_isRejected() {
         assertThrows(IllegalArgumentException::class.java) { SettingsBackupCodec.select(backup(), emptySet()) }
     }
@@ -79,7 +108,7 @@ class SettingsBackupCodecTest {
     }
     @Test fun unknownFormatAndFutureSchema_areRejected() {
         assertThrows(IllegalArgumentException::class.java) { SettingsBackupCodec.validate(backup().copy(format = "OtherApp")) }
-        assertThrows(IllegalArgumentException::class.java) { SettingsBackupCodec.validate(backup().copy(schemaVersion = 3)) }
+        assertThrows(IllegalArgumentException::class.java) { SettingsBackupCodec.validate(backup().copy(schemaVersion = 4)) }
     }
     @Test fun duplicateFavoritesAndMissingAccount_areRejected() {
         val backup = backup()

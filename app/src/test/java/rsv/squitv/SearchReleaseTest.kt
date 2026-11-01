@@ -4,6 +4,12 @@ import android.app.Application
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.delay
+import rsv.squitv.data.repository.SettingsRepository
+import rsv.squitv.core.data.repository.PlaybackSourceRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.*
 import org.junit.After
@@ -32,15 +38,21 @@ class SearchReleaseTest {
     @Before fun setup() { Dispatchers.setMain(dispatcher); repository = mock(CatalogRepository::class.java) }
     @After fun cleanup() { store.clear(); Dispatchers.resetMain() }
     private fun entity(id: Int, name: String) = IptvStreamEntity(id, name, "cat", "VOD", null, null)
-    private fun vm(query: String = "") = SearchViewModel(repository, SavedStateHandle(mapOf("query" to query))).also { store.put("vm", it) }
+    private fun vm(query: String = "") = SearchViewModel(repository, mock(SettingsRepository::class.java).also {
+        `when`(it.settingsFlow).thenReturn(flowOf(SettingsRepository.AppSettings(null, lastSyncTimestamp = 0L, syncIntervalHours = 24)))
+    }, PlaybackSourceRepository(), SavedStateHandle(mapOf("query" to query))).also { store.put("vm", it) }
     private suspend fun answer(query: String, id: Int) {
-        `when`(repository.searchStreams(query, "ALL", emptySet())).thenReturn(listOf(entity(id, query)))
-        `when`(repository.searchEpisodes(query, emptySet())).thenReturn(emptyList())
+        `when`(repository.searchStreams(query, "ALL")).thenReturn(listOf(entity(id, query)))
+        `when`(repository.searchEpisodes(query)).thenReturn(emptyList())
+    }
+    private suspend fun awaitResults(vm: SearchViewModel) = withContext(Dispatchers.Default) {
+        withTimeout(5000) { while (vm.searchResults.value.isEmpty()) delay(10) }
     }
     @Test fun prefilled() = runTest {
         answer("initial", 1)
         val vm = vm("initial")
         runCurrent()
+        awaitResults(vm)
         assertEquals(1, (vm.searchResults.value.single() as SearchResult.Stream).stream.id)
         assertFalse(vm.isLoading.value)
     }
@@ -53,8 +65,9 @@ class SearchReleaseTest {
         advanceTimeBy(249)
         verifyNoInteractions(repository)
         advanceTimeBy(1); runCurrent()
+        awaitResults(vm)
         assertEquals(2, (vm.searchResults.value.single() as SearchResult.Stream).stream.id)
-        verify(repository).searchStreams("latest", "ALL", emptySet())
+        verify(repository).searchStreams("latest", "ALL")
     }
     @Test fun clearPending() = runTest {
         val vm = vm()
@@ -68,7 +81,7 @@ class SearchReleaseTest {
     }
     @Test fun staleResult() = runTest {
         var old: Continuation<List<IptvStreamEntity>>? = null
-        `when`(repository.searchStreams("old", "ALL", emptySet())).thenAnswer { invocation ->
+        `when`(repository.searchStreams("old", "ALL")).thenAnswer { invocation ->
             @Suppress("UNCHECKED_CAST")
             val continuation = invocation.rawArguments.last() as Continuation<List<IptvStreamEntity>>
             old = continuation
@@ -80,6 +93,7 @@ class SearchReleaseTest {
         assertNotNull(old)
         vm.onQueryChanged("latest"); advanceTimeBy(250); runCurrent()
         old!!.resume(listOf(entity(1, "old"))); runCurrent()
+        awaitResults(vm)
         assertEquals(2, (vm.searchResults.value.single() as SearchResult.Stream).stream.id)
     }
 }

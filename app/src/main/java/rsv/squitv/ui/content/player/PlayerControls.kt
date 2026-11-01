@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -65,16 +66,16 @@ fun PlayerControlOverlay(
     onShowQuality: () -> Unit,
     onShowSpeed: () -> Unit,
     onToggleResizeMode: () -> Unit,
-    onToggleLock: () -> Unit,
     onSwitchStream: (XtreamStream) -> Unit,
-    pipAvailable: Boolean = false
+    pipAvailable: Boolean = false,
+    onInteraction: () -> Unit = {},
+    onSeekingStateChanged: (Boolean) -> Unit = {}
 ) {
     val tokens = AppDesignSystem
     val isLive = uiState.contentType == ContentType.LIVE
     val playPauseFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
-        delay(500)
         try { playPauseFocusRequester.requestFocus() } catch (_: Exception) {}
     }
 
@@ -137,7 +138,9 @@ fun PlayerControlOverlay(
                     duration = uiState.duration,
                     bufferedPosition = uiState.bufferedPosition,
                     onSeek = onSeek,
-                    isTv = isTv
+                    isTv = isTv,
+                    onInteraction = onInteraction,
+                    onSeekingStateChanged = onSeekingStateChanged
                 )
             } else if (isLive && currentProgram != null) {
                 EpgMiniProgress(currentProgram, isTv)
@@ -145,17 +148,35 @@ fun PlayerControlOverlay(
 
             Spacer(modifier = Modifier.height(tokens.spacing.large))
 
-            // BUTTONS ROW
+            // BUTTONS ROW WITH EXACT GEOMETRIC CENTER PLAY/PAUSE
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (!isLive) {
-                    // Rewind -10s
-                    PlayerActionIcon(Icons.Rounded.Replay10, onSeekBack, isTv, contentDescription = "Voltar 10s")
-                    Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
+                // Left Wing
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (pipAvailable) {
+                        PlayerActionIcon(Icons.Rounded.PictureInPictureAlt, onEnterPip, isTv, contentDescription = stringResource(R.string.pip_label))
+                        Spacer(Modifier.width(if (isTv) tokens.spacing.large else tokens.spacing.medium))
+                    }
+                    PlayerActionIcon(
+                        if (uiState.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                        onToggleFavorite,
+                        isTv,
+                        tint = if (uiState.isFavorite) tokens.colors.error else Color.White,
+                        contentDescription = stringResource(if (uiState.isFavorite) R.string.quick_favorite_remove else R.string.quick_favorite_add)
+                    )
+                    if (!isLive) {
+                        Spacer(Modifier.width(if (isTv) tokens.spacing.large else tokens.spacing.medium))
+                        PlayerActionIcon(Icons.Rounded.Replay10, onSeekBack, isTv, contentDescription = "Voltar 10s")
+                    }
                 }
+
+                Spacer(Modifier.width(if (isTv) tokens.spacing.giant else tokens.spacing.large))
 
                 // Play/Pause Center
                 Surface(
@@ -177,36 +198,24 @@ fun PlayerControlOverlay(
                     }
                 }
 
-                if (!isLive) {
-                    Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
-                    // Fast Forward +10s
-                    PlayerActionIcon(Icons.Rounded.Forward10, onSeekForward, isTv, contentDescription = "Avançar 10s")
-                    Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
+                Spacer(Modifier.width(if (isTv) tokens.spacing.giant else tokens.spacing.large))
 
-                    // Next Episode (if available)
-                    if (uiState.nextEpisodeStreamId != null) {
-                        PlayerActionIcon(Icons.Rounded.SkipNext, onNextEpisode, isTv, contentDescription = "Próximo Episódio")
-                        Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
+                // Right Wing
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.Start,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (!isLive) {
+                        PlayerActionIcon(Icons.Rounded.Forward10, onSeekForward, isTv, contentDescription = "Avançar 10s")
+                        Spacer(Modifier.width(if (isTv) tokens.spacing.large else tokens.spacing.medium))
+                        if (uiState.nextEpisodeStreamId != null) {
+                            PlayerActionIcon(Icons.Rounded.SkipNext, onNextEpisode, isTv, contentDescription = "Próximo Episódio")
+                            Spacer(Modifier.width(if (isTv) tokens.spacing.large else tokens.spacing.medium))
+                        }
                     }
+                    PlayerActionIcon(Icons.Rounded.Settings, onShowSettings, isTv, contentDescription = "Configurações")
                 }
-
-                // Favorite
-                PlayerActionIcon(
-                    if (uiState.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                    onToggleFavorite,
-                    isTv,
-                    tint = if (uiState.isFavorite) tokens.colors.error else Color.White,
-                    contentDescription = "Favorito"
-                )
-                Spacer(Modifier.width(if (isTv) tokens.spacing.xl else tokens.spacing.medium))
-
-                // Settings
-                if (pipAvailable) {
-                    PlayerActionIcon(Icons.Rounded.PictureInPictureAlt, onEnterPip, isTv,
-                        contentDescription = stringResource(R.string.pip_label))
-                    Spacer(Modifier.width(tokens.spacing.medium))
-                }
-                PlayerActionIcon(Icons.Rounded.Settings, onShowSettings, isTv, contentDescription = "Configurações")
             }
         }
     }
@@ -218,35 +227,35 @@ fun DpadSeekBar(
     duration: Long,
     bufferedPosition: Long,
     onSeek: (Long) -> Unit,
-    isTv: Boolean
+    isTv: Boolean,
+    onInteraction: () -> Unit = {},
+    onSeekingStateChanged: (Boolean) -> Unit = {}
 ) {
-    if (duration <= 0) return
+    if (duration <= 0L) return
 
     val tokens = AppDesignSystem
     val forceHours = duration >= 3600_000L
+    val scope = rememberCoroutineScope()
+
+    val seekController = remember(duration, onSeek) {
+        PlayerSeekController(duration, onSeek, onInteraction, onSeekingStateChanged)
+    }
 
     var isDragging by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableFloatStateOf(0f) }
-    var seekTarget by remember { mutableStateOf<Long?>(null) }
-    val displayPosition = if (isDragging) (dragProgress * duration).toLong() else seekTarget ?: position
-    
-    val scope = rememberCoroutineScope()
-    var seekJob: Job? by remember { mutableStateOf(null) }
 
-    val handleDpadSeek = { deltaMs: Long ->
-        val current = seekTarget ?: position
-        val newTarget = (current + deltaMs).coerceIn(0L, duration)
-        seekTarget = newTarget
-        
-        seekJob?.cancel()
-        seekJob = scope.launch {
-            delay(600)
-            onSeek(newTarget)
-            seekTarget = null
-        }
+    LaunchedEffect(position) {
+        seekController.onPositionUpdate(position)
+    }
+
+    val displayPosition = if (isDragging) {
+        (dragProgress * duration).toLong().coerceIn(0L, duration)
+    } else {
+        seekController.seekTarget ?: seekController.pendingConfirmedSeek ?: position
     }
 
     val currentProgress = (displayPosition.toFloat() / duration.coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
+    val isSeekingActive = seekController.seekTarget != null || isDragging
 
     Column(
         modifier = Modifier
@@ -260,11 +269,11 @@ fun DpadSeekBar(
         ) {
             Text(
                 text = "${formatTime(displayPosition, forceHours)} / ${formatTime(duration, forceHours)}",
-                color = if (seekTarget != null || isDragging) tokens.colors.primary else tokens.colors.textPrimary,
+                color = if (isSeekingActive) tokens.colors.primary else tokens.colors.textPrimary,
                 style = tokens.typography.label,
                 fontWeight = FontWeight.Bold
             )
-            if (seekTarget != null || isDragging) {
+            if (isSeekingActive) {
                 Surface(
                     color = tokens.colors.primary.copy(alpha = 0.2f),
                     shape = tokens.shapes.small,
@@ -287,12 +296,37 @@ fun DpadSeekBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(if (isTv) 28.dp else 24.dp)
+                .onFocusChanged { focusState ->
+                    if (!focusState.isFocused && seekController.seekTarget != null) {
+                        seekController.commitSeek()
+                    }
+                }
                 .adaptiveFocus(shape = tokens.shapes.medium)
                 .onKeyEvent { event ->
+                    onInteraction()
                     if (event.type == KeyEventType.KeyDown) {
                         when (event.key) {
-                            Key.DirectionLeft -> { handleDpadSeek(-10000L); true }
-                            Key.DirectionRight -> { handleDpadSeek(10000L); true }
+                            Key.DirectionLeft -> {
+                                seekController.handleDpadSeek(position, -10000L, scope)
+                                true
+                            }
+                            Key.DirectionRight -> {
+                                seekController.handleDpadSeek(position, 10000L, scope)
+                                true
+                            }
+                            Key.Back -> {
+                                if (seekController.seekTarget != null) {
+                                    seekController.cancelSeek()
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                            else -> false
+                        }
+                    } else if (event.type == KeyEventType.KeyUp) {
+                        when (event.key) {
+                            Key.DirectionLeft, Key.DirectionRight -> true
                             else -> false
                         }
                     } else false
@@ -303,20 +337,26 @@ fun DpadSeekBar(
             Slider(
                 value = currentProgress,
                 onValueChange = { newProgress ->
+                    onInteraction()
                     isDragging = true
+                    onSeekingStateChanged(true)
                     dragProgress = newProgress
                 },
                 onValueChangeFinished = {
                     val targetMs = (dragProgress * duration).toLong().coerceIn(0L, duration)
                     onSeek(targetMs)
                     isDragging = false
+                    onSeekingStateChanged(false)
+                    onInteraction()
                 },
                 colors = SliderDefaults.colors(
-                    thumbColor = if (seekTarget != null || isDragging) tokens.colors.primary else tokens.colors.accent,
-                    activeTrackColor = if (seekTarget != null || isDragging) tokens.colors.primary else tokens.colors.accent,
+                    thumbColor = if (isSeekingActive) tokens.colors.primary else tokens.colors.accent,
+                    activeTrackColor = if (isSeekingActive) tokens.colors.primary else tokens.colors.accent,
                     inactiveTrackColor = tokens.colors.surface.copy(alpha = 0.3f)
                 ),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusable(false)
             )
         }
     }
