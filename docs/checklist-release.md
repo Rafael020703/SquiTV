@@ -16,7 +16,7 @@ git diff --check
 
 ## 2. Numeração e APK real
 
-- Para uma NOVA publicação autorizada, escolher tag inédita e incrementar versionName/versionCode acima do distribuído. Nunca reutilizar a versão/tag pública anterior. A candidata conjunta local atual é Android 1.22/code 23 e Windows 1.22.0, ainda não publicada.
+- Para uma NOVA publicação autorizada, escolher tag inédita e incrementar versionName/versionCode acima do distribuído. Nunca reutilizar a versão/tag pública anterior. A v1.22 já foi distribuída com Android 1.22/code 23 e Windows 1.22.0; não reutilizar esses números para binários alterados.
 - Conferir pacote rsv.squitv, SDK mínimo, ABIs e ausência de debuggable.
 - Verificar assinatura com apksigner e comparar certificado com o APK anterior arquivado/distribuído.
 - Gerar staging com tools/generate_manifest.py; nunca fornecer dados falsos para corresponder à tag.

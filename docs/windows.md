@@ -184,6 +184,6 @@ Verificação desta etapa: fontes compartilhadas compiladas para Android debug/r
 
 ### Distribuição por plataforma
 
-Candidata conjunta local: Android 1.22/code 23 e Windows 1.22.0, tag futura v1.22. Correções isoladas podem usar o mesmo número em cada app, por exemplo Android 1.22.1 e Windows 1.22.1; tags futuras v1.22.1 e v1.22.1.1 evitam colisão sem invalidar Android antigos. O título Windows mantém v1.22.1, sem a componente técnica da tag.
+Release conjunta [v1.22](https://github.com/Rafael020703/SquiTV/releases/tag/v1.22): Android 1.22/code 23 e Windows 1.22.0. Assets públicos e referências das duas plataformas conferidos na publicação. A CI do commit de release aprovou Android e Windows release/debug; não houve instalação/upgrade nem reprodução nativa pelo agente. Correções isoladas podem usar o mesmo número em cada app, por exemplo Android 1.22.1 e Windows 1.22.1; tags futuras v1.22.1 e v1.22.1.1 evitam colisão sem invalidar Android antigos. O título Windows mantém v1.22.1, sem a componente técnica da tag.
 
 Changelog novo vem da chave windows do manifesto; Android lê android. Fallback de body preservado somente em manifestos antigos de plataforma única. Ao esgotar histórico ou limite de manifestos, a referência fixa Windows resolve sua própria release por tag/hash, independentemente de quantas Android foram publicadas. Referências candidatas são geradas localmente e só entram em updates/stable depois de existir a release real.

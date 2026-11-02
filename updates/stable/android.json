@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "productId": "squi-tv",
+  "channel": "stable",
+  "platform": "android",
+  "versionName": "1.22",
+  "releaseTag": "v1.22",
+  "manifestSha256": "f303c071ad56c3bab53f429b2891ca2b6f80c8645999b292438a467f667cc3e1"
+}
