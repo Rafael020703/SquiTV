@@ -2,6 +2,8 @@
 
 ## Escopo atual
 
+**Publicada:** [Windows 1.22.1](https://github.com/Rafael020703/SquiTV/releases/tag/v1.22.1.1), exclusiva Windows. EXE de 70.658.560 bytes (67,39 MiB), 58,66% menor que o anterior. Android permanece na v1.22. A referência estável Windows aponta o manifesto desta publicação.
+
 Windows x64: login Xtream, conta ativa/validade, dashboard, categorias/busca de canais, filmes e séries, detalhes de filmes, temporadas/episódios, reprodução integrada com LibVLC e configurações iniciais. Catálogos e preferências Windows ainda não têm paridade completa com o Android.
 
 Ao abrir Ao vivo, a primeira categoria é selecionada; as demais são consultadas sob demanda. Não há consulta global automática na entrada da dashboard. A lista visível ao abrir o canal é congelada para anterior/próximo, incluindo o filtro de busca. A navegação é circular nessa origem, sem fallback global. Ao encerrar o player, busca e posição da lista são preservadas na sessão. Favoritos, histórico/progresso persistente, categorias por gênero/preparação e sincronização ainda não foram portados. O atualizador Windows inicial está implementado, com os limites descritos adiante.
@@ -75,7 +77,7 @@ A mesma regra vale para debug e release e é dependência do classpath de empaco
 `tools/audit_windows_package.py` faz inventário de todos os arquivos, grupos de runtime/VLC, JARs e hash/tamanho do EXE, sem executar o instalador. O JSON deve ficar em `.artifacts/`; o comando recusa substituir relatório existente:
 
 ```powershell
-python tools/audit_windows_package.py desktopApp/build/debug/compose/binaries/main/app/SquiTVDebug --installer desktopApp/build/debug/compose/binaries/main/exe/SquiTVDebug-1.22.0.exe --output .artifacts/auditoria-instalador/build-novo.json
+python tools/audit_windows_package.py desktopApp/build/debug/compose/binaries/main/app/SquiTVDebug --installer desktopApp/build/debug/compose/binaries/main/exe/SquiTVDebug-1.22.1.exe --output .artifacts/auditoria-instalador/build-novo.json
 ```
 
 Essa foi a primeira redução, ainda com VLC embutido. O passo seguinte, implementado no Windows 1.22.1, separa seus 145.582.445 bytes extraídos para instalação/reutilização automática, mantendo o Java reduzido por jlink (79.799.469 bytes). O ZIP oficial tem 79.893.405 bytes; a primeira instalação sem componentes válidos ainda precisa desses bytes. Relatório histórico da primeira etapa em docs/relatorio-otimizacao-instalador-windows-2026-11-02.md; o fluxo atual está abaixo.
@@ -225,6 +227,10 @@ Verificação desta etapa: fontes compartilhadas compiladas para Android debug/r
 
 ### Distribuição por plataforma
 
-Release conjunta [v1.22](https://github.com/Rafael020703/SquiTV/releases/tag/v1.22): Android 1.22/code 23 e Windows 1.22.0. Assets públicos e referências das duas plataformas conferidos na publicação. A CI do commit de release aprovou Android e Windows release/debug; não houve instalação/upgrade nem reprodução nativa pelo agente. Correções isoladas podem usar o mesmo número em cada app, por exemplo Android 1.22.1 e Windows 1.22.1; tags futuras v1.22.1 e v1.22.1.1 evitam colisão sem invalidar Android antigos. O título Windows mantém v1.22.1, sem a componente técnica da tag.
+Release conjunta [v1.22](https://github.com/Rafael020703/SquiTV/releases/tag/v1.22): Android 1.22/code 23 e Windows 1.22.0. Assets públicos e referências das duas plataformas conferidos na publicação. A CI do commit de release aprovou Android e Windows release/debug; não houve instalação/upgrade nem reprodução nativa pelo agente. Correções isoladas podem usar o mesmo número em cada app, por exemplo Android 1.22.1 e Windows 1.22.1; tags Android v1.22.1 e Windows v1.22.1.1 evitam colisão sem invalidar Android antigos. O título Windows mantém v1.22.1, sem a componente técnica da tag.
 
 Changelog novo vem da chave windows do manifesto; Android lê android. Fallback de body preservado somente em manifestos antigos de plataforma única. Ao esgotar histórico ou limite de manifestos, a referência fixa Windows resolve sua própria release por tag/hash, independentemente de quantas Android foram publicadas. Referências candidatas são geradas localmente e só entram em updates/stable depois de existir a release real.
+
+### Verificação da publicação Windows 1.22.1
+
+CI do código e280c20 aprovada ([execução](https://github.com/Rafael020703/SquiTV/actions/runs/41523154187)). Os três assets públicos foram baixados novamente e comparados por tamanho/SHA-256 com o staging final. Um verificador temporário usando classes DEBUG executou o WindowsUpdateRepository real contra o GitHub e descobriu 1.22.1 a partir de 1.22.0, conferindo tag/hash/notas Windows. Não abriu app ou instalador, nem removeu os bloqueios da UI debug. A primeira consulta imediatamente após publicar não encontrou a atualização; a repetição encontrou a publicação. Isso não equivale a executar o upgrade da release instalada ou observar a interface/UAC.

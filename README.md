@@ -2,7 +2,7 @@
 
 Aplicativo para Android e Windows para assistir a canais ao vivo, filmes e séries de servidores compatíveis com Xtream Codes. Tema escuro, com navegação por controle remoto/toque no Android e mouse/teclado no Windows. A versão Windows está em desenvolvimento e ainda não tem todas as funções Android.
 
-[Baixar a versão publicada](https://github.com/Rafael020703/SquiTV/releases/latest) · [Histórico de versões](https://github.com/Rafael020703/SquiTV/releases)
+[Android](https://github.com/Rafael020703/SquiTV/releases/latest) · [Windows 1.22.1](https://github.com/Rafael020703/SquiTV/releases/tag/v1.22.1.1) · [Histórico de versões](https://github.com/Rafael020703/SquiTV/releases)
 
 Este README descreve o código do projeto. Recursos em desenvolvimento podem ainda não estar disponíveis no APK da última release.
 
@@ -35,7 +35,7 @@ Para atualizar, use um APK do mesmo pacote e com assinatura compatível. A vers�
 
 ## Instalação no Windows
 
-1. Abra a release e baixe o instalador `SquiTV-<versão>.exe` para Windows x64.
+1. Abra a [release Windows 1.22.1](https://github.com/Rafael020703/SquiTV/releases/tag/v1.22.1.1) e baixe `SquiTV-1.22.1.exe` para Windows x64.
 2. Execute o instalador e siga as etapas. A partir do Windows 1.22.1, o EXE verifica as bibliotecas de reprodução e baixa/prepara automaticamente o VLC oficial somente quando necessário. Java está incluído; não é preciso instalar dependências manualmente. A primeira preparação sem bibliotecas válidas requer internet.
 3. Instalações novas usam `C:\Program Files\Squi TV`, com permissão de administrador e opção de outra pasta. Atualizações preservam a pasta e o contexto da instalação existente, inclusive as antigas por usuário; conta e configurações são mantidas. Debug possui identidade/dados separados.
 4. A desinstalação normal remove arquivos, atalhos, dados e componentes em cache do aplicativo. Essa limpeza não roda durante upgrades. Instaladores baixados manualmente e registros de manutenção do próprio Windows ficam sob controle do usuário/sistema.
@@ -163,5 +163,7 @@ Desenvolvido por **rafasqui**. Todos os direitos reservados.
 ### Preparação de atualizações por plataforma
 
 A versão v1.22 reúne Android 1.22/code 23 e Windows 1.22.0. Notas por plataforma: [Android](docs/releases/v1.22-android.md) e [Windows](docs/releases/v1.22-windows.md).
+
+A atualização exclusiva [Windows 1.22.1](https://github.com/Rafael020703/SquiTV/releases/tag/v1.22.1.1) utiliza o instalador online reduzido; [notas Windows](docs/releases/v1.22.1-windows.md). A versão Android permanece 1.22.
 
 `tools/prepare_release.py` prepara APK/EXE, checksums, manifesto com changelogs separados, plano de release e candidatos de referência por plataforma. Não publica. Correções exclusivas podem manter o mesmo número nos dois apps; as tags únicas e a proteção de Latest estão descritas no [contrato](docs/contrato-atualizacoes.md). Os arquivos de [referência](updates/README.md) só são avançados depois de uma publicação autorizada e conferida.
