@@ -1,6 +1,7 @@
 ﻿package rsv.squitv.core.ui.theme
 
 import androidx.compose.ui.unit.dp
+import rsv.squitv.shared.brand.AppBrand
 
 /**
  * SPACING SCALE
@@ -31,12 +32,12 @@ object Spacing {
  */
 object AppDimensions {
     val cardElevation = 8.dp
-    val focusBorderWidth = 3.dp
+    val focusBorderWidth = AppBrand.FOCUS_BORDER_DP.dp
     val standardBorderWidth = 1.dp
     val posterAspectRatio = 2f / 3f
-    val channelAspectRatio = 1f / 1f
+    val channelAspectRatio = AppBrand.CHANNEL_ASPECT_RATIO
     
-    val sidebarWidth = 280.dp
+    val sidebarWidth = AppBrand.SIDEBAR_WIDTH_DP.dp
     val topBarHeight = 72.dp
     val bottomNavHeight = 64.dp
     val minTouchTarget = 48.dp

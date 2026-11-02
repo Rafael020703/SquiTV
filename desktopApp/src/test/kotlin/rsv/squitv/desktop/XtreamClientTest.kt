@@ -3,7 +3,6 @@ package rsv.squitv.desktop
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.*
-import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -11,7 +10,7 @@ import rsv.squitv.desktop.data.*
 import rsv.squitv.shared.xtream.*
 
 class XtreamClientTest {
-    @Test fun loginAndCategoryRequestsUseEncodedCredentialsAndSelectedCategory() = runTest {
+    @Test fun loginAndCategoryRequestsUseEncodedCredentialsAndSelectedCategory() = runBlocking {
         MockWebServer().use { server ->
             server.start()
             server.enqueue(MockResponse().setBody("""{"user_info":{"auth":"1","status":"Active"}}"""))
@@ -34,7 +33,7 @@ class XtreamClientTest {
         }
     }
 
-    @Test fun rejectsHttpErrorWithoutLeakingCredentialUrl() = runTest {
+    @Test fun rejectsHttpErrorWithoutLeakingCredentialUrl() = runBlocking {
         MockWebServer().use { server ->
             server.start()
             server.enqueue(MockResponse().setResponseCode(401))
@@ -49,7 +48,7 @@ class XtreamClientTest {
         }
     }
 
-    @Test fun neverFollowsCredentialRedirect() = runTest {
+    @Test fun neverFollowsCredentialRedirect() = runBlocking {
         MockWebServer().use { server ->
             server.start()
             server.enqueue(MockResponse().setResponseCode(302).addHeader("Location", "https://example.invalid/"))
@@ -60,7 +59,7 @@ class XtreamClientTest {
         }
     }
 
-    @Test fun cancellationInterruptsNetworkWait() = runTest {
+    @Test fun cancellationInterruptsNetworkWait() = runBlocking {
         MockWebServer().use { server ->
             server.start()
             server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))

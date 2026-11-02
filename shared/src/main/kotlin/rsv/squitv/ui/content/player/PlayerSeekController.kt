@@ -22,6 +22,8 @@ class PlayerSeekController(
         private set
 
     private var seekJob: Job? = null
+    private var seekStartPosition: Long = 0L
+    private var pendingForward: Boolean = true
 
     fun handleDpadSeek(currentPos: Long, deltaMs: Long, scope: CoroutineScope, debounceMs: Long = 300L) {
         if (durationMs <= 0L) return
@@ -29,6 +31,7 @@ class PlayerSeekController(
         isSeekingActive = true
         onSeekingStateChanged(true)
 
+        if (seekTarget == null) seekStartPosition = currentPos
         val current = seekTarget ?: pendingConfirmedSeek ?: currentPos
         val newTarget = (current + deltaMs).coerceIn(0L, durationMs)
         seekTarget = newTarget
@@ -47,6 +50,7 @@ class PlayerSeekController(
         if (target != null) {
             seekTarget = null
             pendingConfirmedSeek = target
+            pendingForward = target >= seekStartPosition
             onSeek(target)
         }
         isSeekingActive = false
@@ -66,7 +70,8 @@ class PlayerSeekController(
 
     fun onPositionUpdate(newPos: Long) {
         pendingConfirmedSeek?.let { target ->
-            if (kotlin.math.abs(newPos - target) <= 1500L || newPos >= target) {
+            if (kotlin.math.abs(newPos - target) <= 1500L ||
+                (if (pendingForward) newPos >= target else newPos <= target)) {
                 pendingConfirmedSeek = null
             }
         }

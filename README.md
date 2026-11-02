@@ -1,6 +1,6 @@
 # Squi TV
 
-Aplicativo Android para assistir a canais ao vivo, filmes e séries de servidores compatíveis com Xtream Codes. Interface em tema escuro, com navegação por controle remoto e suporte a toque em celulares e tablets.
+Aplicativo para Android e Windows para assistir a canais ao vivo, filmes e séries de servidores compatíveis com Xtream Codes. Tema escuro, com navegação por controle remoto/toque no Android e mouse/teclado no Windows. A versão Windows está em desenvolvimento e ainda não tem todas as funções Android.
 
 [Baixar a versão publicada](https://github.com/Rafael020703/SquiTV/releases/latest) · [Histórico de versões](https://github.com/Rafael020703/SquiTV/releases)
 
@@ -22,7 +22,7 @@ Este README descreve o código do projeto. Recursos em desenvolvimento podem ain
 
 O aplicativo não fornece canais, filmes, séries ou credenciais. É necessário configurar um servidor e uma conta compatíveis.
 
-## Instalação
+## Instalação no Android
 
 1. Abra a [última release](https://github.com/Rafael020703/SquiTV/releases/latest).
 2. Baixe o APK `SquiTV-v<versão>.apk` nos assets da publicação.
@@ -32,6 +32,14 @@ O aplicativo não fornece canais, filmes, séries ou credenciais. É necessário
 Os APKs publicados incluem ARM64 e ARMv7 e exigem Android 7.0/API 24 ou superior. Compatibilidade de codecs e PiP varia conforme o aparelho. Quando disponibilizado, o arquivo `.apk.sha256` permite conferir a integridade do download.
 
 Para atualizar, use um APK do mesmo pacote e com assinatura compatível. A versão debug tem pacote próprio e pode coexistir com a release.
+
+## Instalação no Windows
+
+1. Abra a release e baixe o instalador `SquiTV-<versão>.exe` para Windows x64.
+2. Execute o instalador e siga as etapas. O runtime acompanha a distribuição; não é necessário instalar Java ou VLC separadamente.
+3. Para atualizar uma instalação existente, use o instalador release; conta e configurações permanecem na pasta do usuário. Debug possui identidade/dados separados.
+
+A distribuição atual usa instalador sem assinatura Authenticode; os checksums SHA-256 acompanham os arquivos. Consulte [Windows](docs/windows.md) para os recursos implementados e os limites.
 
 ## Login na TV pelo navegador
 
@@ -126,9 +134,9 @@ O `.gitignore` exclui builds, caches, arquivos locais, material privado de assin
 
 ## Windows — desenvolvimento inicial
 
-`:desktopApp` contém login Xtream, dados da conta/servidor, categorias e listagem de canais ao vivo com busca na categoria. A reprodução de vídeo no Windows e seu cliente de atualização ainda não foram implementados. Filmes e séries permanecem no aplicativo Android.
+`:desktopApp` contém login Xtream, dashboard, categorias/busca e player ao vivo com LibVLC, EPG e troca circular na lista de origem. Inclui uma primeira implementação de Filmes/Séries com detalhes, temporadas, episódios e reprodução, além de configurações de conta, DNS, zoom, reprodução automática e Atualizações. O player VOD reutiliza seek e controles de interação Android; o atualizador release Windows oferece verificação, download e instalação explícita via contrato compartilhado. Na debug, a tela de Atualizações permanece visível com operações de produção desabilitadas. Reaproveita os modelos Xtream do Android em `:shared`. Favoritos, histórico/progresso persistente, preparação por gênero, demais configurações e comprovação do fluxo real de atualização Windows continuam pendentes; não há paridade completa com o Android.
 
-As variantes Windows release e debug têm nomes, instaladores, identidades de atualização e armazenamento separados. Os instaladores `.exe` incluem o runtime Java. A conta é salva opcionalmente com DPAPI do usuário do Windows, sem senha em texto no disco.
+As variantes Windows release e debug têm nomes, identidades e armazenamento separados. A release usa instalador `.exe`; para desenvolver, a debug pode ser portátil com atalho no menu Iniciar (`tools/deploy-windows-debug.ps1`). As imagens incluem Java e LibVLC. A conta é salva opcionalmente com DPAPI do usuário do Windows, sem senha em texto no disco.
 
 Consulte [Windows: build, instalação e limites](docs/windows.md). O instalador inicial é gerado localmente; não foi anexado à release Android v1.21.
 
@@ -150,3 +158,9 @@ Relatórios datados documentam a etapa em que foram produzidos; não substituem 
 ## Autoria
 
 Desenvolvido por **rafasqui**. Todos os direitos reservados.
+
+### Preparação de atualizações por plataforma
+
+A versão v1.22 reúne Android 1.22/code 23 e Windows 1.22.0. Notas por plataforma: [Android](docs/releases/v1.22-android.md) e [Windows](docs/releases/v1.22-windows.md).
+
+`tools/prepare_release.py` prepara APK/EXE, checksums, manifesto com changelogs separados, plano de release e candidatos de referência por plataforma. Não publica. Correções exclusivas podem manter o mesmo número nos dois apps; as tags únicas e a proteção de Latest estão descritas no [contrato](docs/contrato-atualizacoes.md). Os arquivos de [referência](updates/README.md) só são avançados depois de uma publicação autorizada e conferida.

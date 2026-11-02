@@ -40,97 +40,15 @@ fun PortalBackground(
     content: @Composable BoxScope.() -> Unit
 ) {
     val tokens = AppDesignSystem
-    
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(tokens.colors.background)
-    ) {
-        if (showAtmosphere) {
-            // Optional custom atmosphere image
-            if (!atmosphereUrl.isNullOrEmpty()) {
-                AsyncImage(
-                    model = atmosphereUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    alpha = 0.20f
-                )
-            }
-
-            // Deep vignette and color grading
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                tokens.colors.surfaceVariant.copy(alpha = 0.12f),
-                                tokens.colors.background.copy(alpha = 0.85f),
-                                tokens.colors.background
-                            ),
-                            center = Offset(0.5f, 0.4f),
-                            radius = 1800f
-                        )
-                    )
+    rsv.squitv.core.ui.components.common.PortalBackdrop(
+        tokens.colors.background, tokens.colors.surfaceVariant, tokens.colors.primary, showAtmosphere,
+        atmosphere = {
+            if (!atmosphereUrl.isNullOrEmpty()) AsyncImage(
+                model = atmosphereUrl, contentDescription = null, modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop, alpha = 0.20f
             )
-
-            // Thematic Glow Overlay
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                tokens.colors.primary.copy(alpha = 0.06f),
-                                Color.Transparent
-                            ),
-                            center = Offset(0.8f, 0.2f),
-                            radius = 1500f
-                        )
-                    )
-            )
-        }
-
-        // Subtle Radial Gradient for depth
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(tokens.colors.primary.copy(alpha = 0.03f), Color.Transparent),
-                        center = Offset(0.5f, 0.3f),
-                        radius = 1500f
-                    )
-                )
-        )
-
-        // Dot pattern
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val dotSpacing = 24.dp.toPx()
-            val dotColor = Color.White.copy(alpha = 0.02f)
-            val strokeWidth = 1.2.dp.toPx()
-            val step = dotSpacing.toInt()
-            val width = size.width.toInt()
-            val height = size.height.toInt()
-            if (width > 0 && height > 0 && step > 0) {
-                val pointCount = ((width / step) + 1) * ((height / step) + 1)
-                val points = ArrayList<Offset>(pointCount)
-                for (x in 0..width step step) {
-                    for (y in 0..height step step) {
-                        points.add(Offset(x.toFloat(), y.toFloat()))
-                    }
-                }
-                drawPoints(
-                    points = points,
-                    pointMode = androidx.compose.ui.graphics.PointMode.Points,
-                    color = dotColor,
-                    strokeWidth = strokeWidth
-                )
-            }
-        }
-        content()
-    }
+        }, content = content
+    )
 }
 
 @Composable

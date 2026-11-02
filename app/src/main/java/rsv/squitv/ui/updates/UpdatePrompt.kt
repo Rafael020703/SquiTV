@@ -54,27 +54,17 @@ fun UpdatePrompt(info: AppUpdateInfo, onUpdate: () -> Unit, onIgnore: () -> Unit
             shape = AppDesignSystem.shapes.extraLarge, color = colors.surface,
             border = BorderStroke(1.dp, colors.border)
         ) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Icon(Icons.Rounded.SystemUpdate, null, tint = colors.primary, modifier = Modifier.size(32.dp))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(stringResource(R.string.update_available_title), color = colors.textPrimary,
-                            style = AppDesignSystem.typography.title, fontWeight = FontWeight.Bold)
-                        Text(stringResource(R.string.updater_version_ready, info.versionName), color = colors.primary,
-                            style = AppDesignSystem.typography.label)
-                    }
-                }
-                Text(stringResource(R.string.updater_notice_desc), color = colors.textSecondary, style = AppDesignSystem.typography.body)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.verticalScroll(rememberScrollState())) {
+                rsv.squitv.core.ui.components.updates.UpdateNoticeContent(
+                    stringResource(R.string.update_available_title), stringResource(R.string.updater_version_ready, info.versionName),
+                    stringResource(R.string.updater_notice_desc), stringResource(R.string.updater_notice_timeout, remaining),
+                    stringResource(R.string.updater_silence), remaining, colors.primary, colors.textPrimary, colors.textSecondary,
+                    AppDesignSystem.typography.title, AppDesignSystem.typography.label,
+                    AppDesignSystem.typography.body, AppDesignSystem.typography.caption, onIgnore,
+                    ignoreModifier = Modifier.adaptiveFocus(AppDesignSystem.shapes.button)
+                ) {
                     UpdateAction(stringResource(R.string.updater_view), onUpdate, Modifier.weight(1f).focusRequester(focus))
                     UpdateAction(stringResource(R.string.updater_later), onDismiss, Modifier.weight(1f), primary = false)
-                }
-                LinearProgressIndicator(progress = { remaining / NOTICE_SECONDS.toFloat() }, modifier = Modifier.fillMaxWidth(), color = colors.primary)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(stringResource(R.string.updater_notice_timeout, remaining), color = colors.textSecondary, style = AppDesignSystem.typography.caption)
-                    TextButton(onClick = onIgnore, modifier = Modifier.heightIn(min = 48.dp).adaptiveFocus(AppDesignSystem.shapes.button)) {
-                        Text(stringResource(R.string.updater_silence), color = colors.textSecondary, style = AppDesignSystem.typography.caption)
-                    }
                 }
             }
         }

@@ -13,7 +13,6 @@ import androidx.compose.ui.unit.sp
 import rsv.squitv.util.DeviceType
 import rsv.squitv.util.WindowSize
 import rsv.squitv.util.rememberWindowInfo
-import kotlin.math.min
 
 @Immutable
 data class ResponsiveMetrics(
@@ -91,16 +90,14 @@ fun calculateResponsiveMetrics(
     
     // REFERENCE DIMENSIONS (Reference is a 1280x720 layout)
     val refWidth = 1280f
-    val refHeight = 720f
     
     val widthScale = widthDp.value / refWidth
-    val heightScale = heightDp.value / refHeight
     
     // viewportScale: The "Fit-to-Viewport" rule. 
     // It ensures that whatever was designed for 1280x720 fits in the current screen 
     // by taking the minimum of both scales.
     // Lowered minimum clamp to 0.25f to accommodate small portrait screens side-by-side.
-    val viewportScale = min(widthScale, heightScale).coerceIn(0.25f, 2.0f)
+    val viewportScale = rsv.squitv.shared.brand.ViewportSizing.viewportScale(widthDp.value, heightDp.value)
     
     // Legacy content scale (width-based)
     val contentScale = widthScale.coerceIn(0.7f, 1.5f)
@@ -110,7 +107,7 @@ fun calculateResponsiveMetrics(
     
     // Text scale needs to be legibility-aware. 
     // We reduced the minimum to 0.65f to prevent overflow in very small viewports (scale < 0.4)
-    val textScale = (viewportScale * 1.1f).coerceIn(0.65f, 1.4f) * density.fontScale
+    val textScale = rsv.squitv.shared.brand.ViewportSizing.textScale(viewportScale, density.fontScale)
 
     return ResponsiveMetrics(
         widthDp = widthDp,

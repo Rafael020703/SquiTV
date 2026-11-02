@@ -110,6 +110,38 @@ class UpdateRepositoryTest {
         assertEquals("1.21", result.updateInfo.versionName)
         assertEquals(3, server.requestCount)
     }
+
+    @Test fun jointReleaseShowsOnlyAndroidChangelog() = runTest {
+        val manifest = UpdateManifest(releaseTag = "v1.21", artifacts = listOf(android(), windows("1.21")),
+            changelogs = mapOf("android" to "Android fix", "windows" to "Windows fix"))
+        val base = fixture(manifest.artifacts, text = json.encodeToString(manifest))
+        enqueue(base.copy(release = base.release.copy(body = "Mixed Windows and Android")))
+        val result = repository().checkForUpdates() as UpdateCheckResult.UpdateAvailable
+        assertEquals("Android fix", result.updateInfo.changelog)
+    }
+
+    @Test fun platformReferenceResolvesAndroidBeyondBoundedHistory() = runTest {
+        val base = fixture()
+        val text = requireNotNull(base.text)
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray())
+            .joinToString("") { "%02x".format(it.toInt() and 255) }
+        val reference = rsv.squitv.shared.update.UpdateChannelReference(platform = "android", versionName = "1.21",
+            releaseTag = "v1.21", manifestSha256 = digest)
+        val page = json.encodeToString((1..30).map { GitHubReleaseResponse(tagName = "v1.22") })
+        server.enqueue(MockResponse().setBody(page))
+        server.enqueue(MockResponse().setBody(page))
+        server.enqueue(MockResponse().setBody(json.encodeToString(reference)))
+        server.enqueue(MockResponse().setBody(json.encodeToString(base.release)))
+        server.enqueue(MockResponse().setBody(text))
+        val result = repository().checkForUpdates() as UpdateCheckResult.UpdateAvailable
+        assertEquals("1.21", result.updateInfo.versionName)
+        assertEquals(5, server.requestCount)
+        server.takeRequest(); server.takeRequest()
+        val index = server.takeRequest()
+        assertTrue(index.path!!.endsWith("contents/updates/stable/android.json"))
+        assertEquals("application/vnd.github.raw+json", index.getHeader("Accept"))
+        assertTrue(server.takeRequest().path!!.endsWith("releases/tags/v1.21"))
+    }
     @Test fun invalidManifestRetriesWithoutForceAndThenCachesSuccess() = runTest {
         val repo = repository()
         enqueue(fixture(text = "INVALID_JSON"))
@@ -217,11 +249,12 @@ class UpdateRepositoryTest {
         val page = json.encodeToString((1..30).map { GitHubReleaseResponse(tagName = "v1.22") })
         server.enqueue(MockResponse().setBody(page))
         server.enqueue(MockResponse().setBody(page))
-        assertTrue(repository().checkForUpdates() is UpdateCheckResult.Error)
-        assertEquals(2, server.requestCount)
-        server.enqueue(MockResponse().setResponseCode(429))
+        server.enqueue(MockResponse().setResponseCode(404)) // Platform reference is not published yet.
         assertTrue(repository().checkForUpdates() is UpdateCheckResult.Error)
         assertEquals(3, server.requestCount)
+        server.enqueue(MockResponse().setResponseCode(429))
+        assertTrue(repository().checkForUpdates() is UpdateCheckResult.Error)
+        assertEquals(4, server.requestCount)
     }
     @Test fun primary404UsesLegacyRepositoryOnlyForInitialDiscovery() = runTest {
         val base = fixture(legacy = true)

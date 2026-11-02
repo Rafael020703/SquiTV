@@ -147,7 +147,5 @@ object LiveChannelGrouping {
 
 /** Circular navigation within the supplied list; callers handle empty lists without a fallback. */
 fun channelStepIndex(size: Int, current: Int, offset: Int): Int {
-    require(size > 0)
-    if (current < 0) return if (offset < 0) size - 1 else 0
-    return ((current + offset) % size + size) % size
+    return rsv.squitv.shared.xtream.LivePlayback.stepIndex(size, current, offset)
 }

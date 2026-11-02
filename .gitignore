@@ -2,6 +2,9 @@
 .gradle/
 .kotlin/
 **/build/
+# This Java package is source, not Gradle output.
+!/buildSrc/src/main/java/rsv/squitv/build/
+!/buildSrc/src/main/java/rsv/squitv/build/*.java
 .externalNativeBuild/
 .cxx/
 out/
@@ -54,6 +57,8 @@ secrets.properties
 /desktopApp/.runtime/
 # Encrypted local account data is private too.
 *.dpapi
+/desktopApp/debug-login.local.json
+/desktopApp/debug-login.local.properties
 
 # Local diagnostics and temporary files
 *.log
@@ -85,3 +90,7 @@ screenshot.png
 /docs/releases/verificacao-*.md
 
 # Keep Gradle Wrapper, Room schemas, source resources and release notes tracked.
+
+# Python caches from local release tooling
+__pycache__/
+*.py[cod]

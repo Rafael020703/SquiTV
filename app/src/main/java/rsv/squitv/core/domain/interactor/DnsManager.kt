@@ -17,14 +17,7 @@ class DnsManager @Inject constructor(
     @ApiOkHttpClient private val okHttpClient: OkHttpClient
 ) {
     companion object {
-        private val LOCAL_DNS_LIST = listOf(
-            "http://ded30.com",
-            "http://ded34.com",
-            "http://ded15.com",
-            "http://now1.org",
-            "http://ppmm1.cc",
-            "https://u123.life"
-        )
+        private val LOCAL_DNS_LIST = rsv.squitv.shared.xtream.ProviderServers.addresses
     }
 
     fun updateBaseUrl(url: String) {

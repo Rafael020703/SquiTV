@@ -7,10 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import rsv.squitv.core.ui.theme.AppDesignSystem
 import rsv.squitv.core.ui.theme.MeusCanaisTheme
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -216,38 +214,17 @@ fun MainNavigation(
 @Composable
 fun ExitConfirmDialog(onDismiss: () -> Unit, onExit: () -> Unit) {
     val tokens = AppDesignSystem
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { 
-            Text(
-                text = stringResource(R.string.exit_confirm_title).uppercase(),
-                style = tokens.typography.headline,
-                fontWeight = FontWeight.Black,
-                color = tokens.colors.primary
-            ) 
-        },
-        text = { 
-            Text(
-                text = stringResource(R.string.exit_confirm_msg),
-                style = tokens.typography.body,
-                color = tokens.colors.textSecondary
-            ) 
-        },
-        confirmButton = {
-            Button(
-                onClick = onExit, 
-                colors = ButtonDefaults.buttonColors(containerColor = tokens.colors.error, contentColor = Color.White),
-                shape = tokens.shapes.medium
-            ) {
-                Text(stringResource(R.string.exit_button).uppercase(), fontWeight = FontWeight.Black)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { 
-                Text(stringResource(R.string.stay_button).uppercase(), color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold) 
-            }
-        },
-        containerColor = tokens.colors.backgroundSecondary,
-        shape = tokens.shapes.extraLarge
-    )
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        rsv.squitv.core.ui.components.ExitConfirmationCard(
+            title = stringResource(R.string.exit_confirm_title).uppercase(),
+            message = stringResource(R.string.exit_confirm_msg),
+            exitLabel = stringResource(R.string.exit_button).uppercase(),
+            stayLabel = stringResource(R.string.stay_button).uppercase(),
+            background = tokens.colors.backgroundSecondary, primary = tokens.colors.primary,
+            secondary = tokens.colors.textSecondary, text = tokens.colors.textPrimary,
+            error = tokens.colors.error, headingStyle = tokens.typography.headline,
+            bodyStyle = tokens.typography.body, shape = tokens.shapes.extraLarge,
+            buttonShape = tokens.shapes.medium, onDismiss = onDismiss, onExit = onExit
+        )
+    }
 }

@@ -24,9 +24,10 @@ class DesktopLayoutTest {
             override fun save(credentials: ServerCredentials) {}
             override fun clear() {}
         }
-        DesktopController(XtreamClient(), store, scope).use { controller ->
+        DesktopController(XtreamClient(), store, scope, autoProbe = false).use { controller ->
             val directory = Path.of("build", "preview")
             Files.createDirectories(directory)
+            val preferences = DesktopPreferencesStore(directory.resolve("isolated-settings"), scope)
             val connected = DesktopState(restoring = false,
                 credentials = ServerCredentials("https://servidor.example/", "Conta demonstração", "fixture"),
                 account = ServerAccount("Conta demonstração", "Active", 2000000000, 1, 2,
@@ -39,7 +40,7 @@ class DesktopLayoutTest {
                 for ((width, height) in listOf(1120 to 760, 860 to 580)) {
                     val scene = ImageComposeScene(width, height, Density(1f)) {
                         MaterialTheme(colorScheme = palette) {
-                            Surface(Modifier.fillMaxSize(), color = palette.background) { DesktopScreen(state, controller) }
+                            Surface(Modifier.fillMaxSize(), color = palette.background) { DesktopScreen(state, controller, preferences) }
                         }
                     }
                     try {

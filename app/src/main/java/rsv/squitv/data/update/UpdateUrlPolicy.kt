@@ -5,6 +5,11 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Tests use their own HTTPS origin; the production origin is always github.com:443. */
 class UpdateUrlPolicy(private val host: String = "github.com", private val port: Int = 443) {
+    fun channelIndexUrl(repository: String): HttpUrl = HttpUrl.Builder().scheme("https")
+        .host(if (host == "github.com") "api.github.com" else host).port(port)
+        .addPathSegment("repos").addPathSegment(GitHubUpdateConfig.OWNER).addPathSegment(repository)
+        .addPathSegments("contents/updates/stable/android.json").build()
+
     fun assetUrl(value: String, repository: String, tag: String, name: String): HttpUrl {
         val url = requireNotNull(value.toHttpUrlOrNull()) { "Invalid update URL" }
         require(url.isHttps && url.host == host && url.port == port &&

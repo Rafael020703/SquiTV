@@ -1,6 +1,7 @@
 package rsv.squitv.shared.xtream
 
 import java.net.URI
+import java.util.Base64
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
@@ -70,4 +71,21 @@ object XtreamCatalogParser {
         LiveChannel(id, item.text("name") ?: "Canal $id", item.text("category_id"),
             item.text("stream_icon"), item.text("epg_channel_id"))
     }.distinctBy { it.id }
+
+    fun epg(body: String): List<LiveProgramme> {
+        val listings = obj(body)["epg_listings"] as? JsonArray ?: return emptyList()
+        fun decode(value: String?): String? = value?.let {
+            if (it.length % 4 != 0 || !it.matches(Regex("[A-Za-z0-9+/]*={0,2}"))) return@let it
+            runCatching {
+                val text = Base64.getDecoder().decode(it).toString(Charsets.UTF_8)
+                if (text.any { char -> char == '\uFFFD' || (char.isISOControl() && char != '\n' && char != '\t') }) it else text
+            }.getOrDefault(it)
+        }
+        return listings.mapNotNull { entry ->
+            val item = entry as? JsonObject ?: return@mapNotNull null
+            val title = decode(item.text("title")) ?: return@mapNotNull null
+            LiveProgramme(title, decode(item.text("description")), item.text("start_timestamp")?.toLongOrNull(),
+                item.text("stop_timestamp")?.toLongOrNull())
+        }.sortedBy { it.start ?: Long.MAX_VALUE }
+    }
 }

@@ -5,6 +5,13 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface GitHubApiService {
+    @GET("repos/{owner}/{repo}/releases/tags/{tag}")
+    suspend fun getReleaseByTag(
+        @Path("owner") owner: String = GitHubUpdateConfig.OWNER,
+        @Path("repo") repo: String = GitHubUpdateConfig.PRIMARY_REPO,
+        @Path("tag") tag: String
+    ): GitHubReleaseResponse
+
     @GET("repos/{owner}/{repo}/releases/latest")
     suspend fun getLatestRelease(
         @Path("owner") owner: String = GitHubUpdateConfig.OWNER,

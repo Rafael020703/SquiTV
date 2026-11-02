@@ -9,6 +9,8 @@ class StreamRepository @Inject constructor() {
 
     fun getStreamUrl(credentials: XtreamCredentials, streamId: Int, type: String, container: String? = "ts"): String {
         val normalizedType = type.lowercase()
+        if (normalizedType == "live" && streamId > 0) return rsv.squitv.shared.xtream.LiveStreamAddress.build(
+            credentials.baseUrl, credentials.username, credentials.password, streamId)
         val action = when (normalizedType) {
             "live" -> "live"
             "movie", "vod" -> "movie"

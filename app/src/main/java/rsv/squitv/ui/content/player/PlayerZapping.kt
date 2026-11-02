@@ -1,5 +1,6 @@
 ﻿package rsv.squitv.ui.content.player
 
+import rsv.squitv.core.ui.components.player.CompactChannelBanner
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -107,69 +108,18 @@ fun BoxScope.ZappingBanner(
         visible = isVisible,
         enter = fadeIn(tween(160)) + slideInVertically(tween(160), initialOffsetY = { -it / 3 }),
         exit = fadeOut(tween(120)) + slideOutVertically(tween(120), targetOffsetY = { -it / 3 }),
-        modifier = Modifier
-            .align(Alignment.TopStart)
-            .displayCutoutPadding()
+        modifier = Modifier.align(Alignment.TopStart).displayCutoutPadding()
             .padding(horizontal = if (isExpanded) 20.dp else 12.dp, vertical = if (isExpanded) 16.dp else 12.dp)
-            .widthIn(max = if (isExpanded) 360.dp else 300.dp)
-            .fillMaxWidth()
+            .widthIn(max = if (isExpanded) 360.dp else 300.dp).fillMaxWidth()
     ) {
-        Surface(
-            modifier = Modifier.semantics(mergeDescendants = true) {},
-            color = colors.backgroundSecondary.copy(alpha = 0.90f),
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-            tonalElevation = 0.dp
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CompactChannelLogo(channel?.streamIcon, logoSize)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        channel?.num?.takeIf { it > 0 }?.let { number ->
-                            Text(
-                                text = number.toString(),
-                                modifier = Modifier.widthIn(max = 44.dp),
-                                style = AppDesignSystem.typography.label.copy(fontSize = 12.sp),
-                                fontWeight = FontWeight.SemiBold,
-                                color = colors.primary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        Text(
-                            text = channel?.name?.trim().orEmpty(),
-                            modifier = Modifier.weight(1f),
-                            color = colors.textPrimary,
-                            style = AppDesignSystem.typography.title.copy(fontSize = if (isExpanded) 17.sp else 15.sp),
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    if (programmeTitle != null) {
-                        Text(
-                            text = programmeTitle,
-                            color = colors.textSecondary,
-                            style = AppDesignSystem.typography.body.copy(fontSize = if (isExpanded) 13.sp else 12.sp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        LinearProgressIndicator(
-                            progress = { calculateProgramProgress(program) },
-                            modifier = Modifier.fillMaxWidth().height(2.dp).clip(CircleShape),
-                            color = colors.primary.copy(alpha = 0.8f),
-                            trackColor = Color.White.copy(alpha = 0.08f),
-                            gapSize = 0.dp,
-                            drawStopIndicator = {}
-                        )
-                    }
-                }
-            }
-        }
+        CompactChannelBanner(
+            name = channel?.name.orEmpty(), number = channel?.num,
+            programme = programmeTitle, progress = program?.let(::calculateProgramProgress) ?: 0f,
+            expanded = isExpanded, background = colors.backgroundSecondary, primary = colors.primary,
+            text = colors.textPrimary, secondary = colors.textSecondary,
+            titleStyle = AppDesignSystem.typography.title, bodyStyle = AppDesignSystem.typography.body,
+            labelStyle = AppDesignSystem.typography.label
+        ) { CompactChannelLogo(channel?.streamIcon, logoSize) }
     }
 }
 

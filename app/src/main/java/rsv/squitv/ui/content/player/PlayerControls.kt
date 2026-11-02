@@ -1,5 +1,6 @@
 ﻿package rsv.squitv.ui.content.player
 
+import rsv.squitv.core.ui.components.player.CenteredPlayerActions
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -148,17 +149,10 @@ fun PlayerControlOverlay(
 
             Spacer(modifier = Modifier.height(tokens.spacing.large))
 
-            // BUTTONS ROW WITH EXACT GEOMETRIC CENTER PLAY/PAUSE
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Left Wing
-                Row(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            // Shared with Windows; platform focus and actions remain here.
+            CenteredPlayerActions(
+                gap = if (isTv) tokens.spacing.giant else tokens.spacing.large,
+                left = {
                     if (pipAvailable) {
                         PlayerActionIcon(Icons.Rounded.PictureInPictureAlt, onEnterPip, isTv, contentDescription = stringResource(R.string.pip_label))
                         Spacer(Modifier.width(if (isTv) tokens.spacing.large else tokens.spacing.medium))
@@ -174,38 +168,28 @@ fun PlayerControlOverlay(
                         Spacer(Modifier.width(if (isTv) tokens.spacing.large else tokens.spacing.medium))
                         PlayerActionIcon(Icons.Rounded.Replay10, onSeekBack, isTv, contentDescription = "Voltar 10s")
                     }
-                }
-
-                Spacer(Modifier.width(if (isTv) tokens.spacing.giant else tokens.spacing.large))
-
-                // Play/Pause Center
-                Surface(
-                    onClick = onTogglePlayPause,
-                    modifier = Modifier
-                        .size(if (isTv) 90.dp else 72.dp)
-                        .focusRequester(playPauseFocusRequester)
-                        .adaptiveFocus(shape = CircleShape, focusedScale = 1.15f),
-                    shape = CircleShape,
-                    color = tokens.colors.primary,
-                    contentColor = Color.Black
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (uiState.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(if (isTv) 50.dp else 40.dp)
-                        )
+                },
+                center = {
+                    Surface(
+                        onClick = onTogglePlayPause,
+                        modifier = Modifier
+                            .size(if (isTv) 90.dp else 72.dp)
+                            .focusRequester(playPauseFocusRequester)
+                            .adaptiveFocus(shape = CircleShape, focusedScale = 1.15f),
+                        shape = CircleShape,
+                        color = tokens.colors.primary,
+                        contentColor = Color.Black
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (uiState.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(if (isTv) 50.dp else 40.dp)
+                            )
+                        }
                     }
-                }
-
-                Spacer(Modifier.width(if (isTv) tokens.spacing.giant else tokens.spacing.large))
-
-                // Right Wing
-                Row(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.Start,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                },
+                right = {
                     if (!isLive) {
                         PlayerActionIcon(Icons.Rounded.Forward10, onSeekForward, isTv, contentDescription = "Avançar 10s")
                         Spacer(Modifier.width(if (isTv) tokens.spacing.large else tokens.spacing.medium))
@@ -216,7 +200,7 @@ fun PlayerControlOverlay(
                     }
                     PlayerActionIcon(Icons.Rounded.Settings, onShowSettings, isTv, contentDescription = "Configurações")
                 }
-            }
+            )
         }
     }
 }
