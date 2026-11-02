@@ -16,3 +16,7 @@ A task `:shared:validateUpdateManifest -Pmanifest=<arquivo>` verifica manifestos
 ## 2. Padrões de Código
 * **Kotlin / Compose**: Utilizar idioms modernos do Kotlin e Jetpack Compose (Material 3).
 * **Isolamento de Plataforma**: Mantenha qualquer código específico de Android em `:app` e mantenha `:shared` totalmente puro (Kotlin/JVM sem referências a `android.*`).
+
+## 3. Windows
+
+Usar JDK 21 completo com `jpackage`; o JBR reduzido do Android Studio pode não conter essa ferramenta. Consultar `windows.md` para comandos, variantes e caminhos. Instaladores e dados locais são ignorados pelo Git.

@@ -25,3 +25,4 @@ dependencyResolutionManagement {
 rootProject.name = "Squi TV"
 include(":app")
 include(":shared")
+include(":desktopApp")

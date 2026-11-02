@@ -1,0 +1,73 @@
+package rsv.squitv.shared.xtream
+
+import java.net.URI
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.*
+
+@Serializable
+data class ServerCredentials(val baseUrl: String, val username: String, val password: String) {
+    override fun toString() = "ServerCredentials([redacted])"
+}
+
+data class ServerAccount(
+    val username: String, val status: String, val expiresAt: Long?,
+    val activeConnections: Int?, val maxConnections: Int?, val timezone: String?,
+    val serverTime: String?, val outputFormats: List<String>
+)
+data class LiveCategory(val id: String, val name: String)
+data class LiveChannel(val id: Int, val name: String, val categoryId: String?, val iconUrl: String?, val epgId: String?)
+class ServerAccountException(message: String) : Exception(message)
+
+object ServerAddress {
+    fun normalize(input: String): String {
+        val value = input.trim()
+        require(value.isNotEmpty() && value.length <= 2048) { "Informe um endereço de servidor válido." }
+        val uri = try { URI(if ("://" in value) value else "http://$value") }
+            catch (_: Exception) { throw IllegalArgumentException("Endereço de servidor inválido.") }
+        require(uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank() &&
+            uri.rawUserInfo == null && uri.rawQuery == null && uri.rawFragment == null &&
+            uri.port in -1..65535 && uri.port != 0) { "Use apenas o endereço HTTP ou HTTPS do servidor, sem credenciais na URL." }
+        val path = uri.rawPath.orEmpty().removeSuffix("/player_api.php").trimEnd('/') + "/"
+        return URI(uri.scheme.lowercase(), null, uri.host.lowercase(), uri.port, null, null, null)
+            .toASCIIString().trimEnd('/') + path
+    }
+}
+
+/** Handles the string/number scalar variations used by Xtream providers. */
+object XtreamCatalogParser {
+    private val json = Json { ignoreUnknownKeys = true }
+    private fun JsonObject.text(name: String): String? =
+        (get(name) as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+    private fun obj(body: String) = json.parseToJsonElement(body) as? JsonObject
+        ?: throw IllegalArgumentException("Resposta inválida do servidor.")
+    private fun array(body: String) = json.parseToJsonElement(body) as? JsonArray
+        ?: throw IllegalArgumentException("Lista inválida do servidor.")
+
+    fun account(body: String, fallbackUsername: String, nowSeconds: Long): ServerAccount {
+        val root = obj(body)
+        val user = root["user_info"] as? JsonObject ?: throw IllegalArgumentException("Resposta de login inválida.")
+        if (user.text("auth") != "1") throw ServerAccountException("Usuário ou senha recusados pelo servidor.")
+        val status = user.text("status") ?: "Active"
+        if (!status.equals("Active", ignoreCase = true)) throw ServerAccountException("A conta não está ativa no servidor.")
+        val expiry = user.text("exp_date")?.toLongOrNull()?.takeIf { it in 1L..253402300799L }
+        if (expiry != null && expiry <= nowSeconds) throw ServerAccountException("A conta está expirada.")
+        val server = root["server_info"] as? JsonObject
+        return ServerAccount(user.text("username") ?: fallbackUsername, status, expiry,
+            user.text("active_cons")?.toIntOrNull(), user.text("max_connections")?.toIntOrNull(),
+            server?.text("timezone"), server?.text("time_now"),
+            (user["allowed_output_formats"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty())
+    }
+
+    fun categories(body: String): List<LiveCategory> = array(body).mapNotNull { element ->
+        val item = element as? JsonObject ?: return@mapNotNull null
+        val id = item.text("category_id") ?: return@mapNotNull null
+        LiveCategory(id, item.text("category_name") ?: "Categoria $id")
+    }.distinctBy { it.id }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+
+    fun channels(body: String): List<LiveChannel> = array(body).mapNotNull { element ->
+        val item = element as? JsonObject ?: return@mapNotNull null
+        val id = item.text("stream_id")?.toIntOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
+        LiveChannel(id, item.text("name") ?: "Canal $id", item.text("category_id"),
+            item.text("stream_icon"), item.text("epg_channel_id"))
+    }.distinctBy { it.id }
+}

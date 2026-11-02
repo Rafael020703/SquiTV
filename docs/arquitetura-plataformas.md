@@ -5,8 +5,8 @@ Este documento descreve a divisão de responsabilidades entre o aplicativo Andro
 ## 1. Módulos do Repositório
 
 * **`:app`**: Aplicação Android nativa. Contém UI em Jetpack Compose, ExoPlayer (Media3), Room Database, WorkManager, serviços em foreground, integrações com Android TV/Mobile e adaptadores de atualização específicos do Android.
-* **`:shared`**: Núcleo puro em Kotlin/JVM independente de Android. Contém utilitários de versão, contratos de manifesto de atualização e validação de artefatos. Não possui dependências de Android (`android.*`, `Context`, etc.).
-* **`:desktopApp`** *(Planejado)*: Futura aplicação Compose Multiplatform para Windows Desktop. Consumirá `:shared` para regras de negócio portáveis e implementará seus próprios adaptadores de player e sistema de arquivos.
+* **`:shared`**: Núcleo puro Kotlin/JVM, sem Android. Contém versões, contrato de atualização e modelos/parser portáveis de login e catálogo Xtream. O Android continua usando seus adaptadores existentes; esta etapa não migra seu banco nem seu login.
+* **`:desktopApp`** *(Inicial)*: Compose Desktop para Windows x64. Reutiliza o núcleo, oferece login, dados de servidor/conta e listagem por categoria. HTTP cancelável e armazenamento DPAPI são adaptadores próprios. Player de vídeo e cliente de atualização Windows são etapas seguintes.
 
 ## 2. Invariantes Arquiteturais
 

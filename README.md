@@ -115,14 +115,22 @@ O APK é gerado em `app/build/outputs/apk/release/`. Antes de publicar, confira 
 
 O projeto utiliza o módulo compartilhado `:shared` (Kotlin/JVM puro) para validação de versão e seleção de artefatos de atualização. O manifesto de distribuição (`squitv-update.json`) segue o Schema v1.
 
-A versão Windows ainda será implementada. A base de atualização já separa os artefatos de cada plataforma e mantém compatibilidade com releases Android sem manifesto. Consulte [o contrato](docs/contrato-atualizacoes.md), [a arquitetura](docs/arquitetura-plataformas.md) e [o checklist de release](docs/checklist-release.md). O gerador em `tools/generate_manifest.py` lê metadados do APK assinado e produz o staging local; não publica automaticamente.
+O módulo Windows inicial reutiliza `:shared`; sua interface e armazenamento são próprios. A base de atualização separa os artefatos por plataforma e mantém compatibilidade com releases Android sem manifesto. Consulte [o contrato](docs/contrato-atualizacoes.md), [a arquitetura](docs/arquitetura-plataformas.md) e [o checklist de release](docs/checklist-release.md). O gerador lê metadados do APK assinado e produz o staging local; não publica automaticamente.
 
 Para gerar e validar o manifesto a partir de um APK compilado:
 ```powershell
-python tools/generate_manifest.py <caminho-do-apk> <version_name> <version_code> <release_tag>
+python -B tools/generate_manifest.py app/build/outputs/apk/release/app-release.apk --tag v1.21 --output-dir .artifacts/release-v1.21
 ```
 
 O `.gitignore` exclui builds, caches, arquivos locais, material privado de assinatura e planos/relatórios locais do Gemini. Wrapper do Gradle, schemas do Room, recursos e notas de versão continuam versionados. Adicionar um padrão ao `.gitignore` não remove arquivos já rastreados nem apaga o histórico.
+
+## Windows — desenvolvimento inicial
+
+`:desktopApp` contém login Xtream, dados da conta/servidor, categorias e listagem de canais ao vivo com busca na categoria. A reprodução de vídeo no Windows e seu cliente de atualização ainda não foram implementados. Filmes e séries permanecem no aplicativo Android.
+
+As variantes Windows release e debug têm nomes, instaladores, identidades de atualização e armazenamento separados. Os instaladores `.exe` incluem o runtime Java. A conta é salva opcionalmente com DPAPI do usuário do Windows, sem senha em texto no disco.
+
+Consulte [Windows: build, instalação e limites](docs/windows.md). O instalador inicial é gerado localmente; não foi anexado à release Android v1.21.
 
 ## Tecnologia
 
@@ -135,6 +143,7 @@ Kotlin, Coroutines/Flow, Jetpack Compose/Material 3, Media3/ExoPlayer, Hilt, Roo
 - [Arquitetura das plataformas](docs/arquitetura-plataformas.md)
 - [Contrato de atualizações](docs/contrato-atualizacoes.md)
 - [Checklist de release](docs/checklist-release.md)
+- [Windows](docs/windows.md)
 
 Relatórios datados documentam a etapa em que foram produzidos; não substituem a validação do checkout atual.
 
