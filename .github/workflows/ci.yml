@@ -30,7 +30,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Ensure Project Android SDK
-        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;36.0.0"'
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0"'
 
       - name: Run Shared Module Tests
         run: ./gradlew :shared:test --console=plain
