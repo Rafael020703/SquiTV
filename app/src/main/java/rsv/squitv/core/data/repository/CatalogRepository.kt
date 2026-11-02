@@ -12,6 +12,7 @@ import rsv.squitv.data.model.*
 import rsv.squitv.data.model.XtreamCredentials
 import rsv.squitv.domain.model.ContentType
 import rsv.squitv.domain.model.IptvItem
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -290,12 +291,16 @@ class CatalogRepository @Inject constructor(
                             trailer = info.youtubeTrailer
                         )
                     } catch (e: Exception) {
+                        if (e is CancellationException) throw e
                         Timber.e(e, "Error updating SERIES metadata in Room for ID $seriesId")
                     }
                 }
             }
             info
-        } catch (e: Exception) { null }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            null
+        }
     }
 
     fun getStreamsByCategoryPaged(categoryId: String, type: String): Flow<PagingData<IptvItem>> {
@@ -449,14 +454,41 @@ class CatalogRepository @Inject constructor(
         }
         val response = try {
             xtreamService.getSeriesEpisodes(credentials.username, credentials.password, seriesId = seriesId)
-        } catch (e: Exception) { return Pair(emptyList(), emptyMap()) }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            return Pair(emptyList(), emptyMap())
+        }
+
         val seasons = mutableListOf<SeasonEntity>()
         val episodesMap = mutableMapOf<Int, List<EpisodeEntity>>()
-        response.seasons?.forEach { xtreamSeason ->
-            val sn = xtreamSeason.seasonNumber ?: 0
-            seasons.add(SeasonEntity(seriesId, sn, xtreamSeason.name ?: "Season $sn", xtreamSeason.cover ?: response.info?.cover))
-            val eps = response.episodes?.get(sn.toString()) ?: response.episodes?.get(xtreamSeason.name) ?: emptyList()
-            episodesMap[sn] = eps.map { EpisodeEntity(seriesId, sn, it.id?.toIntOrNull() ?: 0, it.episodeNum?.toIntOrNull() ?: 0, it.title ?: "", it.id?.toIntOrNull() ?: 0, it.container_extension, it.info?.movieImage, it.info?.plot, it.info?.duration, it.info?.rating) }
+        val rawSeasons = response.seasons.orEmpty()
+        val rawEpisodes = response.episodes ?: emptyMap()
+
+        val seasonKeys = if (rawSeasons.isEmpty()) {
+            rawEpisodes.keys.mapNotNull { it.toIntOrNull() }.sorted()
+        } else {
+            rawSeasons.mapNotNull { it.seasonNumber }
+        }
+
+        seasonKeys.forEach { sn ->
+            val xtreamSeason = rawSeasons.find { it.seasonNumber == sn }
+            seasons.add(SeasonEntity(seriesId, sn, xtreamSeason?.name ?: "Season $sn", xtreamSeason?.cover ?: response.info?.cover))
+            val eps = rawEpisodes[sn.toString()] ?: rawEpisodes["Season $sn"] ?: rawEpisodes[xtreamSeason?.name.orEmpty()] ?: emptyList()
+            episodesMap[sn] = eps.map {
+                EpisodeEntity(
+                    seriesId = seriesId,
+                    seasonNumber = sn,
+                    episodeId = it.id?.toIntOrNull() ?: it.episodeNum?.toIntOrNull() ?: 0,
+                    episodeNum = it.episodeNum?.toIntOrNull() ?: 0,
+                    title = it.title ?: "Episode ${it.episodeNum ?: 0}",
+                    streamId = it.id?.toIntOrNull() ?: 0,
+                    containerExtension = it.container_extension,
+                    image = it.info?.movieImage,
+                    plot = it.info?.plot,
+                    duration = it.info?.duration,
+                    rating = it.info?.rating
+                )
+            }
         }
         if (seasons.isNotEmpty()) {
             iptvDao.insertSeasons(seasons)

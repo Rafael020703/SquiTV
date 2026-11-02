@@ -1,0 +1,115 @@
+package rsv.squitv.shared.update
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class UpdateManifest(
+    @SerialName("schemaVersion") val schemaVersion: Int = 1,
+    @SerialName("productId") val productId: String = "squi-tv",
+    @SerialName("channel") val channel: String = "stable",
+    @SerialName("releaseTag") val releaseTag: String,
+    @SerialName("artifacts") val artifacts: List<UpdateArtifact> = emptyList()
+)
+
+@Serializable
+data class UpdateArtifact(
+    @SerialName("platform") val platform: String,
+    @SerialName("kind") val kind: String,
+    @SerialName("architecture") val architecture: String,
+    @SerialName("assetName") val assetName: String,
+    @SerialName("versionName") val versionName: String,
+    @SerialName("versionCode") val versionCode: Long? = null,
+    @SerialName("minSdk") val minSdk: Int? = null,
+    @SerialName("sizeBytes") val sizeBytes: Long,
+    @SerialName("sha256") val sha256: String,
+    @SerialName("applicationId") val applicationId: String? = null,
+    @SerialName("abis") val abis: List<String> = emptyList()
+)
+
+object UpdateManifestValidator {
+    private val HEX_SHA256_REGEX = Regex("^[a-fA-F0-9]{64}$")
+    private val ASSET_NAME = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,180}")
+    val androidAbis = setOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+
+    fun validate(manifest: UpdateManifest): Boolean {
+        if (manifest.schemaVersion != 1) return false
+        if (manifest.productId != "squi-tv") return false
+        if (manifest.channel != "stable") return false
+        if (!VersionComparator.isValidVersion(manifest.releaseTag)) return false
+        if (manifest.artifacts.size !in 1..16) return false
+        if (manifest.artifacts.map { it.assetName }.distinct().size != manifest.artifacts.size) return false
+        for (artifact in manifest.artifacts) {
+            if (artifact.platform.isBlank() ||
+                artifact.kind.isBlank() ||
+                artifact.architecture.isBlank() ||
+                !ASSET_NAME.matches(artifact.assetName) ||
+                !VersionComparator.isValidVersion(artifact.versionName) ||
+                artifact.sizeBytes <= 0 ||
+                !artifact.sha256.matches(HEX_SHA256_REGEX)) {
+                return false
+            }
+            if (VersionComparator.compareVersions(artifact.versionName, manifest.releaseTag) > 0) return false
+            when (artifact.platform) {
+                "android" -> {
+                    if (artifact.kind != "apk" || !artifact.assetName.endsWith(".apk") ||
+                        artifact.assetName.contains("debug", ignoreCase = true) ||
+                        artifact.applicationId != "rsv.squitv" ||
+                        (artifact.versionCode ?: 0L) !in 1L..2_100_000_000L ||
+                        (artifact.minSdk ?: 0) < 1 ||
+                        artifact.abis.distinct().size != artifact.abis.size ||
+                        artifact.abis.any { it !in androidAbis }) return false
+                    when (artifact.architecture) {
+                        "any" -> if (artifact.abis.isNotEmpty()) return false
+                        "universal" -> if (artifact.abis.size < 2) return false
+                        else -> if (artifact.architecture !in androidAbis ||
+                            artifact.abis != listOf(artifact.architecture)) return false
+                    }
+                }
+                "windows" -> if (artifact.kind !in setOf("exe", "msi") ||
+                    !artifact.assetName.endsWith(".${artifact.kind}") ||
+                    artifact.architecture !in setOf("x64", "arm64") ||
+                    artifact.applicationId != null || artifact.minSdk != null ||
+                    artifact.versionCode != null || artifact.abis.isNotEmpty()) return false
+                else -> return false
+            }
+        }
+        return true
+    }
+
+    fun selectAndroidArtifact(
+        manifest: UpdateManifest,
+        currentVersionName: String,
+        currentVersionCode: Long,
+        currentMinSdk: Int,
+        deviceAbis: List<String> = emptyList(),
+        applicationId: String = "rsv.squitv"
+    ): UpdateArtifact? {
+        if (!validate(manifest) || !VersionComparator.isValidVersion(currentVersionName)) return null
+        return manifest.artifacts
+            .filter { it.platform.equals("android", ignoreCase = true) && it.kind.equals("apk", ignoreCase = true) }
+            .filter { artifact ->
+                artifact.applicationId == applicationId
+            }
+            .filter { artifact ->
+                val minSdk = artifact.minSdk ?: 0
+                currentMinSdk >= minSdk
+            }
+            .filter { artifact ->
+                artifact.architecture == "any" || artifact.abis.any { it in deviceAbis }
+            }
+            .filter { artifact ->
+                artifact.versionCode!! > currentVersionCode &&
+                    VersionComparator.compareVersions(artifact.versionName, currentVersionName) >= 0
+            }
+            .sortedWith { left, right ->
+                val byCode = right.versionCode!!.compareTo(left.versionCode!!)
+                val byVersion = VersionComparator.compareVersions(right.versionName, left.versionName)
+                when {
+                    byCode != 0 -> byCode
+                    byVersion != 0 -> byVersion
+                    else -> left.assetName.compareTo(right.assetName)
+                }
+            }.firstOrNull()
+    }
+}

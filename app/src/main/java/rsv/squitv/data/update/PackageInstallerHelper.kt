@@ -33,7 +33,7 @@ object PackageInstallerHelper {
     }
 
     @Suppress("DEPRECATION")
-    fun validationError(context: Context, apkFile: File, expectedVersion: String? = null): String? {
+    fun validationError(context: Context, apkFile: File, expectedVersion: String? = null, expectedVersionCode: Long? = null): String? {
         if (!apkFile.isFile || apkFile.length() <= 0) return context.getString(R.string.updater_missing_file)
         return try {
             val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -46,6 +46,8 @@ object PackageInstallerHelper {
             when {
                 candidate.packageName != context.packageName -> context.getString(R.string.updater_wrong_package)
                 expectedVersion != null && VersionComparator.compareVersions(candidate.versionName.orEmpty(), expectedVersion) != 0 ->
+                    context.getString(R.string.updater_wrong_version)
+                expectedVersionCode != null && versionCode(candidate) != expectedVersionCode ->
                     context.getString(R.string.updater_wrong_version)
                 versionCode(candidate) <= versionCode(installed) -> context.getString(R.string.updater_old_apk)
                 !hasCompatibleSigners(installed, candidate) -> context.getString(R.string.updater_wrong_signature)

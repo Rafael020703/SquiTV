@@ -542,18 +542,26 @@ fun PlayerContent(
                 val state = uiState as PlayerUiState.Playing
                 PlayerSettingsDialog(
                     tracks = state.tracks,
+                    trackSelectionParameters = state.trackSelectionParameters,
+                    resizeMode = resizeMode,
                     isLive = state.isLive,
                     groupChannels = groupChannels,
                     versions = state.availableVersions,
                     selectedVersionId = state.streamId,
                     onGroupingChanged = onGroupingChanged,
-                    onVersionSelected = onVersionSelected,
+                    onVersionSelected = {
+                        onVersionSelected(it)
+                        setShowSettings(false)
+                        setShowQualityMenu(false)
+                        showOverlayWith5sTimer()
+                    },
                     sleepTimer = sleepTimer,
                     currentSpeed = state.playbackSpeed,
                     initialTab = settingsInitialTab,
                     onDismiss = { 
                         setShowSettings(false)
                         setShowQualityMenu(false)
+                        showOverlayWith5sTimer()
                     }, 
                     onSelectTrack = onSelectTrack, 
                     onClearOverride = onClearTrackOverride,
@@ -568,7 +576,10 @@ fun PlayerContent(
                 val state = uiState as PlayerUiState.Playing
                 PlayerSpeedDialog(
                     currentSpeed = state.playbackSpeed,
-                    onDismiss = { setShowSpeedMenu(false) },
+                    onDismiss = {
+                        setShowSpeedMenu(false)
+                        showOverlayWith5sTimer()
+                    },
                     onSetSpeed = { speed -> onSetSpeed(speed) }
                 )
             }

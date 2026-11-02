@@ -12,7 +12,7 @@ import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import rsv.squitv.R
-import rsv.squitv.di.ApiOkHttpClient
+import rsv.squitv.di.UpdateOkHttpClient
 import rsv.squitv.domain.model.AppUpdateInfo
 import timber.log.Timber
 import java.io.File
@@ -31,7 +31,7 @@ sealed interface DownloadStatus {
 @Singleton
 class ApkDownloadManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    @ApiOkHttpClient private val okHttpClient: OkHttpClient
+    @UpdateOkHttpClient private val okHttpClient: OkHttpClient
 ) {
     private val _downloadStatus = MutableStateFlow<DownloadStatus>(DownloadStatus.Idle)
     val downloadStatus = _downloadStatus.asStateFlow()
@@ -159,6 +159,6 @@ class ApkDownloadManager @Inject constructor(
                 return context.getString(R.string.integrity_failed_desc)
             }
         }
-        return PackageInstallerHelper.validationError(context, file, info.versionName)
+        return PackageInstallerHelper.validationError(context, file, info.versionName, info.versionCode)
     }
 }

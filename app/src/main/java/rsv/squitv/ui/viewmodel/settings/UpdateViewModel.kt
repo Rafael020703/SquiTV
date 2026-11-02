@@ -150,7 +150,7 @@ class UpdateViewModel @Inject constructor(
         awaitingPermission = false
         installJob = viewModelScope.launch {
             _uiState.value = UpdateUiState.OpeningInstaller(info)
-            val error = withContext(Dispatchers.IO) { PackageInstallerHelper.validationError(context, file, info.versionName) }
+            val error = withContext(Dispatchers.IO) { PackageInstallerHelper.validationError(context, file, info.versionName, info.versionCode) }
             _uiState.value = when {
                 error != null -> UpdateUiState.Error(error, info)
                 PackageInstallerHelper.installApk(context, file) -> UpdateUiState.InstallerOpened(info)

@@ -11,7 +11,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
-import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import rsv.squitv.core.data.repository.CatalogRepository
 import rsv.squitv.core.data.repository.StreamRepository
@@ -50,6 +50,7 @@ import javax.inject.Inject
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import kotlin.time.Duration.Companion.seconds
 
+@OptIn(UnstableApi::class)
 sealed class PlayerUiState(
     open val position: Long = 0L,
     open val duration: Long = 0L,
@@ -69,6 +70,7 @@ sealed class PlayerUiState(
         val isReconnecting: Boolean = false,
         val savedPosition: Long? = null,
         val tracks: Tracks? = null,
+        val trackSelectionParameters: TrackSelectionParameters = TrackSelectionParameters.DEFAULT,
         val isFavorite: Boolean = false,
         val bandwidthMbps: Double = 0.0,
         val bufferDelaySeconds: Long = 0,
@@ -257,6 +259,7 @@ class PlayerViewModel @Inject constructor(
                 nextEpisodeStreamId = nextEpisodeStreamId,
                 nextEpisodeName = nextEpisodeName,
                 tracks = p.currentTracks,
+                trackSelectionParameters = p.trackSelectionParameters,
                 availableVersions = _channelVersions.value,
                 epgId = currentEpgId,
                 streamId = currentStreamId,
@@ -279,6 +282,7 @@ class PlayerViewModel @Inject constructor(
                 nextEpisodeStreamId = nextEpisodeStreamId,
                 nextEpisodeName = nextEpisodeName,
                 tracks = p.currentTracks,
+                trackSelectionParameters = p.trackSelectionParameters,
                 availableVersions = _channelVersions.value,
                 epgId = currentEpgId,
                 streamId = currentStreamId,
@@ -410,7 +414,8 @@ class PlayerViewModel @Inject constructor(
                 if (p.playbackState == Player.STATE_READY) {
                     val currentState = _uiState.value
                     if (currentState is PlayerUiState.Playing && currentState.streamId == currentStreamId) {
-                        _uiState.value = currentState.copy(tracks = event.tracks)
+                        _uiState.value = currentState.copy(
+                            tracks = event.tracks, trackSelectionParameters = p.trackSelectionParameters)
                     }
                     applyTrackPreferences(event.tracks)
                 }
@@ -1474,30 +1479,27 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    fun selectTrack(groupId: Int, trackIndex: Int, trackType: Int) {
-        playbackManager.player?.let { p ->
-            val tracks = p.currentTracks
-            val groups = tracks.groups.filter { it.type == trackType }
-            if (groupId < groups.size) {
-                val trackGroup = groups[groupId]
-                val format = trackGroup.getTrackFormat(trackIndex)
-                
-                // Save preference
-                viewModelScope.launch {
-                    if (trackType == C.TRACK_TYPE_AUDIO) {
-                        settingsRepository.updatePreferredAudioLang(format.language)
-                    } else if (trackType == C.TRACK_TYPE_TEXT) {
-                        settingsRepository.updatePreferredSubtitleLang(format.language)
-                    }
-                }
+    // Explicit choices take precedence over asynchronously loaded stored preferences for this session.
+    private val manuallyConfiguredTrackTypes = mutableSetOf<Int>()
 
-                playbackManager.setTrackSelectionParameters(
-                    p.trackSelectionParameters
-                        .buildUpon()
-                        .setTrackTypeDisabled(trackType, false)
-                        .setOverrideForType(TrackSelectionOverride(trackGroup.mediaTrackGroup, trackIndex))
-                        .build()
-                )
+    private fun updateTrackParameters(parameters: TrackSelectionParameters) {
+        playbackManager.setTrackSelectionParameters(parameters)
+        val state = _uiState.value as? PlayerUiState.Playing ?: return
+        _uiState.value = state.copy(trackSelectionParameters = parameters)
+    }
+
+    fun selectTrack(groupId: Int, trackIndex: Int, trackType: Int) {
+        val player = playbackManager.player ?: return
+        val parameters = rsv.squitv.ui.content.player.PlayerTrackSelection.select(
+            player.currentTracks, player.trackSelectionParameters, groupId, trackIndex, trackType) ?: return
+        val group = player.currentTracks.groups.filter { it.type == trackType }.getOrNull(groupId) ?: return
+        val language = group.getTrackFormat(trackIndex).language
+        manuallyConfiguredTrackTypes.add(trackType)
+        updateTrackParameters(parameters)
+        viewModelScope.launch {
+            when (trackType) {
+                C.TRACK_TYPE_AUDIO -> settingsRepository.updatePreferredAudioLang(language)
+                C.TRACK_TYPE_TEXT -> settingsRepository.updatePreferredSubtitleLang(language)
             }
         }
     }
@@ -1505,57 +1507,29 @@ class PlayerViewModel @Inject constructor(
     private fun applyTrackPreferences(tracks: Tracks) {
         val player = playbackManager.player ?: return
         val settings = appSettings.value
-        
-        var paramsBuilder = player.trackSelectionParameters.buildUpon()
-        var changed = false
-
-        // Audio
-        if (!settings.preferredAudioLang.isNullOrBlank()) {
-            val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
-            audioGroups.forEach { group ->
-                for (i in 0 until group.length) {
-                    val format = group.getTrackFormat(i)
-                    if (format.language == settings.preferredAudioLang && !group.isTrackSelected(i)) {
-                        paramsBuilder = paramsBuilder.setOverrideForType(
-                            TrackSelectionOverride(group.mediaTrackGroup, i)
-                        )
-                        changed = true
-                        break
-                    }
-                }
-            }
+        val current = player.trackSelectionParameters
+        val builder = current.buildUpon()
+        // Media3 chooses one suitable track by language. Never overwrite a manual override
+        // on each TracksChanged event, which could repeatedly switch between matching groups.
+        if (C.TRACK_TYPE_AUDIO !in manuallyConfiguredTrackTypes &&
+            tracks.groups.any { it.type == C.TRACK_TYPE_AUDIO } &&
+            current.overrides.values.none { it.type == C.TRACK_TYPE_AUDIO }) {
+            builder.setPreferredAudioLanguage(settings.preferredAudioLang)
         }
-
-        // Subtitles
-        if (!settings.preferredSubtitleLang.isNullOrBlank()) {
-            val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
-            textGroups.forEach { group ->
-                for (i in 0 until group.length) {
-                    val format = group.getTrackFormat(i)
-                    if (format.language == settings.preferredSubtitleLang && !group.isTrackSelected(i)) {
-                        paramsBuilder = paramsBuilder.setOverrideForType(
-                            TrackSelectionOverride(group.mediaTrackGroup, i)
-                        )
-                        changed = true
-                        break
-                    }
-                }
-            }
+        if (C.TRACK_TYPE_TEXT !in manuallyConfiguredTrackTypes &&
+            C.TRACK_TYPE_TEXT !in current.disabledTrackTypes &&
+            current.overrides.values.none { it.type == C.TRACK_TYPE_TEXT }) {
+            builder.setPreferredTextLanguage(settings.preferredSubtitleLang)
         }
-
-        if (changed) {
-            playbackManager.setTrackSelectionParameters(paramsBuilder.build())
-            // Correção cirúrgica: setTrackSelectionParameters aplica diretamente as preferências ao player.
-            // NUNCA chamar prepare() ou play() quando o player está em STATE_IDLE sem MediaItem associado.
-        }
+        val updated = builder.build()
+        if (updated != current) updateTrackParameters(updated)
     }
 
     fun clearTrackOverride(trackType: Int) {
         val player = playbackManager.player ?: return
-        playbackManager.setTrackSelectionParameters(player.trackSelectionParameters.buildUpon()
-            .clearOverridesOfType(trackType)
-            .setTrackTypeDisabled(trackType, trackType == C.TRACK_TYPE_TEXT)
-            .build())
+        manuallyConfiguredTrackTypes.add(trackType)
+        updateTrackParameters(rsv.squitv.ui.content.player.PlayerTrackSelection.clear(
+            player.trackSelectionParameters, trackType))
         viewModelScope.launch {
             if (trackType == C.TRACK_TYPE_AUDIO) settingsRepository.updatePreferredAudioLang(null)
             if (trackType == C.TRACK_TYPE_TEXT) settingsRepository.updatePreferredSubtitleLang(null)

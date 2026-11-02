@@ -1,46 +1,47 @@
-﻿package rsv.squitv.ui.content.player
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 
-import androidx.compose.animation.animateColorAsState
+package rsv.squitv.ui.content.player
+
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.key.*
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.C
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
-import rsv.squitv.R
-import rsv.squitv.core.ui.components.buttons.AppIconButton
-import rsv.squitv.core.ui.components.common.adaptiveFocus
-import rsv.squitv.core.ui.theme.*
-import kotlinx.coroutines.delay
+import androidx.media3.ui.AspectRatioFrameLayout
+import rsv.squitv.core.ui.components.settings.channelQualityLabel
+import rsv.squitv.core.ui.theme.AppDesignSystem
+import rsv.squitv.domain.model.ChannelVersion
+import java.util.Locale
+
+private data class SettingsTab(val id: Int, val title: String)
 
 @Composable
 fun PlayerSettingsDialog(
     tracks: Tracks?,
     sleepTimer: Int?,
-    currentSpeed: Float = 1.0f,
+    currentSpeed: Float = 1f,
     initialTab: Int = 0,
     onDismiss: () -> Unit,
     onSelectTrack: (Int, Int, Int) -> Unit,
@@ -50,717 +51,244 @@ fun PlayerSettingsDialog(
     onToggleResizeMode: () -> Unit = {},
     isLive: Boolean = false,
     groupChannels: Boolean = true,
-    versions: List<rsv.squitv.domain.model.ChannelVersion> = emptyList(),
+    versions: List<ChannelVersion> = emptyList(),
     selectedVersionId: Int? = null,
     onGroupingChanged: (Boolean) -> Unit = {},
-    onVersionSelected: (Int) -> Unit = {}
+    onVersionSelected: (Int) -> Unit = {},
+    trackSelectionParameters: TrackSelectionParameters = TrackSelectionParameters.DEFAULT,
+    resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
+    speedOnly: Boolean = false
 ) {
-    val tokens = AppDesignSystem
-    var selectedTab by remember { mutableStateOf(initialTab) }
-    
-    val initialFocusRequester = remember { FocusRequester() }
-
-    LaunchedEffect(Unit) {
-        delay(200)
-        try { initialFocusRequester.requestFocus() } catch (_: Exception) {}
-    }
-
-    // Fullscreen Overlay Backdrop (Video remains visible underneath with dark scrim)
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.65f))
-            .onKeyEvent { keyEvent ->
-                if (keyEvent.type == KeyEventType.KeyUp && keyEvent.key == Key.Back) {
-                    onDismiss()
-                    true
-                } else false
-            },
-        contentAlignment = Alignment.CenterEnd
-    ) {
-        // TV-First Settings Side Panel
-        Surface(
-            modifier = Modifier
-                .widthIn(max = 460.dp)
-                .fillMaxWidth(0.94f)
-                .fillMaxHeight(0.84f)
-                .padding(end = 12.dp),
-            shape = RoundedCornerShape(24.dp),
-            color = tokens.colors.surface,
-            border = BorderStroke(1.dp, tokens.colors.border.copy(alpha = 0.35f)),
-            shadowElevation = 24.dp
-        ) {
-            Column(
-                modifier = Modifier.fillMaxSize()
+    val colors = AppDesignSystem.colors
+    val tabs = if (speedOnly) listOf(SettingsTab(3, "Velocidade")) else
+        (if (isLive) listOf(SettingsTab(5, "Canais")) else emptyList()) +
+        listOf(SettingsTab(0, "Imagem"), SettingsTab(1, "Áudio"), SettingsTab(2, "Legendas"),
+            SettingsTab(3, "Velocidade"), SettingsTab(4, "Temporizador"))
+    val openingTab = initialTab.takeIf { id -> tabs.any { it.id == id } } ?: tabs.first().id
+    var selectedTab by remember(openingTab) { mutableStateOf(openingTab) }
+    val initialFocus = remember { FocusRequester() }
+    val tabsState = rememberLazyListState(initialFirstVisibleItemIndex = tabs.indexOfFirst { it.id == openingTab })
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        BoxWithConstraints(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+            val wide = maxWidth >= 600.dp && !speedOnly
+            Surface(
+                modifier = Modifier.widthIn(max = if (speedOnly) 420.dp else 760.dp)
+                    .fillMaxWidth().fillMaxHeight(0.9f),
+                shape = RoundedCornerShape(20.dp), color = colors.surface,
+                border = BorderStroke(1.dp, colors.border.copy(alpha = 0.5f))
             ) {
-                // Header Bar
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color.White.copy(alpha = 0.04f))
-                        .padding(horizontal = 24.dp, vertical = 18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                Column(Modifier.padding(20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Rounded.Settings,
-                            contentDescription = null,
-                            tint = tokens.colors.primary,
-                            modifier = Modifier.size(28.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "CONFIGURAÇÕES DO PLAYER",
-                            style = tokens.typography.title,
-                            fontWeight = FontWeight.Black,
-                            color = tokens.colors.textPrimary,
-                            letterSpacing = 1.sp
-                        )
-                    }
-
-                    AppIconButton(
-                        icon = Icons.Rounded.Close,
-                        onClick = onDismiss,
-                        tint = tokens.colors.textSecondary
-                    )
-                }
-
-                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
-
-                // Panel Main Body (Left Category Menu + Right Options)
-                Row(modifier = Modifier.fillMaxSize()) {
-                    // Left Side Category Menu
-                    Column(
-                        modifier = Modifier
-                            .width(144.dp)
-                            .fillMaxHeight()
-                            .verticalScroll(rememberScrollState())
-                            .background(Color.Black.copy(alpha = 0.2f))
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        val categories = (if (isLive) listOf(Triple(5, stringResource(R.string.channel_version), Icons.Rounded.LiveTv)) else emptyList()) + listOf(
-                            Triple(0, stringResource(R.string.video_track), Icons.Rounded.VideoSettings),
-                            Triple(1, "ÁUDIO", Icons.Rounded.InterpreterMode),
-                            Triple(2, "LEGENDAS", Icons.Rounded.ClosedCaption),
-                            Triple(3, "VELOCIDADE", Icons.Rounded.Speed),
-                            Triple(4, "SISTEMA", Icons.Rounded.SettingsSuggest)
-                        )
-
-                        categories.forEachIndexed { idx, (catId, title, icon) ->
-                            SettingsCategoryTab(
-                                title = title,
-                                icon = icon,
-                                isSelected = selectedTab == catId,
-                                modifier = if (idx == 0) Modifier.focusRequester(initialFocusRequester) else Modifier,
-                                onClick = { selectedTab = catId }
-                            )
+                        Column(Modifier.weight(1f)) {
+                            Text(if (speedOnly) "Velocidade" else "Configurações do player",
+                                style = MaterialTheme.typography.titleLarge, color = colors.textPrimary,
+                                fontWeight = FontWeight.SemiBold)
+                            Text("Ajustes para a reprodução", style = MaterialTheme.typography.bodySmall,
+                                color = colors.textSecondary)
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Rounded.Close, "Fechar configurações", tint = colors.textSecondary)
                         }
                     }
-
-                    VerticalDivider(color = Color.White.copy(alpha = 0.08f))
-
-                    // Right Content Options Area
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .padding(20.dp)
-                    ) {
-                        when (selectedTab) {
-                            5 -> ChannelVersionsSection(groupChannels, versions, selectedVersionId, onGroupingChanged, onVersionSelected)
-                            0 -> VideoQualitySettingsSection(
-                                tracks = tracks,
-                                onSelectTrack = onSelectTrack,
-                                onClearOverride = onClearOverride,
-                                onToggleResizeMode = onToggleResizeMode
-                            )
-                            1 -> AudioTrackSettingsSection(
-                                tracks = tracks,
-                                onSelectTrack = onSelectTrack,
-                                onClearOverride = onClearOverride
-                            )
-                            2 -> SubtitleSettingsSection(
-                                tracks = tracks,
-                                onSelectTrack = onSelectTrack,
-                                onClearOverride = onClearOverride
-                            )
-                            3 -> PlaybackSpeedSettingsSection(
-                                currentSpeed = currentSpeed,
-                                onSetSpeed = onSetSpeed
-                            )
-                            4 -> SystemSettingsSection(
-                                sleepTimer = sleepTimer,
-                                onSetSleepTimer = onSetSleepTimer
-                            )
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider(color = colors.border.copy(alpha = 0.4f))
+                    Spacer(Modifier.height(12.dp))
+                    val tabContent: @Composable (SettingsTab) -> Unit = { tab ->
+                        var focused by remember { mutableStateOf(false) }
+                        val selected = selectedTab == tab.id
+                        OutlinedButton(
+                            onClick = { selectedTab = tab.id },
+                            modifier = (if (wide || speedOnly) Modifier.fillMaxWidth() else Modifier)
+                                .then(if (tab.id == openingTab) Modifier.focusRequester(initialFocus) else Modifier)
+                                .onFocusChanged { focused = it.isFocused },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (selected || focused) colors.primary.copy(alpha = 0.14f) else Color.Transparent,
+                                contentColor = if (selected || focused) colors.primary else colors.textSecondary),
+                            border = BorderStroke(if (focused) 2.dp else 1.dp,
+                                if (selected || focused) colors.primary else colors.border)
+                        ) { Text(tab.title, style = MaterialTheme.typography.labelLarge) }
+                    }
+                    val options: @Composable () -> Unit = {
+                        key(selectedTab) {
+                            PlayerSettingsOptions(selectedTab, tracks, trackSelectionParameters, sleepTimer,
+                                currentSpeed, resizeMode, groupChannels, versions, selectedVersionId,
+                                onSelectTrack, onClearOverride, onSetSleepTimer, onSetSpeed,
+                                onToggleResizeMode, onGroupingChanged, onVersionSelected,
+                                if (speedOnly) initialFocus else null)
                         }
+                    }
+                    if (wide) {
+                        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                            LazyColumn(Modifier.width(164.dp), state = tabsState,
+                                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(tabs, key = { it.id }) { tabContent(it) }
+                            }
+                            VerticalDivider(color = colors.border.copy(alpha = 0.4f))
+                            Box(Modifier.weight(1f)) { options() }
+                        }
+                    } else {
+                        if (!speedOnly) {
+                            LazyRow(state = tabsState, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(tabs, key = { it.id }) { tabContent(it) }
+                            }
+                            Spacer(Modifier.height(12.dp))
+                        }
+                        Box(Modifier.weight(1f)) { options() }
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun SettingsCategoryTab(
-    title: String,
-    icon: ImageVector,
-    isSelected: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    val tokens = AppDesignSystem
-    var isFocused by remember { mutableStateOf(false) }
-
-    val bgColor by animateColorAsState(
-        if (isFocused) tokens.colors.primary
-        else if (isSelected) tokens.colors.primary.copy(alpha = 0.20f)
-        else Color.Transparent,
-        label = "catBg"
-    )
-    val contentColor by animateColorAsState(
-        if (isFocused) Color.Black
-        else if (isSelected) tokens.colors.primary
-        else tokens.colors.textSecondary,
-        label = "catContent"
-    )
-
-    Surface(
-        onClick = onClick,
-        color = bgColor,
-        shape = RoundedCornerShape(12.dp),
-        modifier = modifier
-            .fillMaxWidth()
-            .adaptiveFocus(
-                shape = RoundedCornerShape(12.dp),
-                focusedScale = 1.04f,
-                onFocus = { isFocused = it }
-            )
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = contentColor,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = title,
-                color = contentColor,
-                style = tokens.typography.label.copy(fontSize = 11.sp),
-                fontWeight = if (isSelected || isFocused) FontWeight.Black else FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+        LaunchedEffect(Unit) {
+            withFrameNanos { }
+            initialFocus.requestFocus()
         }
     }
 }
 
 @Composable
-private fun ChannelVersionsSection(
-    grouped: Boolean,
-    versions: List<rsv.squitv.domain.model.ChannelVersion>,
-    selectedId: Int?,
-    onGroupingChanged: (Boolean) -> Unit,
-    onVersionSelected: (Int) -> Unit
+private fun PlayerSettingsOptions(
+    tab: Int, tracks: Tracks?, parameters: TrackSelectionParameters,
+    sleepTimer: Int?, speed: Float, resizeMode: Int, grouped: Boolean,
+    versions: List<ChannelVersion>, selectedVersionId: Int?,
+    selectTrack: (Int, Int, Int) -> Unit, clearTrack: (Int) -> Unit,
+    setSleepTimer: (Int?) -> Unit, setSpeed: (Float) -> Unit,
+    toggleResize: () -> Unit, setGrouping: (Boolean) -> Unit, selectVersion: (Int) -> Unit,
+    speedFocus: FocusRequester? = null
 ) {
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item {
-            rsv.squitv.core.ui.components.settings.SettingsToggle(
-                label = stringResource(R.string.group_live_channels), checked = grouped,
-                onCheckedChange = onGroupingChanged)
-            Text(stringResource(R.string.channel_version_hint), style = MaterialTheme.typography.bodySmall,
-                color = AppDesignSystem.colors.textSecondary)
-        }
-        itemsIndexed(versions, key = { _, version -> version.streamId }) { _, version ->
-            val resolution = version.resolution?.let { rsv.squitv.core.ui.components.settings.channelQualityLabel(it) }
-                ?: stringResource(R.string.channel_version_unknown)
-            TvOptionRowItem(
-                label = listOfNotNull(resolution, version.codec).joinToString(" • "),
-                sublabel = "${version.name} • #${version.streamId}",
-                isSelected = version.streamId == selectedId,
-                onClick = { onVersionSelected(version.streamId) })
-        }
-    }
-}
-
-// --- VÍDEO / QUALIDADE DE VÍDEO (FASE 2E - TV-FIRST LIST) ---
-@Composable
-private fun VideoQualitySettingsSection(
-    tracks: Tracks?,
-    onSelectTrack: (Int, Int, Int) -> Unit,
-    onClearOverride: (Int) -> Unit,
-    onToggleResizeMode: () -> Unit = {}
-) {
-    val tokens = AppDesignSystem
-    
-    Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            text = stringResource(R.string.video_track),
-            style = tokens.typography.title,
-            color = tokens.colors.primary,
-            fontWeight = FontWeight.Black,
-            letterSpacing = 1.sp
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-
-        val videoGroups = tracks?.groups?.filter { it.type == C.TRACK_TYPE_VIDEO } ?: emptyList()
-        val isAutoSelected = videoGroups.none { it.isSelected }
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            item {
-                TvOptionRowItem(
-                    label = "PROPORÇÃO DA TELA (AJUSTAR / PREENCHER / ZOOM)",
-                    sublabel = "Alternar modo de ajuste da imagem na tela",
-                    isSelected = false,
-                    onClick = onToggleResizeMode
-                )
+    val colors = AppDesignSystem.colors
+    val type = when (tab) { 0 -> C.TRACK_TYPE_VIDEO; 1 -> C.TRACK_TYPE_AUDIO; else -> C.TRACK_TYPE_TEXT }
+    val groups = tracks?.groups?.filter { it.type == type }.orEmpty()
+    val hasOverride = groups.any { parameters.overrides.containsKey(it.mediaTrackGroup) }
+    val speeds = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+    val focusSpeed = speeds.minBy { kotlin.math.abs(it - speed) }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = if (speedFocus != null) speeds.indexOf(focusSpeed) else 0)
+    LazyColumn(Modifier.fillMaxSize(), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(bottom = 12.dp)) {
+        if (tab in 0..2) {
+            if (tab == 0) item {
+                val mode = when (resizeMode) {
+                    AspectRatioFrameLayout.RESIZE_MODE_FILL -> "Preencher"
+                    AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> "Zoom"
+                    else -> "Ajustar"
+                }
+                TvOptionRowItem("Proporção da imagem", "Atual: $mode · pressione para alternar",
+                    false, action = true, onClick = toggleResize)
             }
-
-            // Option 1: AUTOMÁTICO
             item {
-                TvOptionRowItem(
-                    label = stringResource(R.string.video_track_default),
-                    sublabel = stringResource(R.string.video_track_hint),
-                    isSelected = isAutoSelected,
-                    onClick = { onClearOverride(C.TRACK_TYPE_VIDEO) }
-                )
+                TvOptionRowItem(if (tab == 2) "Desativadas" else "Automático",
+                    when (tab) {
+                        0 -> "A melhor qualidade disponível para a conexão"
+                        1 -> "Usar a faixa padrão do conteúdo"
+                        else -> "Não exibir legendas"
+                    },
+                    if (tab == 2) type in parameters.disabledTrackTypes ||
+                        (!hasOverride && groups.none { it.isSelected }) else !hasOverride,
+                    onClick = { clearTrack(type) })
             }
-
-            // Available Video Resolutions
-            videoGroups.forEachIndexed { groupIdx, group ->
-                items(group.length) { trackIdx ->
-                    val format = group.getTrackFormat(trackIdx)
-                    val isSelected = group.isTrackSelected(trackIdx)
-                    
-                    val height = format.height
-                    val label = listOfNotNull(if (height > 0) "${height}p" else null,
-                        format.frameRate.takeIf { it > 0f }?.let { "$it fps" }, format.codecs)
-                        .joinToString(" • ").ifBlank { stringResource(R.string.channel_version_unknown) }
-                    val sublabel = format.label.orEmpty()
-
-                    TvOptionRowItem(
-                        label = label,
-                        sublabel = sublabel,
-                        isSelected = isSelected,
-                        onClick = { onSelectTrack(groupIdx, trackIdx, C.TRACK_TYPE_VIDEO) }
-                    )
+            groups.forEachIndexed { groupIndex, group ->
+                items(group.length, key = { "track-$groupIndex-$it" }) { trackIndex ->
+                    val format = group.getTrackFormat(trackIndex)
+                    val supported = group.isTrackSupported(trackIndex)
+                    val language = format.language?.takeUnless { it == "und" }?.let {
+                        Locale.forLanguageTag(it).getDisplayLanguage(Locale.forLanguageTag("pt-BR"))
+                    } ?: "Idioma não informado"
+                    val label = if (tab == 0) listOfNotNull(
+                        format.height.takeIf { it > 0 }?.let { "${it}p" },
+                        format.frameRate.takeIf { it > 0 }?.let { "${it.toInt()} fps" }
+                    ).joinToString(" · ").ifBlank { format.label ?: "Vídeo" }
+                    else listOfNotNull(language, format.label?.takeIf { it.isNotBlank() }).distinct().joinToString(" · ")
+                    val detail = if (!supported) "Não compatível com este dispositivo" else if (tab == 1)
+                        listOfNotNull(format.channelCount.takeIf { it > 0 }?.let { "$it canais" },
+                            format.sampleRate.takeIf { it > 0 }?.let { "${it / 1000f} kHz" }).joinToString(" · ")
+                    else if (tab == 0) format.codecs else "Legenda integrada"
+                    val override = parameters.overrides[group.mediaTrackGroup]
+                    TvOptionRowItem(label, detail,
+                        type !in parameters.disabledTrackTypes &&
+                            (override?.trackIndices?.contains(trackIndex) == true ||
+                                (tab == 2 && !hasOverride && group.isTrackSelected(trackIndex))),
+                        enabled = supported, onClick = { selectTrack(groupIndex, trackIndex, type) })
+                }
+            }
+            if (groups.isEmpty()) item {
+                Text(if (tab == 2) "Este conteúdo não disponibilizou legendas."
+                    else "Nenhuma faixa adicional disponível no momento.",
+                    style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+            }
+        } else when (tab) {
+            3 -> items(speeds) { value ->
+                TvOptionRowItem("${value}x", if (value == 1f) "Velocidade normal" else null,
+                    kotlin.math.abs(speed - value) < 0.01f,
+                    modifier = if (speedFocus != null && value == focusSpeed)
+                        Modifier.focusRequester(speedFocus) else Modifier,
+                    onClick = { setSpeed(value) })
+            }
+            4 -> {
+                item {
+                    Text(if (sleepTimer == null) "Interromper a reprodução após o tempo escolhido."
+                        else "Restam $sleepTimer minutos para interromper a reprodução.",
+                        style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
+                }
+                items(listOf(0, 15, 30, 60, 120)) { minutes ->
+                    TvOptionRowItem(if (minutes == 0) "Desligado" else "$minutes minutos",
+                        isSelected = if (minutes == 0) sleepTimer == null else sleepTimer == minutes,
+                        onClick = { setSleepTimer(minutes.takeIf { it > 0 }) })
+                }
+            }
+            5 -> {
+                item {
+                    TvOptionRowItem("Agrupar versões do canal", if (grouped) "Ativado" else "Desativado",
+                        grouped, action = true, onClick = { setGrouping(!grouped) })
+                }
+                items(versions, key = { it.streamId }) { version ->
+                    TvOptionRowItem(version.resolution?.let { channelQualityLabel(it) } ?: "Qualidade não informada",
+                        listOfNotNull(version.name, version.codec).joinToString(" · "),
+                        version.streamId == selectedVersionId, onClick = { selectVersion(version.streamId) })
+                }
+                if (versions.isEmpty()) item {
+                    Text("Nenhuma outra versão disponível nesta lista.",
+                        style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
                 }
             }
         }
     }
 }
 
-// --- ÁUDIO ---
-@Composable
-private fun AudioTrackSettingsSection(
-    tracks: Tracks?,
-    onSelectTrack: (Int, Int, Int) -> Unit,
-    onClearOverride: (Int) -> Unit
-) {
-    val tokens = AppDesignSystem
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            text = "FAIXAS DE ÁUDIO",
-            style = tokens.typography.title,
-            color = tokens.colors.primary,
-            fontWeight = FontWeight.Black,
-            letterSpacing = 1.sp
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (tracks == null) {
-            NoOptionsPlaceholder()
-            return
-        }
-
-        val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
-        val isAutoSelected = audioGroups.none { it.isSelected }
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            item {
-                TvOptionRowItem(
-                    label = "PADRÃO DO CANAL",
-                    sublabel = "Usar idioma original de transmissão",
-                    isSelected = isAutoSelected,
-                    onClick = { onClearOverride(C.TRACK_TYPE_AUDIO) }
-                )
-            }
-
-            audioGroups.forEachIndexed { groupIdx, group ->
-                items(group.length) { trackIdx ->
-                    val format = group.getTrackFormat(trackIdx)
-                    val isSelected = group.isTrackSelected(trackIdx)
-                    val lang = format.language?.uppercase() ?: "DESCONHECIDO"
-                    val label = if (format.label != null) "$lang - ${format.label}" else lang
-
-                    TvOptionRowItem(
-                        label = label,
-                        sublabel = "Canal ${format.channelCount}.0 • ${format.sampleRate / 1000} kHz",
-                        isSelected = isSelected,
-                        onClick = { onSelectTrack(groupIdx, trackIdx, C.TRACK_TYPE_AUDIO) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-// --- LEGENDAS ---
-@Composable
-private fun SubtitleSettingsSection(
-    tracks: Tracks?,
-    onSelectTrack: (Int, Int, Int) -> Unit,
-    onClearOverride: (Int) -> Unit
-) {
-    val tokens = AppDesignSystem
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            text = "LEGENDAS",
-            style = tokens.typography.title,
-            color = tokens.colors.primary,
-            fontWeight = FontWeight.Black,
-            letterSpacing = 1.sp
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-
-        val textGroups = tracks?.groups?.filter { it.type == C.TRACK_TYPE_TEXT } ?: emptyList()
-        val isOffSelected = textGroups.none { it.isSelected }
-
-        TvOptionRowItem(
-            label = "DESATIVADAS",
-            sublabel = "Sem exibição de legendas",
-            isSelected = isOffSelected,
-            onClick = { onClearOverride(C.TRACK_TYPE_TEXT) }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        textGroups.forEachIndexed { groupIdx, group ->
-            for (i in 0 until group.length) {
-                val format = group.getTrackFormat(i)
-                val isSelected = group.isTrackSelected(i)
-                val lang = format.language?.uppercase() ?: "PORTUGUÊS"
-                val label = if (format.label != null) "$lang (${format.label})" else lang
-
-                TvOptionRowItem(
-                    label = label,
-                    sublabel = "Legendas integradas",
-                    isSelected = isSelected,
-                    onClick = { onSelectTrack(groupIdx, i, C.TRACK_TYPE_TEXT) }
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-        }
-
-
-    }
-}
-
-// --- SISTEMA / SLEEP TIMER ---
-@Composable
-private fun SystemSettingsSection(
-    sleepTimer: Int?,
-    onSetSleepTimer: (Int?) -> Unit
-) {
-    val tokens = AppDesignSystem
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            text = "TEMPORIZADOR (SLEEP TIMER)",
-            style = tokens.typography.title,
-            color = tokens.colors.primary,
-            fontWeight = FontWeight.Black,
-            letterSpacing = 1.sp
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Interrompe a reprodução automaticamente após o tempo selecionado.",
-            style = tokens.typography.caption,
-            color = tokens.colors.textSecondary
-        )
-        Spacer(modifier = Modifier.height(20.dp))
-
-        val options = listOf(
-            null to "DESLIGADO",
-            15 to "15 MINUTOS",
-            30 to "30 MINUTOS",
-            60 to "60 MINUTOS (1 HORA)",
-            120 to "120 MINUTOS (2 HORAS)"
-        )
-
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            itemsIndexed(options) { _, (minutes, label) ->
-                TvOptionRowItem(
-                    label = label,
-                    sublabel = if (minutes == null) "O player continuará reproduzindo" else "Desligar player em $minutes minutos",
-                    isSelected = sleepTimer == minutes,
-                    onClick = { onSetSleepTimer(minutes) }
-                )
-            }
-        }
-    }
-}
-
-// --- REUSABLE TV-FIRST FOCUSABLE ROW (FASE 2E FULL LINE FOCUS) ---
 @Composable
 fun TvOptionRowItem(
-    label: String,
-    sublabel: String? = null,
-    isSelected: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
+    label: String, sublabel: String? = null, isSelected: Boolean,
+    modifier: Modifier = Modifier, enabled: Boolean = true, action: Boolean = false, onClick: () -> Unit
 ) {
-    val tokens = AppDesignSystem
-    var isFocused by remember { mutableStateOf(false) }
-
-    val bgColor by animateColorAsState(
-        if (isFocused) tokens.colors.primary
-        else if (isSelected) tokens.colors.primary.copy(alpha = 0.16f)
-        else Color.White.copy(alpha = 0.04f),
-        label = "rowBg"
-    )
-
-    val textColor by animateColorAsState(
-        if (isFocused) Color.Black
-        else tokens.colors.textPrimary,
-        label = "rowText"
-    )
-
-    val subtextColor by animateColorAsState(
-        if (isFocused) Color.Black.copy(alpha = 0.75f)
-        else tokens.colors.textSecondary,
-        label = "rowSubtext"
-    )
-
-    val iconColor by animateColorAsState(
-        if (isFocused) Color.Black
-        else if (isSelected) tokens.colors.primary
-        else tokens.colors.textSecondary.copy(alpha = 0.4f),
-        label = "rowIcon"
-    )
-
+    val colors = AppDesignSystem.colors
+    var focused by remember { mutableStateOf(false) }
     Surface(
-        onClick = onClick,
-        color = bgColor,
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(
-            if (isFocused) 2.5.dp else if (isSelected) 1.dp else 0.dp,
-            if (isFocused) FocusGlowCyan else if (isSelected) tokens.colors.primary.copy(alpha = 0.4f) else Color.Transparent
-        ),
-        modifier = modifier
-            .fillMaxWidth()
-            .adaptiveFocus(
-                shape = RoundedCornerShape(14.dp),
-                focusedScale = 1.03f,
-                onFocus = { isFocused = it }
-            )
+        modifier = modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }
+            .selectable(selected = isSelected, enabled = enabled,
+                role = if (action) Role.Button else Role.RadioButton, onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        color = if (focused) colors.primary.copy(alpha = 0.2f)
+            else if (isSelected) colors.primary.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.035f),
+        border = BorderStroke(1.dp, if (focused) colors.primary else Color.Transparent)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (isSelected) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                contentDescription = null,
-                tint = iconColor,
-                modifier = Modifier.size(24.dp)
-            )
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = label,
-                    color = textColor,
-                    style = tokens.typography.title,
-                    fontWeight = if (isSelected || isFocused) FontWeight.Black else FontWeight.Bold
-                )
-                if (!sublabel.isNullOrEmpty()) {
-                    Text(
-                        text = sublabel,
-                        color = subtextColor,
-                        style = tokens.typography.caption,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+        Row(Modifier.heightIn(min = 52.dp).padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f)) {
+                Text(label, style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                    color = colors.textPrimary.copy(alpha = if (enabled) 1f else 0.45f))
+                if (!sublabel.isNullOrBlank()) Text(sublabel,
+                    style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
             }
+            if (isSelected) Icon(Icons.Rounded.Check, "Selecionado",
+                tint = colors.primary, modifier = Modifier.size(20.dp))
         }
     }
 }
 
 @Composable
-private fun NoOptionsPlaceholder() {
-    val tokens = AppDesignSystem
-    Text(
-        text = "NENHUMA OPÇÃO ADICIONAL DISPONÍVEL PARA ESTE STREAM.",
-        color = tokens.colors.textSecondary.copy(alpha = 0.6f),
-        style = tokens.typography.body
-    )
-}
-
-@Composable
-fun PlaybackSpeedSettingsSection(
-    currentSpeed: Float,
-    onSetSpeed: (Float) -> Unit
-) {
-    val tokens = AppDesignSystem
-    val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            text = "VELOCIDADE DE REPRODUÇÃO",
-            style = tokens.typography.title,
-            color = tokens.colors.primary,
-            fontWeight = FontWeight.Black,
-            letterSpacing = 1.sp
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Ajuste a velocidade de reprodução do filme ou episódio.",
-            style = tokens.typography.caption,
-            color = tokens.colors.textSecondary
-        )
-        Spacer(modifier = Modifier.height(20.dp))
-
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            itemsIndexed(speeds) { _, speed ->
-                val label = "${speed}x"
-                val sublabel = when (speed) {
-                    1.0f -> "Velocidade Normal (Padrão)"
-                    0.5f, 0.75f -> "Câmera Lenta"
-                    else -> "Acelerado"
-                }
-                TvOptionRowItem(
-                    label = label,
-                    sublabel = sublabel,
-                    isSelected = Math.abs(currentSpeed - speed) < 0.05f,
-                    onClick = { onSetSpeed(speed) }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun PlayerSpeedDialog(
-    currentSpeed: Float,
-    onDismiss: () -> Unit,
-    onSetSpeed: (Float) -> Unit
-) {
-    val tokens = AppDesignSystem
-    val initialFocusRequester = remember { FocusRequester() }
-
-    LaunchedEffect(Unit) {
-        delay(150)
-        try { initialFocusRequester.requestFocus() } catch (_: Exception) {}
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.65f))
-            .onKeyEvent { keyEvent ->
-                if (keyEvent.type == KeyEventType.KeyUp && keyEvent.key == Key.Back) {
-                    onDismiss()
-                    true
-                } else false
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Surface(
-            modifier = Modifier
-                .width(420.dp)
-                .wrapContentHeight()
-                .padding(24.dp),
-            shape = RoundedCornerShape(24.dp),
-            color = Color(0xFF0D121C),
-            border = BorderStroke(1.5.dp, tokens.colors.primary.copy(alpha = 0.5f)),
-            shadowElevation = 24.dp
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Rounded.Speed,
-                            contentDescription = null,
-                            tint = tokens.colors.primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "VELOCIDADE",
-                            style = tokens.typography.title,
-                            fontWeight = FontWeight.Black,
-                            color = tokens.colors.textPrimary,
-                            letterSpacing = 1.sp
-                        )
-                    }
-
-                    AppIconButton(
-                        icon = Icons.Rounded.Close,
-                        onClick = onDismiss,
-                        tint = tokens.colors.textSecondary
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                val speeds = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    speeds.forEachIndexed { idx, speed ->
-                        val isSelected = Math.abs(currentSpeed - speed) < 0.05f
-                        TvOptionRowItem(
-                            label = "${speed}x" + if (speed == 1.0f) " (NORMAL)" else "",
-                            sublabel = null,
-                            isSelected = isSelected,
-                            modifier = if (idx == 2) Modifier.focusRequester(initialFocusRequester) else Modifier,
-                            onClick = {
-                                onSetSpeed(speed)
-                                onDismiss()
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@androidx.compose.ui.tooling.preview.Preview(widthDp = 960, heightDp = 540, showBackground = true)
-@Composable
-private fun ChannelVersionSettingsPreview() {
-    MeusCanaisTheme {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
-            PlayerSettingsDialog(
-                tracks = null, sleepTimer = null, initialTab = 5,
-                onDismiss = {}, onSelectTrack = { _, _, _ -> }, onClearOverride = {},
-                onSetSleepTimer = {}, isLive = true, groupChannels = true,
-                versions = listOf(
-                    rsv.squitv.domain.model.ChannelVersion(101, "Canal SP HD", rsv.squitv.domain.model.ChannelQuality.HD),
-                    rsv.squitv.domain.model.ChannelVersion(102, "Canal SP FHD HEVC", rsv.squitv.domain.model.ChannelQuality.FHD, "H.265")
-                ),
-                selectedVersionId = 101)
-        }
-    }
+fun PlayerSpeedDialog(currentSpeed: Float, onDismiss: () -> Unit, onSetSpeed: (Float) -> Unit) {
+    PlayerSettingsDialog(tracks = null, sleepTimer = null, currentSpeed = currentSpeed, initialTab = 3,
+        onDismiss = onDismiss, onSelectTrack = { _, _, _ -> }, onClearOverride = {},
+        onSetSleepTimer = {}, onSetSpeed = { onSetSpeed(it); onDismiss() }, speedOnly = true)
 }

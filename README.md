@@ -111,6 +111,17 @@ Configure-as apenas no seu ambiente. Não coloque valores reais, keystores ou to
 
 O APK é gerado em `app/build/outputs/apk/release/`. Antes de publicar, confira versão/code, migrações, assinatura compatível com a distribuição anterior, metadados do APK e SHA-256. APKs e checksums devem ser assets de uma GitHub Release.
 
+### Contrato de Atualizações e Geração de Manifesto
+
+O projeto utiliza o módulo compartilhado `:shared` (Kotlin/JVM puro) para validação de versão e seleção de artefatos de atualização. O manifesto de distribuição (`squitv-update.json`) segue o Schema v1.
+
+A versão Windows ainda será implementada. A base de atualização já separa os artefatos de cada plataforma e mantém compatibilidade com releases Android sem manifesto. Consulte [o contrato](docs/contrato-atualizacoes.md), [a arquitetura](docs/arquitetura-plataformas.md) e [o checklist de release](docs/checklist-release.md). O gerador em `tools/generate_manifest.py` lê metadados do APK assinado e produz o staging local; não publica automaticamente.
+
+Para gerar e validar o manifesto a partir de um APK compilado:
+```powershell
+python tools/generate_manifest.py <caminho-do-apk> <version_name> <version_code> <release_tag>
+```
+
 O `.gitignore` exclui builds, caches, arquivos locais, material privado de assinatura e planos/relatórios locais do Gemini. Wrapper do Gradle, schemas do Room, recursos e notas de versão continuam versionados. Adicionar um padrão ao `.gitignore` não remove arquivos já rastreados nem apaga o histórico.
 
 ## Tecnologia
@@ -120,8 +131,10 @@ Kotlin, Coroutines/Flow, Jetpack Compose/Material 3, Media3/ExoPlayer, Hilt, Roo
 ## Documentação
 
 - [Notas de versões](docs/releases/)
-- [Sincronização local](docs/relatorio-sincronizacao-local-2026-10-29.md)
-- [Transferência sem código](docs/sincronizacao-sem-codigo-2026-10-29.md)
+- [Desenvolvimento](docs/desenvolvimento.md)
+- [Arquitetura das plataformas](docs/arquitetura-plataformas.md)
+- [Contrato de atualizações](docs/contrato-atualizacoes.md)
+- [Checklist de release](docs/checklist-release.md)
 
 Relatórios datados documentam a etapa em que foram produzidos; não substituem a validação do checkout atual.
 

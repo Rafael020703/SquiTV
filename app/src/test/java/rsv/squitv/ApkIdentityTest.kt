@@ -50,6 +50,11 @@ class ApkIdentityTest {
         apk = temp.newFile("update.apk").apply { writeBytes(byteArrayOf(1)) }
     }
     @Test fun validIdentity() { assertNull(PackageInstallerHelper.validationError(context, apk, "1.20")) }
+    @Test fun advertisedVersionCodeMustMatchArchive() {
+        assertEquals(context.getString(R.string.updater_wrong_version),
+            PackageInstallerHelper.validationError(context, apk, "1.20", 22L))
+        assertNull(PackageInstallerHelper.validationError(context, apk, "1.20", 21L))
+    }
     @Test fun packageMismatch() {
         incoming.packageName = "rsv.squitv.debug"
         assertEquals(context.getString(R.string.updater_wrong_package), PackageInstallerHelper.validationError(context, apk, "1.20"))

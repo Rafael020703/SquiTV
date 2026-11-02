@@ -37,6 +37,24 @@ secrets.properties
 *.xapk
 *.idsig
 
+# Windows installers and packaging diagnostics (publish binaries as release assets)
+*.exe
+*.msi
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+*.cab
+*.wixobj
+*.wixpdb
+*.pdb
+*.dmp
+/desktopApp/distributions/
+/desktopApp/local-data/
+/desktopApp/.runtime/
+# Encrypted local account data is private too.
+*.dpapi
+
 # Local diagnostics and temporary files
 *.log
 *.hprof
@@ -55,8 +73,15 @@ dependencies_output.txt
 ksp_deps.txt
 screenshot.png
 
-# Local Gemini task instructions and generated reports; keep files on disk
-/docs/plano-gemini-*.md
-/docs/relatorio-gemini-*.md
+# Local plans, audits, maintenance logs and AI reports; keep files on disk.
+# Only durable project documentation and version notes belong in the repository.
+/debug_event_matrix.md
+/docs/*.md
+!/docs/arquitetura-plataformas.md
+!/docs/checklist-release.md
+!/docs/contrato-atualizacoes.md
+!/docs/desenvolvimento.md
+!/docs/windows.md
+/docs/releases/verificacao-*.md
 
 # Keep Gradle Wrapper, Room schemas, source resources and release notes tracked.

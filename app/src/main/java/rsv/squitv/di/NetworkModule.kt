@@ -57,7 +57,7 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideGitHubApiService(@ApiOkHttpClient okHttpClient: OkHttpClient): GitHubApiService {
+    fun provideGitHubApiService(@UpdateOkHttpClient okHttpClient: OkHttpClient): GitHubApiService {
         val contentType = "application/json".toMediaType()
         val json = Json {
             ignoreUnknownKeys = true
