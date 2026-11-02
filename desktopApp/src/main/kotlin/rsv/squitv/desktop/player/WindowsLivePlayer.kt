@@ -6,8 +6,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.awt.Canvas
-import java.nio.file.Files
-import java.nio.file.Path
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -188,10 +186,7 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
 
     private fun initialize() {
         if (player != null) return
-        val packaged = System.getProperty("compose.application.resources.dir")?.let { Path.of(it, "vlc") }
-        val development = System.getProperty("squitv.vlc.dir")?.let(Path::of)
-        val directory = listOfNotNull(packaged, development).firstOrNull { Files.isRegularFile(it.resolve("libvlc.dll")) }
-            ?: error("Bundled runtime missing")
+        val directory = NativeRuntime.directory()
         Kernel32.INSTANCE.SetEnvironmentVariable("VLC_PLUGIN_PATH", directory.resolve("plugins").toString())
         val vlc = Native.load(directory.resolve("libvlc.dll").toString(), LibVlc::class.java,
             mapOf(Library.OPTION_STRING_ENCODING to "UTF-8", Library.OPTION_OPEN_FLAGS to 8))
@@ -224,7 +219,7 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
     private fun failed() {
         active = false
         mutable.update { it.copy(phase = "Reprodução indisponível", error =
-            "Não foi possível iniciar o vídeo. Confira a conexão e o runtime incluído no aplicativo.") }
+            "Não foi possível iniciar o vídeo. Confira a conexão ou execute novamente o instalador para verificar as bibliotecas.") }
     }
 
     override fun close() {

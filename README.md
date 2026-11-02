@@ -36,8 +36,9 @@ Para atualizar, use um APK do mesmo pacote e com assinatura compatível. A vers�
 ## Instalação no Windows
 
 1. Abra a release e baixe o instalador `SquiTV-<versão>.exe` para Windows x64.
-2. Execute o instalador e siga as etapas. O runtime acompanha a distribuição; não é necessário instalar Java ou VLC separadamente.
-3. Para atualizar uma instalação existente, use o instalador release; conta e configurações permanecem na pasta do usuário. Debug possui identidade/dados separados.
+2. Execute o instalador e siga as etapas. A partir do Windows 1.22.1, o EXE verifica as bibliotecas de reprodução e baixa/prepara automaticamente o VLC oficial somente quando necessário. Java está incluído; não é preciso instalar dependências manualmente. A primeira preparação sem bibliotecas válidas requer internet.
+3. Instalações novas usam `C:\Program Files\Squi TV`, com permissão de administrador e opção de outra pasta. Atualizações preservam a pasta e o contexto da instalação existente, inclusive as antigas por usuário; conta e configurações são mantidas. Debug possui identidade/dados separados.
+4. A desinstalação normal remove arquivos, atalhos, dados e componentes em cache do aplicativo. Essa limpeza não roda durante upgrades. Instaladores baixados manualmente e registros de manutenção do próprio Windows ficam sob controle do usuário/sistema.
 
 A distribuição atual usa instalador sem assinatura Authenticode; os checksums SHA-256 acompanham os arquivos. Consulte [Windows](docs/windows.md) para os recursos implementados e os limites.
 

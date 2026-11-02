@@ -8,7 +8,7 @@ import kotlinx.coroutines.sync.withLock
 import rsv.squitv.desktop.data.*
 import rsv.squitv.shared.xtream.*
 
-enum class DesktopPage { DASHBOARD, LIVE, MOVIES, SERIES, SETTINGS, UPDATES }
+enum class DesktopPage { DASHBOARD, LIVE, MOVIES, SERIES, SETTINGS, UPDATES, SEARCH }
 data class LiveSession(val sourceName: String, val channels: List<LiveChannel>, val index: Int) {
     val channel: LiveChannel get() = channels[index]
 }
@@ -36,6 +36,7 @@ class DesktopController(
     private val mutable = MutableStateFlow(DesktopState())
     val state = mutable.asStateFlow()
     internal val catalog = OnDemandController(client, scope)
+    internal val search = DesktopSearchController(client, scope)
     private var connectionJob: Job? = null
     private var channelsJob: Job? = null
     private var dnsJob: Job? = null
@@ -114,6 +115,7 @@ class DesktopController(
                     catch (e: Exception) { lastFailure = e }
                 }
                 val (credentials, account) = connected ?: throw (lastFailure ?: ServerProblem("Nenhum DNS respondeu ao login."))
+                search.reset()
                 var notice: String? = null
                 credentialWrites.withLock { withContext(Dispatchers.IO) {
                     try { if (remember) store.save(credentials) else store.clear() }
@@ -154,12 +156,14 @@ class DesktopController(
     }
 
     fun openLive() {
+        search.leave()
         catalog.leave()
         mutable.value = mutable.value.copy(page = DesktopPage.LIVE)
         if (mutable.value.selectedCategory == null) mutable.value.categories.firstOrNull()?.let(::loadChannels)
     }
 
     fun home() {
+        search.leave()
         catalog.leave()
         stopPlayback()
         mutable.value = mutable.value.copy(page = DesktopPage.DASHBOARD)
@@ -226,6 +230,7 @@ class DesktopController(
     }
 
     fun disconnect() {
+        search.reset()
         catalog.reset()
         stopPlayback()
         connectionJob?.cancel()
@@ -250,6 +255,7 @@ class DesktopController(
     }
 
     override fun close() {
+        search.reset()
         catalog.reset()
         connectionJob?.cancel(); channelsJob?.cancel(); dnsJob?.cancel(); epgJob?.cancel()
         dnsProbe.close(); client.close()
@@ -257,18 +263,52 @@ class DesktopController(
 
     internal fun openCatalog(kind: CatalogKind) {
         val account = mutable.value.credentials ?: return
+        search.leave()
         stopPlayback()
         mutable.value = mutable.value.copy(page = if (kind == CatalogKind.MOVIES) DesktopPage.MOVIES else DesktopPage.SERIES)
         catalog.open(kind, account)
     }
 
     fun openUpdates() {
+        search.leave()
         catalog.leave(); stopPlayback()
         mutable.value = mutable.value.copy(page = DesktopPage.UPDATES)
     }
 
     fun openSettings() {
+        search.leave()
         catalog.leave(); stopPlayback()
         mutable.value = mutable.value.copy(page = DesktopPage.SETTINGS)
+    }
+
+    internal fun openSearch() {
+        val account = mutable.value.credentials ?: return
+        catalog.leave(); stopPlayback()
+        search.open(account)
+        mutable.value = mutable.value.copy(page = DesktopPage.SEARCH)
+    }
+
+    internal fun openSearchResult(item: DesktopSearchItem) {
+        val current = mutable.value
+        val account = current.credentials ?: return
+        val results = search.state.value.results
+        if (current.page != DesktopPage.SEARCH || item !in results) return
+        search.leave()
+        if (item.type == DesktopSearchType.LIVE) {
+            val source = results.mapNotNull { it.channel }.distinctBy { it.id }.toList()
+            val index = source.indexOfFirst { it == item.channel }
+            if (index < 0) return
+            // Only the visible live search results, never a category/global fallback.
+            mutable.value = current.copy(playback = LiveSession("Busca · ${search.state.value.query.trim()}", source, index))
+            refreshEpg()
+        } else {
+            val catalogItem = item.catalogItem ?: return
+            val kind = when (item.type) {
+                DesktopSearchType.MOVIES -> CatalogKind.MOVIES
+                DesktopSearchType.SERIES -> CatalogKind.SERIES
+                else -> return
+            }
+            catalog.openSearchDetail(kind, catalogItem, account)
+        }
     }
 }

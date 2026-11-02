@@ -23,10 +23,10 @@ class XtreamClient(private val client: OkHttpClient = OkHttpClient.Builder()
     suspend fun catalogCategories(credentials: ServerCredentials, series: Boolean): List<LiveCategory> =
         XtreamCatalogParser.categories(request(credentials, if (series) "get_series_categories" else "get_vod_categories"))
 
-    suspend fun movies(credentials: ServerCredentials, categoryId: String): List<XtreamVod> =
+    suspend fun movies(credentials: ServerCredentials, categoryId: String?): List<XtreamVod> =
         json.decodeFromString(request(credentials, "get_vod_streams", categoryId))
 
-    suspend fun series(credentials: ServerCredentials, categoryId: String): List<XtreamSeries> =
+    suspend fun series(credentials: ServerCredentials, categoryId: String?): List<XtreamSeries> =
         json.decodeFromString(request(credentials, "get_series", categoryId))
 
     suspend fun movieInfo(credentials: ServerCredentials, id: Int): XtreamVodInfo =
@@ -41,7 +41,7 @@ class XtreamClient(private val client: OkHttpClient = OkHttpClient.Builder()
     suspend fun categories(credentials: ServerCredentials): List<LiveCategory> =
         XtreamCatalogParser.categories(request(credentials, "get_live_categories"))
 
-    suspend fun channels(credentials: ServerCredentials, categoryId: String): List<LiveChannel> =
+    suspend fun channels(credentials: ServerCredentials, categoryId: String?): List<LiveChannel> =
         XtreamCatalogParser.channels(request(credentials, "get_live_streams", categoryId))
 
     suspend fun epg(credentials: ServerCredentials, streamId: Int): List<LiveProgramme> =

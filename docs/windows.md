@@ -4,7 +4,7 @@
 
 Windows x64: login Xtream, conta ativa/validade, dashboard, categorias/busca de canais, filmes e séries, detalhes de filmes, temporadas/episódios, reprodução integrada com LibVLC e configurações iniciais. Catálogos e preferências Windows ainda não têm paridade completa com o Android.
 
-Ao abrir Ao vivo, a primeira categoria é selecionada; as demais são consultadas sob demanda. Não há consulta global automática. A lista visível ao abrir o canal é congelada para anterior/próximo, incluindo o filtro de busca. A navegação é circular nessa origem, sem fallback global. Ao encerrar o player, busca e posição da lista são preservadas na sessão. Favoritos, histórico/progresso persistente, categorias por gênero/preparação, sincronização e instalador de atualizações Windows ainda não foram portados.
+Ao abrir Ao vivo, a primeira categoria é selecionada; as demais são consultadas sob demanda. Não há consulta global automática na entrada da dashboard. A lista visível ao abrir o canal é congelada para anterior/próximo, incluindo o filtro de busca. A navegação é circular nessa origem, sem fallback global. Ao encerrar o player, busca e posição da lista são preservadas na sessão. Favoritos, histórico/progresso persistente, categorias por gênero/preparação e sincronização ainda não foram portados. O atualizador Windows inicial está implementado, com os limites descritos adiante.
 
 O núcleo `:shared` fornece modelos/parser Xtream, DNS, cores, índice circular, controlador de interação do player, montagem de endereço de canal e contrato de distribuição. Android e Windows usam as regras portáveis sem dependência entre aplicações. O desenho do launcher Android foi extraído para `buildSrc/BrandIcon`; dele saem também PNG/ICO Windows. Os ícones de ações usam a mesma família Material Rounded. Logos de canais vêm do servidor, com cache limitado a 64 imagens e até quatro consultas simultâneas.
 
@@ -12,20 +12,32 @@ O núcleo `:shared` fornece modelos/parser Xtream, DNS, cores, índice circular,
 
 A apresentação dos cartões e o fundo usam `CinematicCardContent`/`PortalBackdrop` extraídos do Android para uiCommon, com as mesmas regras numéricas de viewport 1280×720 em shared/ViewportSizing. Windows adiciona hover/mouse e percurso por setas, foco inicial em Ao vivo e restauração de foco/rolagem ao retornar dos catálogos. O estado da dashboard é removido na saída da conta. O relógio HH:mm atualiza no início de cada minuto.
 
-Ao vivo, Filmes, Séries e Configurações têm destinos reais. Busca, Favoritos, Downloads e Multi-view ainda exigem portabilidade funcional; os cartões/ícones dessas áreas continuam visuais. O botão de Notificações também não tem ação implementada no Android atual. Não confundir aparência compartilhada com paridade funcional concluída.
+Ao vivo, Filmes, Séries, Configurações e Buscar têm destinos reais. Favoritos, Downloads e Multi-view ainda exigem portabilidade funcional; os cartões dessas áreas continuam visuais. O botão de Notificações também não tem ação implementada no Android atual. Não confundir aparência compartilhada com paridade funcional concluída.
 
-A sequência solicitada é concluir dashboard, depois adaptar o player de filmes/séries e então implementar o fluxo de atualização **somente da release Windows**, com apresentação Android, manifesto compartilhado e aviso de 10 segundos. Essas duas últimas etapas ainda não foram implementadas. A debug permanece separada das atualizações de produção.
+A prioridade atual é completar funções da dashboard após as implementações iniciais do player VOD e do atualizador. A debug permanece separada das atualizações de produção. Por pedido expresso de 02/11/2026, desenvolvimento, execução e inspeções usam somente a **debug**; a release instalada no PC e seus dados não devem ser abertos, encerrados, reinstalados ou alterados pelo agente.
+
+### Busca da dashboard
+
+O acesso Buscar abre campo de texto e filtros Todos/Canais/Filmes/Séries, seguindo a organização de SearchScreen Android. Pesquisa títulos sem distinguir maiúsculas ou acentos; palavras separadas devem aparecer no título. Os resultados abrem o player ao vivo ou os detalhes existentes de filmes/séries, incluindo temporadas/episódios. Fechar o player/detalhes retorna à busca com texto, filtro, grade e alvo de foco salvos na sessão. Canais usam exclusivamente o snapshot dos canais visíveis nos resultados para a troca circular.
+
+Como o Windows ainda não tem o catálogo Room Android, a primeira busca com texto consulta as listagens globais do provedor para os tipos selecionados, uma por vez. Não consulta detalhes individuais, episódios, EPG ou mídia para indexar, nem inicia consultas globais no login/dashboard. Listagens bem-sucedidas recebem índice em memória por até 10 minutos para reutilização em buscas seguintes; sair da conta descarta o índice. Digitação tem debounce de 250 ms; mudar consulta/filtro ou sair cancela o trabalho anterior, com revisão para impedir resultados antigos de substituírem os atuais. Filtragem/ordenação acontecem fora da UI. Retornar a uma busca concluída conserva o resultado; pesquisas interrompidas são retomadas.
+
+Exibe até 300 resultados em ordem alfabética, com total e indicação para refinar a busca quando necessário. Falhas aparecem por catálogo, preservando resultados dos tipos que responderam e permitindo tentar novamente. O transporte mantém prazo de 45 s e limite de 16 MiB por listagem: provedores que excedam o limite apresentam erro, sem simular resultado vazio/completo. Busca de episódios individuais, voz, favoritos e agrupamento de qualidades Android ainda não foram portados. Esta etapa foi compilada na debug; não houve execução de busca/provedor ou inspeção visual pelo agente.
 
 ## Build
 
 JDK 21 completo, com `bin/jpackage.exe`, e Windows x64. Definir `JAVA_HOME` para esse JDK na sessão. Não é necessário mudar o Java do Android Studio. O plugin Compose obtém suas ferramentas de empacotamento.
 
 ```powershell
-# Release Windows (padrão)
+# Release Windows online (padrão; requer compilador .NET Framework 4.x do Windows)
 .\gradlew.bat :desktopApp:createDistributable :desktopApp:packageExe --console=plain
 
 # Debug Windows, instalável ao lado da release
 .\gradlew.bat :desktopApp:createDistributable :desktopApp:packageExe '-PdesktopVariant=debug' --console=plain
+
+# Mesmo fluxo online, com identidade DEBUG para verificações isoladas
+.\gradlew.bat :desktopApp:packageExe '-PdesktopVariant=debug' '-PdesktopInstaller=online' --console=plain
+.\tools\verify-windows-installer.ps1
 ```
 
 ### Debug portátil para desenvolvimento
@@ -45,18 +57,46 @@ Os dados continuam em `%LOCALAPPDATA%/SquiTVDebug`, inclusive DPAPI e preenchime
 
 | Variante | Instalador | Diretório de build | Dados locais |
 | --- | --- | --- | --- |
-| Release | SquiTV-1.21.1.exe | desktopApp/build/release/compose/binaries/main/exe | %LOCALAPPDATA%/SquiTV |
-| Debug | SquiTVDebug-1.21.1.exe | desktopApp/build/debug/compose/binaries/main/exe | %LOCALAPPDATA%/SquiTVDebug |
+| Release | SquiTV-1.22.1.exe | desktopApp/build/release/compose/binaries/main/exe | %LOCALAPPDATA%/SquiTV |
+| Debug | SquiTVDebug-1.22.1.exe | desktopApp/build/debug/compose/binaries/main/exe | %LOCALAPPDATA%/SquiTVDebug |
 
 Cada variante tem nome no menu Iniciar e UUID de upgrade próprios. Preservar os UUIDs no Gradle em atualizações futuras. `packageExe` é o instalador da variante escolhida por `desktopVariant`; os nomes de tarefas de minificação do plugin não definem a identidade debug/release do aplicativo.
 
 Ao alternar `desktopVariant`, tarefas com a mesma identidade Gradle podem limpar saídas antigas. Para conservar os dois instaladores, copie cada `.exe` concluído antes de compilar a outra variante. Os builds desta etapa foram preservados em `.artifacts/windows/release` e `.artifacts/windows/debug`, ignorados pelo Git. Isso não afeta a separação das aplicações já instaladas.
 
-Os instaladores incluem Java e bibliotecas; o usuário final executa apenas o instalador `.exe`. A pasta `main/app` contém a imagem sem instalador, útil para desenvolvimento. Os executáveis iniciais não têm assinatura Authenticode.
+Java continua incluído. O instalador release online inclui o MSI do app e uma transformação pequena para upgrades legados por usuário; o VLC é verificado/reutilizado ou baixado e instalado automaticamente antes de executar o MSI. O usuário executa somente o `.exe`, sem scripts/Java/VLC manuais. Debug portátil/offline continua autocontida; a imagem release online sem instalador depende do cache preparado pelo setup. Os executáveis não têm assinatura Authenticode.
+
+### Tamanho do instalador — 02/11/2026
+
+O empacotamento Windows compila com a biblioteca Material Icons completa, mas inclui somente suas classes efetivamente referenciadas no bytecode desktop/uiCommon. `prepareDesktopIcons` descobre referências e dependências internas, copia os vetores originais sem alterar classes, conserva recursos/metadados e registra o SHA-256 da biblioteca de origem. Material Icons Core continua como dependência integral. Não há lista manual de ícones nem alteração do Android; novos usos nas fontes compiladas entram automaticamente no próximo build. Se forem adicionados módulos UI externos com uso de ícones extended, suas classes também precisam ser entradas da tarefa.
+
+A mesma regra vale para debug e release e é dependência do classpath de empacotamento normal (`createDistributable`/`packageExe`). Não utiliza ofuscação/otimização global sobre Compose, serialização ou APIs JNA. Comparação local entre instaladores **debug** do mesmo código: 171.021.824 → 135.071.232 bytes, redução de **21,02%**. Biblioteca extended: 37.768.805 → 116.001 bytes; 30 classes mantidas com bytes idênticos aos originais. A imagem extraída caiu de 322.476.952 para 284.823.975 bytes. São medidas de artefatos; não comprovam execução visual/player nem uma nova release publicada.
+
+`tools/audit_windows_package.py` faz inventário de todos os arquivos, grupos de runtime/VLC, JARs e hash/tamanho do EXE, sem executar o instalador. O JSON deve ficar em `.artifacts/`; o comando recusa substituir relatório existente:
+
+```powershell
+python tools/audit_windows_package.py desktopApp/build/debug/compose/binaries/main/app/SquiTVDebug --installer desktopApp/build/debug/compose/binaries/main/exe/SquiTVDebug-1.22.0.exe --output .artifacts/auditoria-instalador/build-novo.json
+```
+
+Essa foi a primeira redução, ainda com VLC embutido. O passo seguinte, implementado no Windows 1.22.1, separa seus 145.582.445 bytes extraídos para instalação/reutilização automática, mantendo o Java reduzido por jlink (79.799.469 bytes). O ZIP oficial tem 79.893.405 bytes; a primeira instalação sem componentes válidos ainda precisa desses bytes. Relatório histórico da primeira etapa em docs/relatorio-otimizacao-instalador-windows-2026-11-02.md; o fluxo atual está abaixo.
+
+### Instalador online, atualização e desinstalação — Windows 1.22.1
+
+- Contrato único `desktopApp/runtime/vlc.properties`: versão, x64, HTTPS oficial, tamanho e SHA-256. PrepareVlcRuntime verifica o arquivo e gera manifesto com hashes/tamanhos de cada arquivo selecionado, incluindo licenças/proveniência. O manifesto entra no app e no EXE; não depende de metadados modificáveis encontrados no cache.
+- `tools/build-windows-online-installer.ps1` compila o bootstrapper C# com .NET Framework 4.8 do Windows, incorporando MSI, transformação de compatibilidade e seus tamanhos/hashes. `packageExe` release usa esse fluxo por padrão; não publica o MSI intermediário. O nome canônico e metadados de atualização EXE permanecem compatíveis com o updater 1.22.
+- Setup verifica todos os arquivos do cache e rejeita DLLs extras, corrupção ou arquitetura errada. Um conjunto íntegro evita a rede; bibliotecas de uma instalação antiga da mesma variante também podem ser copiadas após verificação. Detecção usa o UpgradeCode preservado e o caminho registrado pelo MSI; versões antigas sem InstallLocation usam o keypath registrado do componente no MSI em cache. Não procura um VLC arbitrário em PATH.
+- Quando necessário, baixa o ZIP oficial por HTTPS com validação de certificado, tamanho/SHA-256 exatos, prazo de 15 min e até três redirects somente VideoLAN. Download parcial não é promovido. Extração usa lista aprovada, limites, bloqueio de traversal/links e verificação completa antes de trocar diretórios. Cancelamento/repetição/reparo preservam o conjunto anterior. O app apenas verifica/carrega bibliotecas; não inicia downloads durante a reprodução.
+- Primeira instalação: `Program Files\Squi TV`, para todos os usuários, com elevação UAC solicitada pelo Windows e escolha de pasta no MSI. O cache comum fica em `%PROGRAMDATA%\SquiTVComponents`. O bootstrapper elevado aceita somente a opção fixa `--machine`; não transporta credenciais ou comandos arbitrários. Conta/configurações continuam por usuário.
+- Upgrade: preserva INSTALLDIR e contexto já registrados, sem abrir o seletor de pasta. As instalações antigas por usuário são mantidas nesse contexto usando MST autenticada; continuam com cache `%LOCALAPPDATA%\SquiTVComponents`, evitando uma migração destrutiva entre contextos Windows Installer. Esse caminho de compatibilidade não transforma silenciosamente instalações antigas em instalações de todos os usuários. Novas instalações seguem Program Files conforme pedido.
+- O player procura apenas os caches conhecidos comum/por usuário da própria variante e verifica o manifesto antes de carregar DLLs. O modo debug portátil continua com VLC incluído; debug online usa `SquiTVDebugComponents`/UUID/dados próprios. Nunca executar a release instalada no PC em verificações.
+- Remoção normal via Aplicativos do Windows: MSI remove arquivos/atalhos/registro de produto e chama Maintenance apenas com `REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE`. Limpa configurações/DPAPI e caches de componentes/MSI/ZIP da variante. Remoção por máquina limpa dados próprios nos perfis locais registrados; versão debug é preservada. Links/junctions são removidos sem seguir seu destino. Falha de limpeza retorna erro ao MSI, sem fingir remoção completa.
+- A limpeza é excluída do major upgrade; dados/contas/favoritos e o runtime reutilizado permanecem durante atualizações. Não apaga arquivos pessoais fora das pastas próprias, o EXE que o usuário baixou, a árvore do projeto ou caches/registros de instalação administrados pelo Windows. Windows Installer e o sistema gerenciam seus próprios logs/prefetch/cache protegido.
+
+Verificações automatizadas usam somente recursos debug e diretórios isolados: preparação inicial, reutilização offline, corrupção de mesmo tamanho, reparo, migração de fixture sem alterá-la, arquivo extra, cache MSI/MST, cancelamento, traversal, arquitetura, ZIP truncado, pastas/condições reais do MSI/MST e limpeza de fixtures preservando debug/outro app. Download HTTPS real com SHA-256 foi executado. Isso não equivale a executar o MSI com UAC, instalar/desinstalar ou testar o player em uma instalação real; a release instalada permanece intacta.
 
 ### Runtime de vídeo
 
-`prepareVlcRuntime` obtém o ZIP oficial VLC 3.0.23 Windows x64, verifica o SHA-256 fixado no código e prepara DLLs/plugins/licenças como recursos da aplicação. O arquivo baixado fica em `.artifacts/native`, fora do Git; o runtime extraído fica em `build/desktopNativeResources`. O usuário não precisa instalar VLC separadamente. A procedência é registrada em `SQUI-TV-RUNTIME.txt` junto às bibliotecas. Não remover avisos/licenças na distribuição.
+`prepareVlcRuntime` obtém o ZIP oficial VLC 3.0.23 Windows x64, verifica tamanho/SHA-256 da definição versionada e prepara DLLs/plugins/licenças e manifesto. O arquivo de build fica em `.artifacts/native`, fora do Git; a extração fica em `build/desktopNativeResources`. Debug offline embute a seleção; release online leva somente o contrato e prepara componentes pelo setup. Não remover avisos/licenças.
 
 O adaptador `WindowsLivePlayer` usa JNA diretamente com a API C LibVLC; não depende de player Android ou de executável VLC externo. Comandos nativos ficam em um único worker; a interface não executa chamadas de vídeo bloqueantes. A janela de vídeo usa Canvas nativo e os controles sob demanda ficam abaixo dela. O player ao vivo usa HUDs Compose em janelas JWindow pertencentes à janela principal, posicionadas acima do Canvas: não copia frames nem depende de blending experimental. Os HUDs acompanham posição/tamanho, escondem ao trocar de aplicativo e são descartados ao sair do player. Seus ComposePanel usam somente `RenderSettings.SwingGraphics()` (API experimental já presente na versão instalada): o SkiaSurface padrão desses painéis aplicava fullscreen=false ao ser mostrado e limpava a tela cheia da janela principal no monitor. O renderer da janela principal e a superfície nativa LibVLC não foram alterados; não há loop para forçar/restaurar fullscreen. Não foram medidos impactos de CPU/desempenho.
 
@@ -76,7 +116,7 @@ O EPG é consultado para o canal atual e atualizado a cada minuto enquanto a tel
 
 ### Janela limpa
 
-A janela não exibe moldura, título nativo, nome/debug/versão internos ou faixa reservada para controles. A faixa de 28 dp e os botões por hover foram removidos após a correção solicitada pelo usuário; não os recolocar. Também foram removidas as margens globais vazias. O perfil na dashboard, o cabeçalho das listas e a área institucional do login permitem arrastar a janela sem uma barra adicional. Início/Sair da conta ficam nos cabeçalhos existentes.
+A janela não exibe moldura, título nativo, nome/debug/versão internos ou faixa reservada para controles. A faixa de 28 dp e os botões por hover foram removidos após a correção solicitada pelo usuário; não os recolocar. Também foram removidas as margens globais vazias. O perfil na dashboard, o cabeçalho das listas e a área institucional do login permitem arrastar a janela sem uma barra adicional. Não há botões visuais de voltar/Início; Sair da conta permanece somente nas Configurações.
 
 Fora da tela cheia, tamanho inicial de 1120×630, proporção 16:9 mantida nos eventos de redimensionamento e mínimo 960×540 (reduzido proporcionalmente em monitores menores). Maximização comum retorna ao modo janela para preservar a proporção. F11 alterna tela cheia em todas as telas; o modo ocupa os limites do monitor, bloqueia redimensionamento/arraste e usa a proporção nativa do monitor. Somente F11 ou a ação de tela cheia retornam ao modo janela; Esc navega sem alterar esse modo. A navegação entre telas não encerra a tela cheia. O modo janela/tela cheia é persistido por variante no preferences.json. Na primeira abertura (inclusive preferências antigas sem esse campo), o padrão é tela cheia. A janela só se torna visível após restaurar a preferência, evitando exibir primeiro o modo errado. Na raiz (dashboard ou login), Esc/Voltar mostra “Deseja realmente fechar o Squi TV?” com FICAR e SAIR, reutilizando o componente Compose extraído da confirmação Android. FICAR recebe foco inicial; Esc ou clique fora cancela. A confirmação Windows é sobreposta na própria superfície, sem criar janela auxiliar que altere fullscreen. Nas demais telas, Voltar navega primeiro; no player ao vivo, fecha os menus/controles/aviso antes de retornar à lista. A ação é tratada ao soltar a tecla para impedir repetição atravessando telas. O fechamento confirmado, assim como Alt+F4, aguarda a gravação serializada da preferência. O título/ícone continuam identificando o app no sistema, sem faixa visível ou mudança de versão.
 
@@ -137,14 +177,15 @@ A referência é o código Android existente. A versão Windows inicial não é 
 | Filmes, detalhes, atores, categorias servidor/gênero e preparação | Catálogo do servidor, busca, detalhes textuais e reprodução iniciais implementados; navegação por ator/gênero, preparação e biblioteca persistente pendentes |
 | Séries, temporadas, episódios e continuação | Catálogo/detalhes, temporadas, episódios, reprodução e sequência automática iniciais implementados; histórico/retomada persistente pendentes |
 | Favoritos, histórico, progresso e perfis por conta | Pendentes; preservar escopos e formatos Android |
-| Busca global, downloads e multiview | Pendentes |
+| Busca global | Busca por títulos de canais/filmes/séries do provedor, filtros, detalhes/reprodução e retorno à grade implementados; episódios individuais, voz e agrupamento pendentes; sem validação em execução nesta etapa |
+| Downloads e multiview | Pendentes |
 | Configurações, categorias ocultas/ordem personalizada e idiomas/zoom | Grade inicial com conta, DNS, zoom, auto-reprodução e logout; demais opções pendentes |
 | Importação/exportação seletiva e sincronização local | Pendentes; manter contrato compatível com Android |
 | Atualizações Windows | Tela nas Configurações em ambas as variantes; rede/download/instalação habilitados somente na release. Fluxo compilado/empacotado, sem atualização real exercitada |
 | Login pela rede local | Pendente |
 | PiP e reprodução em segundo plano | Pendentes de adaptação nativa; manter funções distintas |
 
-Orientação atual do usuário (02/11/2026): portar **visual e funções** de Filmes, Séries e Configurações, reaproveitando o código Android. A restrição anterior de somente visual foi substituída por esse pedido expresso. A prioridade mais recente é player de filmes/séries → atualizações Windows → dashboard. Player e atualizador iniciais já estão implementados; a paridade funcional completa continua pendente. Manter a continuidade incremental, uma parte por execução agendada. Os demais botões ainda sem função da dashboard continuam visuais por autorização anterior; sua presença não comprova portabilidade. Não declarar concluída a paridade completa enquanto as pendências da tabela existirem.
+Orientação atual do usuário (02/11/2026): foco no Windows, reaproveitando **visual e funções** Android. Player VOD, atualizador inicial e busca da dashboard estão implementados; a paridade funcional completa continua pendente. Manter a continuidade incremental, uma parte por execução agendada, usando somente debug e preservando a release instalada. Os demais botões ainda sem função da dashboard continuam visuais por autorização anterior; sua presença não comprova portabilidade. Não declarar concluída a paridade completa enquanto as pendências da tabela existirem.
 
 A arte vetorial dos seis cartões foi extraída sem redesenho de `CinematicActionCard.kt` Android para `uiCommon/src/main/kotlin/.../HomeCardGraphic.kt`; as duas plataformas compilam a mesma fonte. O Windows conserva as duas fileiras de três cartões, ícones Material Rounded, gradiente, cores e indicadores de foco do Android, com adaptação da composição a cartões/janelas estreitos. Não consulta filmes/séries/downloads/favoritos para montar esses botões e não inventa contadores de conteúdo.
 

@@ -185,7 +185,7 @@ internal fun DesktopScreen(state: DesktopState, controller: DesktopController, p
         }
     }
     LaunchedEffect(state.account == null) { if (state.account == null) {
-        listOf("dashboard", "live", "MOVIES", "SERIES", "settings").forEach(screens::removeState)
+        listOf("dashboard", "live", "MOVIES", "SERIES", "settings", "search").forEach(screens::removeState)
     } }
     if (state.playback != null) {
         LivePlayerScreen(state, controller, preferences, fullscreen, toggleFullscreen, registerPlayer, registerLiveInput)
@@ -222,6 +222,8 @@ internal fun DesktopScreen(state: DesktopState, controller: DesktopController, p
             screens.SaveableStateProvider("detail-${detail.kind}-${detail.item.id}") {
                 OnDemandDetailScreen(detail, controller)
             }
+        } else if (state.page == DesktopPage.SEARCH) {
+            screens.SaveableStateProvider("search") { DesktopSearchScreen(controller) }
         } else {
             screens.SaveableStateProvider(catalog.kind.name) { OnDemandCatalogScreen(catalog, controller) }
         }

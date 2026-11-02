@@ -124,9 +124,9 @@ internal fun DesktopPageHeading(title: String, subtitle: String,
 }
 
 @Composable
-private fun CatalogPoster(item: CatalogItem, images: ChannelLogos, open: () -> Unit) {
+internal fun CatalogPoster(item: CatalogItem, images: ChannelLogos, modifier: Modifier = Modifier, open: () -> Unit) {
     val interaction = rememberVisualInteraction()
-    Surface(onClick = open, interactionSource = interaction.source, color = Color.Transparent,
+    Surface(onClick = open, interactionSource = interaction.source, modifier = modifier, color = Color.Transparent,
         shape = RoundedCornerShape(AppBrand.CARD_CORNER_DP.dp),
         border = if (interaction.emphasized) BorderStroke(2.dp, palette.primary) else null) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -196,7 +196,7 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
         detail.error?.let { error ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.weight(1f)) { StatusNotice(error, error = true) }
-                TextButton({ controller.catalog.openDetail(detail.item) }) { Text("Tentar novamente") }
+                TextButton(controller.catalog::retryDetail) { Text("Tentar novamente") }
             }
         }
         if (detail.loading && detail.kind == CatalogKind.SERIES) {

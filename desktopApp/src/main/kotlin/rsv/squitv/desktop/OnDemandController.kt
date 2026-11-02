@@ -12,6 +12,12 @@ import rsv.squitv.shared.xtream.*
 internal enum class CatalogKind(val title: String) { MOVIES("FILMES"), SERIES("SÉRIES") }
 internal data class CatalogItem(val id: Int, val name: String, val cover: String?, val rating: String?,
     val genre: String? = null, val extension: String? = null, val series: XtreamSeries? = null)
+internal fun XtreamVod.toCatalogItem(): CatalogItem? = streamId?.takeIf { it > 0 }?.let { id ->
+    CatalogItem(id, name ?: "Filme $id", streamIcon, rating, extension = container_extension)
+}
+internal fun XtreamSeries.toCatalogItem(): CatalogItem? = seriesId?.takeIf { it > 0 }?.let { id ->
+    CatalogItem(id, name ?: "Série $id", cover, rating, genre, series = this)
+}
 internal data class CatalogBrowse(val categories: List<LiveCategory> = emptyList(),
     val category: LiveCategory? = null, val items: List<CatalogItem> = emptyList(),
     val loadingCategories: Boolean = false, val loading: Boolean = false, val error: String? = null)
@@ -81,13 +87,8 @@ internal class OnDemandController(private val client: XtreamClient, private val 
         change(kind) { it.copy(loading = true, error = null) }
         try {
             val items = withContext(Dispatchers.IO) {
-                if (kind == CatalogKind.MOVIES) client.movies(account, category.id).mapNotNull { movie ->
-                    movie.streamId?.takeIf { it > 0 }?.let { id -> CatalogItem(id, movie.name ?: "Filme $id",
-                        movie.streamIcon, movie.rating, extension = movie.container_extension) }
-                } else client.series(account, category.id).mapNotNull { series ->
-                    series.seriesId?.takeIf { it > 0 }?.let { id -> CatalogItem(id, series.name ?: "Série $id",
-                        series.cover, series.rating, series.genre, series = series) }
-                }
+                if (kind == CatalogKind.MOVIES) client.movies(account, category.id).mapNotNull { it.toCatalogItem() }
+                else client.series(account, category.id).mapNotNull { it.toCatalogItem() }
             }
             currentCoroutineContext().ensureActive()
             change(kind) { it.copy(items = items.distinctBy(CatalogItem::id), loading = false) }
@@ -99,7 +100,25 @@ internal class OnDemandController(private val client: XtreamClient, private val 
     fun openDetail(item: CatalogItem) {
         val account = credentials ?: return
         if (item !in mutable.value.current.items) return
-        val detail = CatalogDetail(mutable.value.kind, item)
+        loadDetail(mutable.value.kind, item, account)
+    }
+
+    fun retryDetail() {
+        val account = credentials ?: return
+        val detail = mutable.value.detail ?: return
+        loadDetail(detail.kind, detail.item, account)
+    }
+
+    // DesktopController verifies the item against the active global search snapshot.
+    internal fun openSearchDetail(kind: CatalogKind, item: CatalogItem, account: ServerCredentials) {
+        if (credentials != account) { reset(); credentials = account }
+        leave()
+        mutable.update { it.copy(kind = kind) }
+        loadDetail(kind, item, account)
+    }
+
+    private fun loadDetail(kind: CatalogKind, item: CatalogItem, account: ServerCredentials) {
+        val detail = CatalogDetail(kind, item)
         detailJob?.cancel()
         mutable.update { it.copy(detail = detail) }
         detailJob = scope.launch {

@@ -107,7 +107,7 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, modif
                 }
                 val actions: @Composable () -> Unit = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DashboardAction(Icons.Rounded.Search, "Buscar", modifier = Modifier.focusRequester(headerFocus[0])
+                        DashboardAction(Icons.Rounded.Search, "Buscar", controller::openSearch, modifier = Modifier.focusRequester(headerFocus[0])
                             .focusProperties { down = cardFocus[0] })
                         if (!narrow) DashboardAction(Icons.Rounded.Notifications, "Notificações",
                             modifier = Modifier.focusRequester(headerFocus[1]).focusProperties { down = cardFocus[1] })

@@ -39,7 +39,9 @@ CI executa testes/compilações sem publicar nem acessar segredos de assinatura.
 ## 5. Windows — preparação de uma distribuição futura
 
 - Usar JDK com jpackage e `:desktopApp:packageExe`; não distribuir a imagem debug/portable como atualização release.
-- Preservar UUID/per-user upgrade e dados existentes. Arquivar o instalador por hash fora de build antes de alternar variante.
+- Preservar UUID, pasta/contexto de upgrades existentes e dados. Novas instalações Windows usam Program Files/per-machine; legados per-user usam transformação autenticada. Arquivar o instalador por hash fora de build antes de alternar variante.
+- Windows online: `packageExe`/`writeUpdateMetadata` geram EXE com MSI/MST verificados; publicar somente o EXE canônico, checksum e manifesto. Não distribuir o MSI intermediário sem o bootstrapper de componentes.
+- Verificar componentes/limpeza apenas com debug: `:desktopApp:packageExe -PdesktopVariant=debug -PdesktopInstaller=online` e `tools/verify-windows-installer.ps1`. Distinguir verificações isoladas de instalação real com UAC; nunca executar a release instalada para testes.
 - Confirmar versão embutida, arquitetura real e nome canônico `SquiTV-<versionName>.exe`. Calcular tamanho/SHA-256 dos bytes definitivos; alterações posteriores invalidam o manifesto.
 - generate_manifest.py continua sendo o gerador Android. Para staging Windows/conjunto, usar prepare_release.py e os metadados reais de :desktopApp:writeUpdateMetadata. O preparador não publica nem gera MSI.
 - Validar o manifesto conjunto com :shared:validateUpdateManifest e conferir associação exata de tag, assets e digests publicados, respeitando clientes Android legados.

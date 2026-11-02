@@ -63,9 +63,12 @@ jobs:
       - name: Ensure Project Android SDK
         shell: pwsh
         run: '& "$env:ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager.bat" "platforms;android-37.0" "build-tools;36.0.0"'
-      - name: Test and package Windows release
+      - name: Package Windows release (never execute it)
         shell: pwsh
-        run: .\gradlew.bat :shared:test :desktopApp:test :desktopApp:packageExe --console=plain
-      - name: Test and package Windows debug
+        run: .\gradlew.bat :desktopApp:packageExe --console=plain
+      - name: Test and package Windows debug online installer
         shell: pwsh
-        run: .\gradlew.bat :desktopApp:test :desktopApp:packageExe '-PdesktopVariant=debug' --console=plain
+        run: .\gradlew.bat :shared:test :desktopApp:test :desktopApp:packageExe '-PdesktopVariant=debug' '-PdesktopInstaller=online' --console=plain
+      - name: Verify components with debug resources only (no MSI executed)
+        shell: pwsh
+        run: .\tools\verify-windows-installer.ps1
