@@ -2,15 +2,11 @@
 
 ## Estado e plataformas
 
-A versão conjunta [**v1.23**, publicada em 03/11/2026](https://github.com/Rafael020703/SquiTV/releases/tag/v1.23), reúne Android **1.23/code 24** e Windows **1.23.0 x64**. Notas: [Android](releases/v1.23-android.md) e [Windows](releases/v1.23-windows.md). É a versão Latest para os clientes Android legados também. Publicações anteriores continuam no histórico; versões e assets antigos não foram substituídos.
+A versão conjunta [**v1.24**, publicada em 03/11/2026](https://github.com/Rafael020703/SquiTV/releases/tag/v1.24), reúne Android **1.24/code 25** e Windows **1.24.0 x64**. Notas: [Android](releases/v1.24-android.md) e [Windows](releases/v1.24-windows.md). É a versão Latest para clientes Android legados também. Publicações anteriores permanecem no histórico, sem substituir tags ou assets.
 
 O Windows aproxima funções e apresentação do Android, mas ainda não tem paridade completa. `:desktopApp` consome Kotlin puro em `:shared` e fontes Compose em `uiCommon`; nunca depende de `:app`. Motores, armazenamento e integrações de sistema permanecem específicos de cada plataforma.
 
 O aplicativo não fornece conteúdo ou credenciais. É necessário um servidor compatível com Xtream Codes. Disponibilidade de metadados, EPG, qualidades e transmissões simultâneas depende do provedor e do aparelho.
-
-## Candidata v1.24 — preparação de 03/11/2026
-
-Android 1.24/code 25 e Windows 1.24.0. Inclui os ajustes de reprodução/histórico, downloads de episódios/temporadas, capas, volume e navegação descritos nas notas [Android](releases/v1.24-android.md) e [Windows](releases/v1.24-windows.md). A publicação será registrada após verificar os assets públicos.
 
 ## Funções implementadas
 
@@ -33,7 +29,7 @@ A busca global consulta somente listagens dos tipos escolhidos, com cancelamento
 
 Ao vivo/Multi-view carregam um índice de sessão ao entrar explicitamente. Filmes/Séries usam seu índice completo para contar/projetar categorias nos dois modos. Não há varredura global no login/dashboard nem uma requisição por categoria para calcular contagens. A consulta por categoria permanece como recuperação quando o índice falha. Catálogos grandes continuam sujeitos à latência e aos limites do transporte.
 
-**Alteração local após v1.23, ainda não publicada:** Filmes inclui **Adicionados recentemente** nos dois modos de categorias. Reutiliza a regra Android extraída para `:shared`: até 100 títulos dos últimos 14 dias, tolerância de cinco minutos para diferença de relógio, data decrescente e ID decrescente no desempate. Usa o campo `added` da listagem já carregada e respeita categorias ocultas; não consulta detalhes nem coloca histórico na dashboard. A seção desaparece quando não há itens elegíveis. Sem data válida fornecida pelo servidor, não há classificação como recente. Séries e Ao vivo permanecem para etapas posteriores.
+**Disponível na v1.24:** Filmes inclui **Adicionados recentemente** nos dois modos de categorias. Reutiliza a regra Android extraída para `:shared`: até 100 títulos dos últimos 14 dias, tolerância de cinco minutos para diferença de relógio, data decrescente e ID decrescente no desempate. Usa o campo `added` da listagem já carregada e respeita categorias ocultas; não consulta detalhes nem coloca histórico na dashboard. A seção desaparece quando não há itens elegíveis. Sem data válida fornecida pelo servidor, não há classificação como recente. Séries e Ao vivo permanecem para etapas posteriores.
 
 A preparação VOD mantém cache por conta/tipo, uma consulta de metadados por vez, lotes, pausas, cache negativo e tentativas limitadas. Pausa fora do catálogo ativo, em reprodução/segundo plano ou por solicitação. Velocidade/pausa do coordenador são de sessão. Não confundir preparação com sincronização das listas.
 
@@ -44,9 +40,9 @@ A preparação VOD mantém cache por conta/tipo, uma consulta de metadados por v
 - **Mouse:** botão lateral Voltar (botão 4 entregue ao Java) encaminha Esc aos mesmos handlers da janela, diálogo ou HUD focado. Atua uma vez ao soltar; não monitora outros aplicativos. Avançar permanece sem ação por escolha do usuário. Mapeamentos próprios de drivers e a superfície nativa ainda não foram exercitados com mouse físico.
 - **Instalador:** após sucesso sem reinicialização pendente, a opção marcada “Abrir o Squi TV ao concluir” permite iniciar no clique Concluir. Em instalação por máquina, o processo original aguarda o filho UAC e abre o executável registrado da mesma variante sem elevação. Se o instalador já foi aberto como administrador, a abertura automática fica desabilitada. Cancelamento/falha não dispara o app; falha ao abrir não desfaz a instalação. Apenas o instalador debug foi empacotado, sem executar MSI/EXE.
 
-Debug portátil atual no Iniciar: `dbb50605cf016116`, na pasta fixa `SquiTVDebugPortable/current`. Inclui os ajustes locais anteriores, correções de capas/logos e download de episódios/temporadas. Compilações Windows/Android e deploy concluídos; atalho/ícone conferidos por leitura. Nenhum app/instalador, download real, decodificador nativo ou inspeção visual foi executado pelo agente. Release instalada e publicação v1.23 preservadas.
+Debug portátil atual no Iniciar: `00850f5d63b6411c`, na pasta fixa `SquiTVDebugPortable/current`, com as fontes da v1.24. Compilações e deploy concluídos, sem pastas de histórico extras. Nenhum app/player/instalador foi aberto ou encerrado; a release instalada em G:/SquiTV e seus dados foram preservados. Os hashes identificam o build, sem criar cópias permanentes.
 
-## Downloads de filmes e episódios — etapa local após v1.23
+## Downloads de filmes e episódios — v1.24
 
 O cartão Downloads abre uma biblioteca por conta. **Baixar** fica nos detalhes do filme; Séries tem **Baixar episódio** e **Baixar temporada**, usando as temporadas/episódios reais já carregados e as regras compartilhadas de `OnDemandPlayback`. A apresentação da linha e a formatação de tamanhos continuam compartilhadas com Android.
 
@@ -73,7 +69,7 @@ Servidor sem arte, arquivo inacessível, TLS inválido ou imagem acima dos limit
 
 - **Alteração local, ainda não publicada:** com os controles ocultos, esquerda/direita diminuem/aumentam o volume do app em passos de 5%, entre 0 e 100, com indicador por 1,5 s. Uma ação ao soltar a tecla evita repetições acidentais. Com controles ou menus abertos, as setas navegam e continuam atuando no seek quando a barra está focada. Regra de volume e indicador são compartilhados com Android; o Windows conserva o valor nas preferências existentes. O volume Android atua no player Media3 da sessão, sem configurar o áudio da TV.
 - **Teclado Windows:** setas movem o foco entre componentes; Enter aciona o componente e Esc volta/fecha o menu pelo fluxo existente. A navegação adicional trata somente eventos que editores, sliders, menus e player não consumiram. Inclui diálogos de configurações/downloads e HUDs nativos, sem alterar F11 ou as regras de fullscreen. Diálogos do sistema continuam usando a navegação do Windows. Compilação não comprova alcance de todos os controles ou geometria do foco em execução.
-- **Memória dos catálogos, local após v1.23:** ao reabrir Ao vivo/Filmes/Séries, restaura categoria e cartão selecionado, sem reproduzir automaticamente. Mantém itens por até 16 categorias em cada escopo, com até 64 escopos/tipos e orçamento de 16 KiB para a memória compartilhada. Usa somente IDs, por conta/tipo; no Android também por perfil. Reutiliza dados carregados e valida a categoria visível antes de restaurar; conteúdo removido/oculto não é reaberto à força. Salva foco estabilizado após 400 ms e clique imediatamente, elimina gravações idênticas e aguarda a gravação pendente no fechamento normal do Windows. Não é histórico de progresso ou sincronização entre aparelhos.
+- **Memória dos catálogos, v1.24:** ao reabrir Ao vivo/Filmes/Séries, restaura categoria e cartão selecionado, sem reproduzir automaticamente. Mantém itens por até 16 categorias em cada escopo, com até 64 escopos/tipos e orçamento de 16 KiB para a memória compartilhada. Usa somente IDs, por conta/tipo; no Android também por perfil. Reutiliza dados carregados e valida a categoria visível antes de restaurar; conteúdo removido/oculto não é reaberto à força. Salva foco estabilizado após 400 ms e clique imediatamente, elimina gravações idênticas e aguarda a gravação pendente no fechamento normal do Windows. Não é histórico de progresso ou sincronização entre aparelhos.
 - LibVLC usa superfície nativa; os HUDs mantêm SwingGraphics. No Multi-view Windows o cabeçalho do slot ocupa faixa acima do Canvas para não ficar sob o HWND; ainda difere do overlay Android.
 - Ajustar conserva a imagem inteira e a proporção; Preencher pode esticar; Zoom preenche cortando bordas sem esticar. O adaptador limpa operações anteriores e recalcula conforme o viewport. Barras codificadas dentro do vídeo não são detectadas automaticamente.
 - VOD compartilha controlador de seek Android: coalescimento de 300 ms, confirmação nativa e proteção por sourceId/generation contra eventos antigos. Pausa fica centralizada. Retomada depende de duração/seekability válidas.
@@ -132,7 +128,7 @@ O `.gitignore` conserva planos, auditorias, registros de manutenção, dados pri
 
 ## Evidências e limites
 
-A preparação da v1.23 concluiu compilações, empacotamento, lint (zero erros, com avisos), assinatura Android compatível e conferência dos arquivos/manifesto. O [CI da revisão distribuída](https://github.com/Rafael020703/SquiTV/actions/runs/41642997574) passou nos jobs Android e Windows. Os cinco assets públicos foram baixados e tiveram tamanho/SHA-256 conferidos; APK de 7.283.921 bytes e instalador Windows de 71.510.528 bytes (68,20 MiB). As referências estáveis das duas plataformas apontam o mesmo manifesto da v1.23, com notas separadas.
+A v1.24 concluiu compilações Android debug/release, empacotamento Windows, lint com zero erros (327 avisos e quatro hints), validação do contrato e assinatura Android idêntica à v1.23. Os cinco assets públicos foram baixados e comparados: APK de 7.322.061 bytes e instalador Windows de 71.787.520 bytes. As referências estáveis Android/Windows apontam o manifesto v1.24, com notas por plataforma. [CI da revisão distribuída](https://github.com/Rafael020703/SquiTV/actions/runs/41700025822); os dois jobs passaram, incluindo os testes já existentes e as verificações isoladas do instalador debug. Esse resultado remoto é separado das compilações locais.
 
 Compilar APK de teste instrumentado não significa executá-lo. Não foram executados testes locais nesta rodada nem observados interface/reprodução/Multi-view ou upgrade da release instalada. Testes executados pelo CI remoto são evidência separada das verificações locais.
 
