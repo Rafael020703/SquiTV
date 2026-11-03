@@ -628,4 +628,5 @@
     <string name="backup_option_series_category_mode">Series category mode</string>
     <string name="category_section_genres">GENRE FILTERS</string>
     <string name="category_section_server">SERVER CATEGORIES</string>
+    <string name="updater_signature_unavailable">Could not read the signing certificates on this device. Installation has not started. Open the GitHub release to get the official APK.</string>
 </resources>

@@ -628,4 +628,5 @@
     <string name="backup_option_series_category_mode">Modo de categorías de series</string>
     <string name="category_section_genres">FILTROS POR GÉNERO</string>
     <string name="category_section_server">CATEGORÍAS DEL SERVIDOR</string>
+    <string name="updater_signature_unavailable">No se pudieron leer los certificados de firma en este dispositivo. La instalación no se ha iniciado. Puedes abrir la publicación en GitHub para obtener el APK oficial.</string>
 </resources>
