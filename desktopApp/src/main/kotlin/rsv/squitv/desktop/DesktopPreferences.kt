@@ -22,7 +22,10 @@ internal data class DesktopPreferences(val schema: Int = 1, val autoPlayEpisodes
     val hiddenLiveCategoriesByAccount: Map<String, Set<String>> = emptyMap(),
     val liveCategoryOrderByAccount: Map<String, List<String>> = emptyMap(),
     val catalogCategoryOrderByScope: Map<String, List<String>> = emptyMap(),
-    val hiddenCatalogCategoriesByScope: Map<String, Set<String>> = emptyMap())
+    val hiddenCatalogCategoriesByScope: Map<String, Set<String>> = emptyMap(),
+    val favoriteLiveChannelsByAccount: Map<String, Set<Int>> = emptyMap(),
+    val catalogModesByScope: Map<String, String> = emptyMap(),
+    val favoriteCatalogItemsByScope: Map<String, Set<Int>> = emptyMap())
 
 /** Variant-local preferences only. Credentials remain exclusively in the existing DPAPI store. */
 internal class DesktopPreferencesStore(private val directory: Path, private val scope: CoroutineScope) {
@@ -112,7 +115,46 @@ internal fun validateDesktopPreferences(value: DesktopPreferences) {
     require(value.hiddenCatalogCategoriesByScope.all { (key, ids) ->
         key.matches(Regex("[a-f0-9]{64}/(MOVIES|SERIES)")) && ids.size <= 10000 && ids.all { it.length in 1..256 }
     })
+    require(value.favoriteLiveChannelsByAccount.size <= 64)
+    require(value.favoriteLiveChannelsByAccount.all { (key, ids) ->
+        key.matches(Regex("[a-f0-9]{64}")) && ids.size <= 10000 && ids.all { it > 0 }
+    })
+    require(value.catalogModesByScope.size <= 128 && value.catalogModesByScope.all { (key, mode) ->
+        key.matches(Regex("[a-f0-9]{64}/(MOVIES|SERIES)")) && mode in setOf("PROVIDER", "GENRE")
+    })
+    require(value.favoriteCatalogItemsByScope.size <= 128 && value.favoriteCatalogItemsByScope.all { (key, ids) ->
+        key.matches(Regex("[a-f0-9]{64}/(MOVIES|SERIES)")) && ids.size <= 10000 && ids.all { it > 0 }
+    })
 }
+
+internal fun DesktopPreferences.isCatalogFavorite(account: String?, kind: CatalogKind, catalogId: Int): Boolean =
+    account != null && catalogId in favoriteCatalogItemsByScope["$account/${kind.name}"].orEmpty()
+
+/** The caller supplies a catalog ID, including the parent series ID while playing an episode. */
+internal fun DesktopPreferences.toggleCatalogFavorite(account: String, kind: CatalogKind, catalogId: Int): DesktopPreferences {
+    require(account.matches(Regex("[a-f0-9]{64}")) && catalogId > 0)
+    val key = "$account/${kind.name}"
+    val saved = favoriteCatalogItemsByScope[key].orEmpty()
+    val next = if (catalogId in saved) saved - catalogId else saved + catalogId
+    return copy(favoriteCatalogItemsByScope = if (next.isEmpty()) favoriteCatalogItemsByScope - key
+        else favoriteCatalogItemsByScope + (key to next))
+}
+
+internal fun DesktopPreferences.catalogMode(account: String, kind: CatalogKind) =
+    rsv.squitv.domain.model.CategoryMode.fromString(catalogModesByScope["$account/${kind.name}"])
+
+internal fun DesktopPreferences.withCatalogMode(account: String, kind: CatalogKind, mode: rsv.squitv.domain.model.CategoryMode) =
+    copy(catalogModesByScope = catalogModesByScope + ("$account/${kind.name}" to mode.name))
+
+internal fun DesktopPreferences.toggleLiveFavorite(account: String, streamId: Int, versionIds: Iterable<Int>): DesktopPreferences {
+    val next = rsv.squitv.domain.model.LiveChannelFavorites.toggle(
+        favoriteLiveChannelsByAccount[account].orEmpty(), streamId, versionIds)
+    return copy(favoriteLiveChannelsByAccount = if (next.isEmpty()) favoriteLiveChannelsByAccount - account
+        else favoriteLiveChannelsByAccount + (account to next))
+}
+
+internal fun rsv.squitv.shared.xtream.LiveChannel.isFavorite(savedIds: Set<Int>): Boolean =
+    rsv.squitv.domain.model.LiveChannelFavorites.isFavorite(savedIds, id, versions.map { it.id })
 
 internal fun DesktopPreferences.categoryOrder(account: String, kind: CatalogKind?): List<String> =
     if (kind == null) liveCategoryOrderByAccount[account].orEmpty()

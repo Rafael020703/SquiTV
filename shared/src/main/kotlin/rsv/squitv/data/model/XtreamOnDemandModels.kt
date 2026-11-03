@@ -24,8 +24,28 @@ data class XtreamVod(
     @SerialName("category_id") @Serializable(with = StringOrAnySerializer::class) val categoryId: String? = null,
     val container_extension: String? = null,
     @Serializable(with = StringOrAnySerializer::class) val rating: String? = null,
-    val rating_5based: Double? = null
+    val rating_5based: Double? = null,
+    @Serializable(with = OptionalGenreTextSerializer::class) val genre: String? = null
 )
+
+/** An optional listing field must not make a previously readable VOD list fail. */
+object OptionalGenreTextSerializer : KSerializer<String?> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("OptionalGenreText", PrimitiveKind.STRING)
+    @OptIn(ExperimentalSerializationApi::class)
+    override fun deserialize(decoder: Decoder): String? {
+        val input = decoder as? JsonDecoder ?: return decoder.decodeString()
+        return when (val value = input.decodeJsonElement()) {
+            is JsonPrimitive -> value.takeIf { it.isString }?.contentOrNull
+            is JsonArray -> value.mapNotNull { (it as? JsonPrimitive)?.takeIf { token -> token.isString }?.contentOrNull }
+                .joinToString(", ").takeIf { it.isNotBlank() }
+            else -> null
+        }
+    }
+    @OptIn(ExperimentalSerializationApi::class)
+    override fun serialize(encoder: Encoder, value: String?) {
+        if (value == null) encoder.encodeNull() else encoder.encodeString(value)
+    }
+}
 
 @Serializable
 data class XtreamSeries(

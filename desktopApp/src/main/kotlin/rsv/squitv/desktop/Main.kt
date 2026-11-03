@@ -50,11 +50,12 @@ private fun runApplication() {
         val directory = remember {
             Path.of(System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), DesktopBuildInfo.DATA_FOLDER)
         }
+        val history = remember { DesktopWatchHistory(directory, scope) }
         val controller = remember { DesktopController(XtreamClient(),
             WindowsCredentialStore(directory, useDebugDefaults = DesktopBuildInfo.DEBUG,
                 debugDefaultsFile = if (DesktopBuildInfo.DEBUG)
                     System.getProperty("squitv.debug.defaultsFile")?.let(Path::of) ?: directory.resolve("debug-login.dpapi")
-                else directory.resolve("debug-login.dpapi")), scope) }
+                else directory.resolve("debug-login.dpapi")), scope).also { it.watchHistory = history; it.catalog.attachMetadata(directory) } }
         val preferences = remember { DesktopPreferencesStore(directory, scope) }
         val updates = remember { DesktopUpdateController(directory.resolve("updates"), preferences, scope) }
         val updateState by updates.state.collectAsState()
@@ -80,16 +81,20 @@ private fun runApplication() {
             preferences.update { it.copy(fullscreen = fullscreen) }
         }
         var showExitDialog by remember { mutableStateOf(false) }
+        var activePlayer by remember { mutableStateOf<WindowsLivePlayer?>(null) }
         val closeApplication: () -> Unit = {
             if (!closing) {
                 closing = true
                 scope.launch {
-                    try { preferences.updateAndAwait { it.copy(fullscreen = windowState.placement == WindowPlacement.Fullscreen) } }
+                    try {
+                        controller.catalog.preparation?.stopAndFlush()
+                        controller.flushWatchProgress(activePlayer?.state?.value)
+                        preferences.updateAndAwait { it.copy(fullscreen = windowState.placement == WindowPlacement.Fullscreen) }
+                    }
                     finally { exitApplication() }
                 }
             }
         }
-        var activePlayer by remember { mutableStateOf<WindowsLivePlayer?>(null) }
         var livePlayerInput by remember { mutableStateOf<((KeyEvent) -> Boolean)?>(null) }
         DisposableEffect(controller) { onDispose { controller.close() } }
         Window(onCloseRequest = closeApplication, title = DesktopBuildInfo.APP_NAME,
@@ -107,12 +112,12 @@ private fun runApplication() {
                     true
                 }
                 else if (showExitDialog) false
-                else if (updateState.prompt && current.account != null && current.page == DesktopPage.DASHBOARD && back) {
+                else if (updateState.prompt && current.account != null && current.page == DesktopPage.DASHBOARD && catalog.detail == null && !playing && back) {
                     if (event.type == KeyEventType.KeyUp) updates.dismissPrompt()
                     true
                 }
-                else if (updateState.prompt && current.account != null && current.page == DesktopPage.DASHBOARD) false
-                else if (playing && livePlayerInput?.invoke(event) == true) true
+                else if (updateState.prompt && current.account != null && current.page == DesktopPage.DASHBOARD && catalog.detail == null && !playing) false
+                else if ((playing || current.page == DesktopPage.MULTIVIEW) && livePlayerInput?.invoke(event) == true) true
                 else if (back) {
                     if (event.type == KeyEventType.KeyUp) when {
                         current.playback != null -> controller.stopPlayback()
@@ -136,11 +141,24 @@ private fun runApplication() {
                 }
             }) {
             MaintainWindowAspectRatio(window, windowState)
+            DisposableEffect(window) {
+                val focus = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager()
+                val listener = java.beans.PropertyChangeListener {
+                    var active = focus.activeWindow
+                    while (active != null && active != window) active = active.owner
+                    controller.catalog.preparation?.setForeground(active == window && window.isShowing)
+                }
+                focus.addPropertyChangeListener("activeWindow", listener)
+                onDispose { focus.removePropertyChangeListener("activeWindow", listener) }
+            }
             MaterialTheme(colorScheme = palette, typography = desktopTypography) {
                 Surface(Modifier.fillMaxSize(), color = palette.background) {
                     val state by controller.state.collectAsState()
-                    LaunchedEffect(state.account != null, state.page, preferencesLoaded) {
-                        if (preferencesLoaded && state.account != null && state.page == DesktopPage.DASHBOARD) updates.check(notify = true)
+                    val contentState by controller.catalog.state.collectAsState()
+                    val dashboardActive = state.page == DesktopPage.DASHBOARD && state.playback == null &&
+                        contentState.detail == null && contentState.playback == null
+                    LaunchedEffect(state.account != null, dashboardActive, preferencesLoaded) {
+                        if (preferencesLoaded && state.account != null && dashboardActive) updates.check(notify = true)
                     }
                     val density = LocalDensity.current
                     Box(Modifier.fillMaxSize()) {
@@ -152,7 +170,7 @@ private fun runApplication() {
                         }) {
                             DesktopScreen(state, controller, preferences, windowState.placement == WindowPlacement.Fullscreen,
                                 toggleFullscreen, { activePlayer = it }, { livePlayerInput = it }, installUpdate = { updates.install(closeApplication) })
-                            if (!showExitDialog && updateState.prompt && state.account != null && state.page == DesktopPage.DASHBOARD)
+                            if (!showExitDialog && updateState.prompt && state.account != null && dashboardActive)
                                 updateState.info?.let { info -> DesktopUpdateNotice(updates, info) { updates.dismissPrompt(); controller.openUpdates() } }
                         }
                         if (showExitDialog) Box(Modifier.fillMaxSize()
@@ -202,7 +220,7 @@ private fun DesktopScreenContent(state: DesktopState, controller: DesktopControl
         }
     }
     LaunchedEffect(state.account == null) { if (state.account == null) {
-        listOf("dashboard", "live", "MOVIES", "SERIES", "settings", "search").forEach(screens::removeState)
+        listOf("dashboard", "live", "MOVIES", "SERIES", "settings", "search", "favorites").forEach(screens::removeState)
     } }
     if (state.playback != null) {
         LivePlayerScreen(state, controller, preferences, fullscreen, toggleFullscreen, registerPlayer, registerLiveInput)
@@ -226,6 +244,9 @@ private fun DesktopScreenContent(state: DesktopState, controller: DesktopControl
             }
         } else if (state.account == null) {
             LoginForm(state, controller, Modifier.weight(1f))
+        } else if (catalog.detail != null && state.page == DesktopPage.DASHBOARD) {
+            val detail = requireNotNull(catalog.detail)
+            screens.SaveableStateProvider("detail-${detail.kind}-${detail.item.id}") { OnDemandDetailScreen(detail, controller, preferences) }
         } else if (state.page == DesktopPage.DASHBOARD) {
             screens.SaveableStateProvider("dashboard") { Dashboard(state, controller, preferences, Modifier.weight(1f)) }
         } else if (state.page == DesktopPage.LIVE) {
@@ -237,10 +258,14 @@ private fun DesktopScreenContent(state: DesktopState, controller: DesktopControl
         } else if (catalog.detail != null) {
             val detail = requireNotNull(catalog.detail)
             screens.SaveableStateProvider("detail-${detail.kind}-${detail.item.id}") {
-                OnDemandDetailScreen(detail, controller)
+                OnDemandDetailScreen(detail, controller, preferences)
             }
         } else if (state.page == DesktopPage.SEARCH) {
-            screens.SaveableStateProvider("search") { DesktopSearchScreen(controller) }
+            screens.SaveableStateProvider("search") { DesktopSearchScreen(controller, preferences) }
+        } else if (state.page == DesktopPage.FAVORITES) {
+            screens.SaveableStateProvider("favorites") { DesktopFavoritesScreen(controller, preferences) }
+        } else if (state.page == DesktopPage.MULTIVIEW) {
+            DesktopMultiViewScreen(controller, preferences, registerLiveInput, toggleFullscreen)
         } else {
             screens.SaveableStateProvider(catalog.kind.name) { OnDemandCatalogScreen(catalog, controller, preferences) }
         }

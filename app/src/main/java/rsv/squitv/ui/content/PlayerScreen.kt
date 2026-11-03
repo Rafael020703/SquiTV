@@ -186,6 +186,7 @@ fun PlayerScreen(
             onToggleFavorite = { viewModel.toggleFavorite() },
             onReload = { viewModel.reloadStream() },
             onToggleResizeMode = { viewModel.toggleResizeMode() },
+            onSetResizeMode = viewModel::setResizeMode,
             onSelectTrack = { g, t, ty -> viewModel.selectTrack(g, t, ty) },
             onClearTrackOverride = { viewModel.clearTrackOverride(it) },
             onSetSpeed = { viewModel.setPlaybackSpeed(it) },
@@ -255,6 +256,7 @@ fun PlayerContent(
     onToggleFavorite: () -> Unit,
     onReload: () -> Unit,
     onToggleResizeMode: () -> Unit,
+    onSetResizeMode: (Int) -> Unit,
     onSelectTrack: (Int, Int, Int) -> Unit,
     onClearTrackOverride: (Int) -> Unit,
     onSetSpeed: (Float) -> Unit,
@@ -406,20 +408,11 @@ fun PlayerContent(
         ) {
             if (player != null) {
                 AndroidView(
-                    factory = { 
-                        PlayerView(context).apply { 
-                            this.player = player
-                            useController = false
-                            this.resizeMode = resizeMode
-                            this.keepScreenOn = true 
-                            setBackgroundColor(android.graphics.Color.BLACK)
-                        } 
-                    },
-                    update = { 
-                        if (it.player != player) it.player = player
-                        it.resizeMode = resizeMode
-                    },
-                    onRelease = { it.player = null },
+                    factory = { rsv.squitv.ui.content.player.AndroidVideoViewport(it).apply {
+                        bind(player, rsv.squitv.shared.player.VideoScaleMode.fromMedia3(resizeMode))
+                    } },
+                    update = { it.bind(player, rsv.squitv.shared.player.VideoScaleMode.fromMedia3(resizeMode)) },
+                    onRelease = { it.releaseSurface() },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -544,6 +537,7 @@ fun PlayerContent(
                     tracks = state.tracks,
                     trackSelectionParameters = state.trackSelectionParameters,
                     resizeMode = resizeMode,
+                    onSetResizeMode = onSetResizeMode,
                     isLive = state.isLive,
                     groupChannels = groupChannels,
                     versions = state.availableVersions,

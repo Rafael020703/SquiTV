@@ -77,10 +77,11 @@ fun PlayerTimeline(positionLabel: String, seeking: Boolean, primary: Color, text
 @Composable
 fun PlayerRoundButton(icon: ImageVector, label: String?, onClick: () -> Unit,
     background: Color, foreground: Color, border: Color, borderWidth: Dp, modifier: Modifier = Modifier,
-    interactionSource: MutableInteractionSource? = null) {
-    Surface(onClick, modifier.size(52.dp), shape = CircleShape, color = background,
+    interactionSource: MutableInteractionSource? = null, enabled: Boolean = true) {
+    Surface(onClick, modifier.size(52.dp), enabled = enabled, shape = CircleShape, color = background,
         border = BorderStroke(borderWidth, border), interactionSource = interactionSource) {
-        Box(contentAlignment = Alignment.Center) { Icon(icon, label, Modifier.size(26.dp), tint = foreground) }
+        Box(contentAlignment = Alignment.Center) { Icon(icon, label, Modifier.size(26.dp),
+            tint = if (enabled) foreground else foreground.copy(alpha = .38f)) }
     }
 }
 

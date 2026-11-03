@@ -10,6 +10,9 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import rsv.squitv.shared.player.VideoScaleMode
+import rsv.squitv.shared.player.VlcVideoGeometry
+import rsv.squitv.shared.player.vlcGeometry
 
 data class MediaTrack(val id: Int, val name: String)
 
@@ -18,7 +21,8 @@ data class PlayerStatus(val phase: String = "Preparando reprodução…", val pa
     val timeMs: Long = 0, val durationMs: Long = 0, val seekable: Boolean = false, val ended: Boolean = false,
     val audioTracks: List<MediaTrack> = emptyList(), val subtitleTracks: List<MediaTrack> = emptyList(),
     val audioTrack: Int = -1, val subtitleTrack: Int = -1, val speed: Float = 1f,
-    val aspect: String? = null, val optionError: String? = null, val sourceId: Int? = null)
+    val scaleMode: VideoScaleMode = VideoScaleMode.FIT, val optionError: String? = null, val sourceId: Int? = null,
+    val playbackGeneration: Long = 0)
 
 /** The native API is owned by one worker. No stream address is logged or exposed in UI state. */
 class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
@@ -33,6 +37,9 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
     private var instance: Pointer? = null
     private var player: Pointer? = null
     private var surface: Pointer? = null
+    private var viewportWidth = 0
+    private var viewportHeight = 0
+    private var appliedGeometry: VlcVideoGeometry? = null
     private var pendingAddress: String? = null
     private var active = false
     private var activeGeneration = 0L
@@ -73,7 +80,7 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
     fun play(address: String, sourceId: Int? = null) {
         val token = generation.incrementAndGet()
         mutable.update { it.copy(phase = "Conectando…", paused = false, error = null,
-            timeMs = 0, durationMs = 0, seekable = false, ended = false, sourceId = sourceId,
+            timeMs = 0, durationMs = 0, seekable = false, ended = false, sourceId = sourceId, playbackGeneration = token,
             audioTracks = emptyList(), subtitleTracks = emptyList(), speed = 1f, optionError = null) }
         submit {
             if (token != generation.get()) return@submit
@@ -107,7 +114,8 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
         if (onDemand && status.seekable && status.durationMs > 0) player?.let {
             val target = timeMs.coerceIn(0, status.durationMs)
             api!!.libvlc_media_player_set_time(it, target)
-            mutable.update { current -> current.copy(timeMs = target) }
+            // The shared seek controller holds the visual target. Publish only polled native time
+            // so history and pending-seek confirmation cannot treat a request as completed playback.
         }
     }
 
@@ -151,11 +159,30 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
             else it.copy(optionError = "Essa transmissão não permite alterar a velocidade.") }
     }
 
-    fun setAspect(aspect: String?) = submit {
-        if (aspect != null && aspect !in listOf("16:9", "4:3")) return@submit
-        val p = player ?: return@submit
-        api!!.libvlc_video_set_aspect_ratio(p, aspect)
-        mutable.update { it.copy(aspect = aspect, optionError = null) }
+    fun setScaleMode(mode: VideoScaleMode) = submit {
+        try {
+            applyGeometry(mode)
+            mutable.update { it.copy(scaleMode = mode, optionError = null) }
+        } catch (_: Exception) { mutable.update { it.copy(optionError = "Não foi possível aplicar o modo de tela.") } }
+    }
+
+    fun updateViewport(width: Int, height: Int) = submit {
+        viewportWidth = width; viewportHeight = height
+        applyGeometry(mutable.value.scaleMode)
+    }
+
+    private fun applyGeometry(mode: VideoScaleMode) {
+        val p = player ?: return
+        val geometry = mode.vlcGeometry(viewportWidth, viewportHeight)
+        if (appliedGeometry == geometry) return
+        val vlc = api ?: return
+        vlc.libvlc_video_set_scale(p, 0f)
+        // Clear both old operations so Fit/Fill/Zoom are reversible, including after a resize.
+        vlc.libvlc_video_set_aspect_ratio(p, null)
+        vlc.libvlc_video_set_crop_geometry(p, null)
+        geometry.aspect?.let { vlc.libvlc_video_set_aspect_ratio(p, it) }
+        geometry.crop?.let { vlc.libvlc_video_set_crop_geometry(p, it) }
+        appliedGeometry = geometry
     }
 
     private fun startPending() {
@@ -176,7 +203,8 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
         vlc.libvlc_media_player_set_hwnd(p, surface!!)
         vlc.libvlc_audio_set_volume(p, mutable.value.volume)
         vlc.libvlc_audio_set_mute(p, if (mutable.value.muted) 1 else 0)
-        vlc.libvlc_video_set_aspect_ratio(p, mutable.value.aspect)
+        appliedGeometry = null
+        applyGeometry(mutable.value.scaleMode)
         if (vlc.libvlc_media_player_play(p) != 0) error("Native play failed")
         vlc.libvlc_media_player_set_rate(p, 1f)
         pendingAddress = null
@@ -253,6 +281,8 @@ internal interface LibVlc : Library {
     fun libvlc_audio_set_track(player: Pointer, id: Int): Int
     fun libvlc_video_set_spu(player: Pointer, id: Int): Int
     fun libvlc_video_set_aspect_ratio(player: Pointer, aspect: String?)
+    fun libvlc_video_set_crop_geometry(player: Pointer, geometry: String?)
+    fun libvlc_video_set_scale(player: Pointer, scale: Float)
     fun libvlc_media_player_set_rate(player: Pointer, speed: Float): Int
     fun libvlc_media_player_get_time(player: Pointer): Long
     fun libvlc_media_player_get_length(player: Pointer): Long

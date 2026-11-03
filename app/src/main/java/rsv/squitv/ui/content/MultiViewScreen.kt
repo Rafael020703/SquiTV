@@ -8,8 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -28,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.ui.PlayerView
 import rsv.squitv.R
 import rsv.squitv.core.ui.components.navigation.AppHeader
 import rsv.squitv.core.ui.theme.*
@@ -37,11 +34,21 @@ import rsv.squitv.ui.viewmodel.MultiViewViewModel
 import rsv.squitv.ui.viewmodel.MainViewModel
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.common.Player
-import androidx.media3.ui.AspectRatioFrameLayout
 import kotlinx.coroutines.delay
-import rsv.squitv.ui.content.player.QuickSwitchSidebar
 import rsv.squitv.ui.dashboard.PortalBackground
 import rsv.squitv.core.ui.components.common.adaptiveFocus
+import rsv.squitv.shared.catalog.MultiViewPolicy
+import rsv.squitv.core.ui.components.player.MultiViewSlotSurface
+import rsv.squitv.core.ui.components.player.MultiViewEmptyContent
+import rsv.squitv.core.ui.components.player.MultiViewGrid
+import rsv.squitv.core.ui.components.player.ChannelPickerState
+import rsv.squitv.core.ui.components.player.ChannelPickerContent
+import rsv.squitv.core.ui.components.player.VideoScaleChoices
+import rsv.squitv.shared.player.VideoScaleMode
+import rsv.squitv.ui.content.player.AndroidVideoViewport
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.draw.clipToBounds
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -57,16 +64,20 @@ fun MultiViewScreen(
     var showChannelPicker by remember { mutableStateOf(false) }
     var pickingForIndex by remember { mutableStateOf(0) }
     
-    val liveStreams by mainViewModel.allLiveStreams.collectAsState()
+    val catalog by viewModel.pickerCatalog.collectAsState()
+    val loading by viewModel.pickerLoading.collectAsState()
+    val error by viewModel.pickerError.collectAsState()
+    val pickerState = remember(showChannelPicker) { ChannelPickerState() }
+    var scaleMode by remember { mutableStateOf(VideoScaleMode.FIT) }
     val focusRequester = remember { FocusRequester() }
     val tokens = AppDesignSystem
+    DisposableEffect(viewModel) { onDispose { viewModel.closePicker() } }
 
     BackHandler(enabled = showChannelPicker) {
-        showChannelPicker = false
+        if (!pickerState.back()) { showChannelPicker = false; viewModel.closePicker() }
     }
 
     LaunchedEffect(Unit) {
-        mainViewModel.loadAllLiveStreams()
         delay(500)
         try { focusRequester.requestFocus() } catch (_: Exception) {}
     }
@@ -76,46 +87,29 @@ fun MultiViewScreen(
             AppHeader(
                 title = stringResource(R.string.multiview_nav_title),
                 subtitle = stringResource(R.string.multiview_nav_subtitle),
+                actions = { VideoScaleChoices(scaleMode) { scaleMode = it } }
             )
 
-            // Players Grid
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.weight(1f).padding(tokens.spacing.large),
-                contentPadding = PaddingValues(tokens.spacing.small),
-                horizontalArrangement = Arrangement.spacedBy(tokens.spacing.large),
-                verticalArrangement = Arrangement.spacedBy(tokens.spacing.large)
-            ) {
-                items(4) { index ->
-                    PlayerSlot(
-                        index = index,
-                        player = players[index],
-                        channel = activeChannels[index],
-                        isFocused = focusedIndex == index,
-                        modifier = if (index == 0) Modifier.focusRequester(focusRequester) else Modifier,
-                        onFocus = { viewModel.setFocus(index) },
-                        onAdd = {
-                            pickingForIndex = index
-                            showChannelPicker = true
-                        },
-                        onRemove = { viewModel.removeChannel(index) }
-                    )
-                }
+            MultiViewGrid(Modifier.weight(1f).padding(tokens.spacing.large)) { index, slotModifier ->
+                PlayerSlot(index, players[index], activeChannels[index], focusedIndex == index,
+                    modifier = slotModifier.then(if (index == 0) Modifier.focusRequester(focusRequester) else Modifier),
+                    onFocus = { viewModel.setFocus(index) }, onAdd = {
+                        pickingForIndex = index; showChannelPicker = true; viewModel.openPicker()
+                    }, onRemove = { viewModel.removeChannel(index) }, scaleMode = scaleMode)
             }
         }
 
-        // Channel Picker Sidebar
-        QuickSwitchSidebar(
-            visible = showChannelPicker,
-            streams = liveStreams,
-            zappingEpg = emptyMap(),
-            onDismiss = { showChannelPicker = false },
-            onStreamSelected = { stream ->
-                viewModel.playChannel(pickingForIndex, stream)
-                showChannelPicker = false
-            },
-            isExpanded = true
-        )
+        if (showChannelPicker) Dialog(onDismissRequest = {
+            if (!pickerState.back()) { showChannelPicker = false; viewModel.closePicker() }
+        }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(Modifier.fillMaxHeight().widthIn(max = 460.dp).fillMaxWidth(), color = tokens.colors.surface) {
+                ChannelPickerContent(catalog, pickerState, loading, error, viewModel::openPicker,
+                    { showChannelPicker = false; viewModel.closePicker() }, { channel ->
+                        viewModel.playSelection(pickingForIndex, channel)
+                        showChannelPicker = false; viewModel.closePicker()
+                    })
+            }
+        }
     }
 }
 
@@ -129,37 +123,31 @@ fun PlayerSlot(
     modifier: Modifier = Modifier,
     onFocus: () -> Unit,
     onAdd: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    scaleMode: VideoScaleMode = VideoScaleMode.FIT
 ) {
     val context = LocalContext.current
     val tokens = AppDesignSystem
     
-    Surface(
+    MultiViewSlotSurface(
         modifier = modifier
-            .aspectRatio(1.77f)
+            .clipToBounds()
             .adaptiveFocus(
                 shape = tokens.shapes.large,
                 onFocus = { if (it) onFocus() }
             )
             .clickable { if (channel == null) onAdd() },
         shape = tokens.shapes.large,
-        color = tokens.colors.background,
-        border = BorderStroke(
-            width = if (isFocused) 2.dp else 1.dp,
-            color = if (isFocused) tokens.colors.primary else Color.White.copy(alpha = 0.05f)
-        )
+        background = tokens.colors.background,
+        primary = tokens.colors.primary,
+        focused = isFocused
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             if (player != null && channel != null) {
                 AndroidView(
-                    factory = {
-                        PlayerView(context).apply {
-                            this.player = player
-                            useController = false
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                            setBackgroundColor(android.graphics.Color.BLACK)
-                        }
-                    },
+                    factory = { AndroidVideoViewport(it).apply { bind(player, scaleMode) } },
+                    update = { it.bind(player, scaleMode) },
+                    onRelease = { it.releaseSurface() },
                     modifier = Modifier.fillMaxSize()
                 )
                 
@@ -167,6 +155,7 @@ fun PlayerSlot(
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopStart)
+                        .padding(end = 48.dp)
                         .padding(tokens.spacing.medium)
                         .background(tokens.colors.background.copy(alpha = 0.7f), tokens.shapes.small)
                         .padding(horizontal = tokens.spacing.small, vertical = tokens.spacing.tiny),
@@ -176,6 +165,8 @@ fun PlayerSlot(
                         text = "${index + 1}. ${channel.name?.uppercase()}",
                         color = tokens.colors.textPrimary,
                         style = tokens.typography.caption,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         fontWeight = FontWeight.Black,
                         letterSpacing = 0.5.sp
                     )
@@ -202,26 +193,8 @@ fun PlayerSlot(
                     )
                 }
             } else {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.AddCircle,
-                        contentDescription = null,
-                        tint = if (isFocused) tokens.colors.primary else tokens.colors.textSecondary.copy(alpha = 0.2f),
-                        modifier = Modifier.size(56.dp)
-                    )
-                    Spacer(modifier = Modifier.height(tokens.spacing.medium))
-                    Text(
-                        text = "ADICIONAR CANAL",
-                        color = if (isFocused) tokens.colors.textPrimary else tokens.colors.textSecondary.copy(alpha = 0.3f),
-                        style = tokens.typography.label,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp
-                    )
-                }
+                MultiViewEmptyContent(isFocused, tokens.colors.primary, tokens.colors.textPrimary,
+                    tokens.colors.textSecondary, tokens.typography.label, "ADICIONAR CANAL")
             }
         }
     }

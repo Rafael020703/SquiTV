@@ -90,8 +90,9 @@ internal fun LiveSettingsPanel(status: PlayerStatus, engine: WindowsLivePlayer, 
                 LazyColumn(Modifier.fillMaxSize().padding(end = 12.dp), state = listState,
                     verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
                     when (selected) {
-                        0 -> items(listOf(null, "16:9", "4:3")) { aspect ->
-                            PlayerOption(aspect ?: "Proporção original", status.aspect == aspect) { engine.setAspect(aspect) }
+                        0 -> items(rsv.squitv.shared.player.VideoScaleMode.entries) { mode ->
+                            PlayerSettingsOption(mode.displayName(), mode.description(), status.scaleMode == mode,
+                                palette.primary, palette.onSurface, palette.onSurfaceVariant, onClick = { engine.setScaleMode(mode) })
                         }
                         1, 2 -> {
                             val subtitles = selected == 2

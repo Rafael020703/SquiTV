@@ -29,6 +29,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.C
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
+import rsv.squitv.core.ui.components.player.displayName
+import rsv.squitv.core.ui.components.player.description
 import androidx.media3.ui.AspectRatioFrameLayout
 import rsv.squitv.core.ui.components.settings.channelQualityLabel
 import rsv.squitv.core.ui.theme.AppDesignSystem
@@ -52,6 +54,7 @@ fun PlayerSettingsDialog(
     onSetSleepTimer: (Int?) -> Unit,
     onSetSpeed: (Float) -> Unit = {},
     onToggleResizeMode: () -> Unit = {},
+    onSetResizeMode: ((Int) -> Unit)? = null,
     isLive: Boolean = false,
     groupChannels: Boolean = true,
     versions: List<ChannelVersion> = emptyList(),
@@ -78,7 +81,7 @@ fun PlayerSettingsDialog(
                 PlayerSettingsOptions(selectedTab, tracks, trackSelectionParameters, sleepTimer,
                     currentSpeed, resizeMode, groupChannels, versions, selectedVersionId,
                     onSelectTrack, onClearOverride, onSetSleepTimer, onSetSpeed,
-                    onToggleResizeMode, onGroupingChanged, onVersionSelected,
+                    onToggleResizeMode, onSetResizeMode, onGroupingChanged, onVersionSelected,
                     if (speedOnly) initialFocus else null)
             }
         }
@@ -92,7 +95,7 @@ private fun PlayerSettingsOptions(
     versions: List<ChannelVersion>, selectedVersionId: Int?,
     selectTrack: (Int, Int, Int) -> Unit, clearTrack: (Int) -> Unit,
     setSleepTimer: (Int?) -> Unit, setSpeed: (Float) -> Unit,
-    toggleResize: () -> Unit, setGrouping: (Boolean) -> Unit, selectVersion: (Int) -> Unit,
+    toggleResize: () -> Unit, setResizeMode: ((Int) -> Unit)?, setGrouping: (Boolean) -> Unit, selectVersion: (Int) -> Unit,
     speedFocus: FocusRequester? = null
 ) {
     val colors = AppDesignSystem.colors
@@ -106,7 +109,11 @@ private fun PlayerSettingsOptions(
     LazyColumn(Modifier.fillMaxSize(), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(bottom = 12.dp)) {
         if (tab in 0..2) {
-            if (tab == 0) item {
+            if (tab == 0 && setResizeMode != null) items(rsv.squitv.shared.player.VideoScaleMode.entries) { mode ->
+                TvOptionRowItem(mode.displayName(), mode.description(), resizeMode == mode.media3Value,
+                    onClick = { setResizeMode(mode.media3Value) })
+            }
+            else if (tab == 0) item {
                 val mode = when (resizeMode) {
                     AspectRatioFrameLayout.RESIZE_MODE_FILL -> "Preencher"
                     AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> "Zoom"

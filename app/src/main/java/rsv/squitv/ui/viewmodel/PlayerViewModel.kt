@@ -693,7 +693,9 @@ class PlayerViewModel @Inject constructor(
         type: ContentType
     ): Boolean {
         return when (type) {
-            ContentType.LIVE -> favList.any { favorite -> (favorite.streamId == targetId || _channelVersions.value.any { it.streamId == favorite.streamId }) && favorite.streamType.equals("LIVE", ignoreCase = true) }
+            ContentType.LIVE -> rsv.squitv.domain.model.LiveChannelFavorites.isFavorite(
+                favList.filter { it.streamType.equals("LIVE", ignoreCase = true) }.map { it.streamId }.toSet(),
+                targetId, _channelVersions.value.map { it.streamId })
             ContentType.MOVIE -> favList.any { it.streamId == targetId && (it.streamType.equals("MOVIE", ignoreCase = true) || it.streamType.equals("VOD", ignoreCase = true)) }
             ContentType.SERIES -> favList.any { it.streamId == targetId && it.streamType.equals("SERIES", ignoreCase = true) }
             else -> false
@@ -1299,13 +1301,9 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun toggleResizeMode() {
-        _resizeMode.value = when (_resizeMode.value) {
-            androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
-            androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-            androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-            else -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-        }
+        _resizeMode.value = rsv.squitv.shared.player.VideoScaleMode.fromMedia3(_resizeMode.value).next().media3Value
     }
+    fun setResizeMode(value: Int) { _resizeMode.value = rsv.squitv.shared.player.VideoScaleMode.fromMedia3(value).media3Value }
 
     private fun startNextEpisodeCountdown() {
         viewModelScope.launch {
@@ -1352,7 +1350,7 @@ class PlayerViewModel @Inject constructor(
                 val profileId = settings.activeProfileId
 
                 if (currentType == ContentType.LIVE && !newFav) {
-                    val ids = _channelVersions.value.map { it.streamId }.toSet() + streamId
+                    val ids = rsv.squitv.domain.model.LiveChannelFavorites.familyIds(streamId, _channelVersions.value.map { it.streamId })
                     userRepository.getFavoritesListFlow().first()
                         .filter { it.streamType.equals("LIVE", true) && it.streamId in ids }
                         .forEach { toggleFavoriteUseCase(it.favoriteToIptvItem(), false, profileId) }

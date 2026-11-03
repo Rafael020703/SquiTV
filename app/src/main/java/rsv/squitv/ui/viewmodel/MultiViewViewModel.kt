@@ -30,6 +30,16 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import javax.inject.Inject
+import rsv.squitv.shared.catalog.MultiViewPolicy
+import rsv.squitv.core.data.repository.CatalogRepository
+import rsv.squitv.core.data.repository.PlaybackSourceRepository
+import rsv.squitv.data.model.SettingsBackupCodec
+import rsv.squitv.shared.catalog.LiveCatalogView
+import rsv.squitv.shared.xtream.LiveCategory
+import rsv.squitv.shared.xtream.LiveChannel
+import rsv.squitv.domain.model.ChannelQuality
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 
 @HiltViewModel
 @UnstableApi
@@ -37,33 +47,80 @@ class MultiViewViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val streamRepository: StreamRepository,
     private val settingsRepository: SettingsRepository,
+    private val catalogRepository: CatalogRepository,
     @PlayerOkHttpClient private val okHttpClient: OkHttpClient,
     @PlaybackCache private val playbackCache: SimpleCache
 ) : ViewModel() {
 
-    private val _players = MutableStateFlow<List<ExoPlayer?>>(listOf(null, null, null, null))
+    private val _players = MutableStateFlow<List<ExoPlayer?>>(List(MultiViewPolicy.SLOT_COUNT) { null })
     val players: StateFlow<List<ExoPlayer?>> = _players.asStateFlow()
 
-    private val _activeChannels = MutableStateFlow<List<XtreamStream?>>(listOf(null, null, null, null))
+    private val _activeChannels = MutableStateFlow<List<XtreamStream?>>(List(MultiViewPolicy.SLOT_COUNT) { null })
     val activeChannels: StateFlow<List<XtreamStream?>> = _activeChannels.asStateFlow()
 
     private val _focusedIndex = MutableStateFlow(0)
     val focusedIndex: StateFlow<Int> = _focusedIndex.asStateFlow()
+    private val _pickerLoading = MutableStateFlow(false)
+    val pickerLoading = _pickerLoading.asStateFlow()
+    private val _pickerError = MutableStateFlow<String?>(null)
+    val pickerError = _pickerError.asStateFlow()
+    private var pickerJob: Job? = null
+    private var pickerRevision = 0L
+    private val playJobs = arrayOfNulls<Job>(MultiViewPolicy.SLOT_COUNT)
+    val pickerCatalog = combine(catalogRepository.observeBrowseCatalog("live"), settingsRepository.settingsFlow) { (categories, streams), settings ->
+        val credentials = settings.credentials ?: return@combine LiveCatalogView()
+        val key = "${SettingsBackupCodec.accountKey(credentials)}_live"
+        LiveCatalogView.build(categories.map { LiveCategory(it.id, it.name) }, streams.filter { it.id > 0 }.map {
+            LiveChannel(it.id, it.name, it.categoryId, it.logo, it.url)
+        }, PlaybackSourceRepository.scope(settings), settings.groupLiveChannels,
+            ChannelQuality.fromPreference(settings.preferredChannelQuality), settings.categoryOrderMap[key].orEmpty(),
+            settings.hiddenCategoriesMap[key].orEmpty())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LiveCatalogView())
+
+    fun openPicker() {
+        if (pickerJob?.isActive == true) return
+        val revision = ++pickerRevision
+        pickerJob = viewModelScope.launch {
+            _pickerLoading.value = true; _pickerError.value = null
+            try {
+                val credentials = settingsRepository.settingsFlow.first().credentials ?: return@launch
+                withContext(Dispatchers.IO) {
+                    catalogRepository.getLiveCategories(credentials)
+                    catalogRepository.getLiveStreams(credentials)
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                ensureActive()
+                if (revision == pickerRevision) _pickerError.value = "Não foi possível carregar as categorias e canais. Tente novamente."
+            }
+            finally { if (revision == pickerRevision) _pickerLoading.value = false }
+        }
+    }
+    fun closePicker() { ++pickerRevision; pickerJob?.cancel(); pickerJob = null; _pickerLoading.value = false }
+    fun playSelection(index: Int, channel: LiveChannel) {
+        if (pickerCatalog.value.channels.none { it == channel }) return
+        playChannel(index, XtreamStream(streamId = channel.id, name = channel.name,
+            categoryId = channel.categoryId, streamIcon = channel.iconUrl, epgChannelId = channel.epgId))
+    }
 
     fun setFocus(index: Int) {
+        if (index !in 0 until MultiViewPolicy.SLOT_COUNT) return
         _focusedIndex.value = index
         // Mute all except focused
         _players.value.forEachIndexed { i, player ->
-            player?.volume = if (i == index) 1.0f else 0.0f
+            player?.volume = MultiViewPolicy.audioVolume(i, index)
         }
     }
 
     fun playChannel(index: Int, stream: XtreamStream) {
-        viewModelScope.launch {
+        if (index !in 0 until MultiViewPolicy.SLOT_COUNT || (stream.streamId ?: 0) <= 0) return
+        playJobs[index]?.cancel()
+        playJobs[index] = viewModelScope.launch {
             val settings = settingsRepository.settingsFlow.first()
             val creds = settings.credentials ?: return@launch
             
             val url = streamRepository.getStreamUrl(creds, stream.streamId ?: 0, "live", null)
+            ensureActive()
             
             var player = _players.value[index]
             if (player == null) {
@@ -79,7 +136,7 @@ class MultiViewViewModel @Inject constructor(
                 setMediaItem(MediaItem.fromUri(url))
                 prepare()
                 playWhenReady = true
-                volume = if (index == _focusedIndex.value) 1.0f else 0.0f
+                volume = MultiViewPolicy.audioVolume(index, _focusedIndex.value)
             }
 
             val currentChannels = _activeChannels.value.toMutableList()
@@ -89,6 +146,8 @@ class MultiViewViewModel @Inject constructor(
     }
 
     fun removeChannel(index: Int) {
+        if (index !in 0 until MultiViewPolicy.SLOT_COUNT) return
+        playJobs[index]?.cancel()
         val currentPlayers = _players.value.toMutableList()
         currentPlayers[index]?.release()
         currentPlayers[index] = null
@@ -130,6 +189,8 @@ class MultiViewViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        closePicker()
+        playJobs.forEach { it?.cancel() }
         _players.value.forEach { it?.release() }
     }
 }

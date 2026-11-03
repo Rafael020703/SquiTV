@@ -41,6 +41,7 @@ private enum class DesktopSetting(val label: String, val icon: ImageVector) {
     SIGN_OUT("Sair da conta", Icons.AutoMirrored.Rounded.Logout),
     NAV_CUSTOMIZATION("Personalização das Seções", Icons.Rounded.DashboardCustomize),
     CATALOG_CATEGORIES("Organizar categorias", Icons.Rounded.Category),
+    CATALOG_MODE("Categorias do catálogo", Icons.Rounded.FilterList),
     BACKUP("Backup e Restauração", Icons.Rounded.SettingsBackupRestore),
     ZOOM("Zoom da Interface", Icons.Rounded.ZoomIn),
     AUTO_PLAY("Auto-reprodução de Episódios", Icons.AutoMirrored.Rounded.PlaylistPlay),
@@ -286,7 +287,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                             Text("Exporte ou restaure o arquivo de preferências e configurações do aplicativo:", style = MaterialTheme.typography.bodyMedium)
                             var backupNotice by remember { mutableStateOf<String?>(null) }
                             var backupBusy by remember { mutableStateOf(false) }
-                            Text("Arquivo local: %LOCALAPPDATA%/${DesktopBuildInfo.DATA_FOLDER}/squitv-backup.json. Contém somente preferências Windows; não inclui conta, credenciais, favoritos ou dados Android.",
+                            Text("Arquivo local: %LOCALAPPDATA%/${DesktopBuildInfo.DATA_FOLDER}/squitv-backup.json. Inclui preferências, organização de categorias e favoritos de canais, filmes e séries por conta. Não inclui credenciais, catálogos, histórico ou backup Android.",
                                 style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant)
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Button(enabled = !backupBusy, onClick = {
@@ -312,6 +313,18 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                             }
                             backupNotice?.let {
                                 Text(it, style = MaterialTheme.typography.bodySmall, color = palette.primary, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        DesktopSetting.CATALOG_MODE -> {
+                            Text("Escolha separadamente para Filmes e Séries. Gêneros aparecem primeiro em A–Z; conteúdos sem gênero ficam nas categorias do servidor.",
+                                style = MaterialTheme.typography.bodyMedium)
+                            CatalogKind.entries.forEach { kind ->
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(kind.title, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                                    CatalogModeSelector(preferences.catalogMode(accountScope.orEmpty(), kind), accountScope != null) { mode ->
+                                        accountScope?.let { key -> store.update { it.withCatalogMode(key, kind, mode) } }
+                                    }
+                                }
                             }
                         }
                         DesktopSetting.CATALOG_CATEGORIES -> {

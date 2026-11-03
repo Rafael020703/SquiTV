@@ -20,3 +20,18 @@ A task `:shared:validateUpdateManifest -Pmanifest=<arquivo>` verifica manifestos
 ## 3. Windows
 
 Usar JDK 21 completo com `jpackage`; o JBR reduzido do Android Studio pode não conter essa ferramenta. Consultar `windows.md` para comandos, variantes e caminhos. Instaladores e dados locais são ignorados pelo Git.
+
+Para acompanhar alterações sem reinstalar:
+
+```powershell
+.\gradlew.bat :desktopApp:createDistributable '-PdesktopVariant=debug' --console=plain
+.\tools\deploy-windows-debug.ps1
+```
+
+O deploy atualiza o atalho da debug sem iniciar/encerrar processos ou alterar a release instalada. Para empacotar produção, use `:desktopApp:writeUpdateMetadata -PdesktopVariant=release`; isso não autoriza executar o instalador.
+
+## 4. Documentação e arquivos locais
+
+Atualize README, arquitetura e guia Windows quando o comportamento mudar. Novidades públicas ficam em `docs/releases/` com notas separadas por plataforma. Planos Gemini, auditorias e `docs/manutencao-*.md` permanecem locais conforme o `.gitignore`; não desapareceram só por não entrarem no commit.
+
+Na distribuição, fontes, recursos, Gradle Wrapper, schemas Room, scripts e documentação permanente vão ao Git. APK/EXE/checksums/manifesto vão aos assets da release. Dados locais, credenciais, chaves de assinatura, caches e diretórios de staging nunca devem ser adicionados. Conferir arquivos já rastreados: `.gitignore` sozinho não os remove.

@@ -50,6 +50,12 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
     val engine = remember { WindowsLivePlayer() }
     val status by engine.state.collectAsState()
     val preferences by settings.state.collectAsState()
+    val preferencesLoaded by settings.loaded.collectAsState()
+    val preferencesError by settings.error.collectAsState()
+    val accountScope = remember(credentials) { liveCategoryScope(credentials) }
+    val versionIds = remember(session.channels, session.channel.id) { session.versions.map { it.id } }
+    val isFavorite = rsv.squitv.domain.model.LiveChannelFavorites.isFavorite(
+        preferences.favoriteLiveChannelsByAccount[accountScope].orEmpty(), session.channel.id, versionIds)
     val logos = rememberDesktopImages(DesktopImageKind.CHANNELS)
     var retry by remember { mutableIntStateOf(0) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis() / 1000) }
@@ -73,8 +79,6 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
             event.key == Key.Escape || event.key == Key.Back -> {
                 if (event.type == KeyEventType.KeyUp) when {
                     menu != null -> closeMenu()
-                    controls -> hideControls()
-                    banner -> banner = false
                     else -> controller.stopPlayback()
                 }
                 true
@@ -134,6 +138,7 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
     }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         NativeVideoSurface(engine, Modifier.fillMaxSize(),
+            controlsVisible = controls, pointerRevealEnabled = menu == null,
             onPointerMove = { if (menu == null) showControls() },
             onClick = { if (menu != null) closeMenu() else if (controls) hideControls() else showControls() })
     }
@@ -148,7 +153,7 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
         }
     }
     NativePlayerLayer(controls && menu == null, PlayerLayerPlacement.BOTTOM,
-        heightDp = if (status.error != null) 320 else if (programme != null) 224 else 176,
+        heightDp = if (status.error != null || preferencesError != null) 320 else if (programme != null) 224 else 176,
         onKey = input, onInputCancelled = { holdingControls = false }) {
         LaunchedEffect(controls) {
             if (controls) { withFrameNanos { }; controlsFocus.requestFocus() }
@@ -168,6 +173,14 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
                     Box(Modifier.padding(8.dp)) { ChannelLogo(session.channel.iconUrl, logos, Modifier.fillMaxSize()) }
                 }
             }, actions = {
+                LivePlayerButton(if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    if (isFavorite) "Remover dos favoritos" else "Adicionar aos favoritos", {
+                        accountScope?.let { account -> settings.update {
+                            it.toggleLiveFavorite(account, session.channel.id, versionIds)
+                        } }
+                        interaction()
+                    }, tint = if (isFavorite) palette.error else Color.White,
+                    enabled = preferencesLoaded && accountScope != null)
                 LivePlayerButton(Icons.AutoMirrored.Rounded.List, "Canais desta lista", { openMenu(LivePlayerMenu.CHANNELS) },
                     Modifier.focusRequester(controlsFocus))
                 LivePlayerButton(Icons.Rounded.Settings, "Configurações do player", { openMenu(LivePlayerMenu.SETTINGS) })
@@ -185,6 +198,7 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
                     Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall, maxLines = 2)
                     TextButton({ retry++; interaction() }) { Text("Tentar novamente") }
                 }
+                preferencesError?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall, maxLines = 2) }
             })
     }
     NativePlayerLayer(menu != null, if (menu == LivePlayerMenu.CHANNELS) PlayerLayerPlacement.START else PlayerLayerPlacement.CENTER,
@@ -206,11 +220,12 @@ private fun programTime(time: Long?): String = time?.takeIf { it in 1..253402300
 }.orEmpty()
 
 @Composable
-private fun LivePlayerButton(icon: ImageVector, label: String, action: () -> Unit, modifier: Modifier = Modifier) {
+private fun LivePlayerButton(icon: ImageVector, label: String, action: () -> Unit, modifier: Modifier = Modifier,
+    tint: Color = Color.White, enabled: Boolean = true) {
     val interaction = rememberVisualInteraction()
     PlayerRoundButton(icon, label, action,
         if (interaction.emphasized) palette.primary else Color.White.copy(alpha = .12f),
-        if (interaction.emphasized) Color.Black else Color.White,
+        if (interaction.emphasized) Color.Black else tint,
         if (interaction.emphasized) palette.primary else Color.White.copy(alpha = .15f),
-        if (interaction.emphasized) 2.5.dp else 1.dp, modifier, interactionSource = interaction.source)
+        if (interaction.emphasized) 2.5.dp else 1.dp, modifier, interactionSource = interaction.source, enabled = enabled)
 }

@@ -21,9 +21,15 @@ import androidx.compose.ui.unit.dp
 
 /** SearchScreen Android: title input, four content filters and a poster/logo grid. */
 @Composable
-internal fun DesktopSearchScreen(controller: DesktopController) {
+internal fun DesktopSearchScreen(controller: DesktopController, store: DesktopPreferencesStore) {
     val search = controller.search
     val state by search.state.collectAsState()
+    val desktop by controller.state.collectAsState()
+    val preferences by store.state.collectAsState()
+    val preferencesLoaded by store.loaded.collectAsState()
+    val preferencesError by store.error.collectAsState()
+    val accountScope = remember(desktop.credentials) { liveCategoryScope(desktop.credentials) }
+    val favoriteIds = preferences.favoriteLiveChannelsByAccount[accountScope].orEmpty()
     val grid = rememberLazyGridState()
     val inputFocus = remember { FocusRequester() }
     var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
@@ -77,6 +83,7 @@ internal fun DesktopSearchScreen(controller: DesktopController) {
                 else "${state.totalMatches} resultados",
                 style = MaterialTheme.typography.labelSmall, color = palette.onSurfaceVariant)
         }
+        preferencesError?.let { StatusNotice(it, error = true) }
         if (state.errors.isNotEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.weight(1f)) { StatusNotice(state.errors.values.joinToString(" "), error = true) }
@@ -110,8 +117,24 @@ internal fun DesktopSearchScreen(controller: DesktopController) {
                         }
                         Column {
                             val open = { lastFocused = item.key; controller.openSearchResult(item) }
-                            if (item.channel != null) DesktopChannelCard(item.channel, images, modifier, open)
-                            else item.catalogItem?.let { CatalogPoster(it, images, modifier, open) }
+                            if (item.channel != null) DesktopChannelCard(item.channel, images, modifier,
+                                isFavorite = item.channel.isFavorite(favoriteIds), favoriteEnabled = preferencesLoaded && accountScope != null,
+                                onToggleFavorite = { accountScope?.let { account -> store.update {
+                                    it.toggleLiveFavorite(account, item.channel.id, item.channel.versions.map { it.id })
+                                } } }, play = open)
+                            else item.catalogItem?.let { catalogItem ->
+                                val kind = when (item.type) {
+                                    DesktopSearchType.MOVIES -> CatalogKind.MOVIES
+                                    DesktopSearchType.SERIES -> CatalogKind.SERIES
+                                    else -> null
+                                }
+                                CatalogPoster(catalogItem, images, modifier,
+                                    isFavorite = kind != null && preferences.isCatalogFavorite(accountScope, kind, catalogItem.id),
+                                    favoriteEnabled = preferencesLoaded && accountScope != null && kind != null,
+                                    onToggleFavorite = kind?.let { selectedKind -> {
+                                        accountScope?.let { account -> store.update { it.toggleCatalogFavorite(account, selectedKind, catalogItem.id) } }
+                                    } }, open = open)
+                            }
                             if (state.type == DesktopSearchType.ALL) Text(item.type.label,
                                 Modifier.fillMaxWidth().padding(top = 4.dp), textAlign = TextAlign.Center,
                                 color = palette.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)

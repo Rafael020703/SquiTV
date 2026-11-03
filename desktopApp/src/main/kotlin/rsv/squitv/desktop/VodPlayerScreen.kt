@@ -24,6 +24,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import rsv.squitv.core.ui.components.player.*
 import rsv.squitv.desktop.player.WindowsLivePlayer
 import rsv.squitv.shared.xtream.OnDemandPlayback
@@ -41,6 +43,12 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
     val overlay = remember { PlayerOverlayController() }
     val status by engine.state.collectAsState()
     val preferences by settings.state.collectAsState()
+    val preferencesLoaded by settings.loaded.collectAsState()
+    val preferencesError by settings.error.collectAsState()
+    val accountScope = remember(account) { liveCategoryScope(account) }
+    val catalogKind = if (session.series) CatalogKind.SERIES else CatalogKind.MOVIES
+    val isFavorite = preferences.isCatalogFavorite(accountScope, catalogKind, session.catalogId)
+    val historyError = controller.watchHistory?.error?.collectAsState()?.value
     var controls by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf<VodMenu?>(null) }
     var holding by remember { mutableStateOf(false) }
@@ -49,11 +57,16 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
     var seekFocused by remember { mutableStateOf(false) }
     var seekRevision by remember { mutableIntStateOf(0) }
     var retry by remember { mutableIntStateOf(0) }
+    var resumeTarget by remember(session.id, session.series, retry) { mutableStateOf<Long?>(null) }
+    var confirmingResume by remember(session.id, session.series, retry) { mutableStateOf<Long?>(null) }
+    var resumeWarning by remember(session.id, session.series, retry) { mutableStateOf<String?>(null) }
+    var expectedGeneration by remember(session.id, session.series, retry) { mutableLongStateOf(-1) }
     var sleepMinutes by remember { mutableStateOf<Int?>(null) }
     val pauseFocus = remember { FocusRequester() }
     val showControls: () -> Unit = { overlay.showOverlayWithTimer(scope) { controls = it } }
     val interaction: () -> Unit = { overlay.updateInteraction(scope) { controls = it } }
-    val seek = remember(session.id, status.durationMs) {
+    val manualSeek: () -> Unit = { resumeTarget = null; confirmingResume = null; resumeWarning = null }
+    val seek = remember(session.id, session.series, status.durationMs) {
         PlayerSeekController(status.durationMs, { engine.seekTo(it); seekRevision++ },
             { interaction(); seekRevision++ }, { keyboardSeeking = it })
     }
@@ -69,10 +82,11 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
             }
             event.key == Key.Escape || event.key == Key.Back -> {
                 if (event.type == KeyEventType.KeyUp) when {
-                    seek.seekTarget != null || dragging != null -> { seek.cancelSeek(); dragging = null }
                     menu != null -> closeMenu()
-                    controls -> hideControls()
-                    else -> controller.catalog.stopPlayback()
+                    else -> {
+                        seek.cancelSeek(); dragging = null; holding = false
+                        controller.catalog.stopPlayback()
+                    }
                 }
                 true
             }
@@ -83,6 +97,7 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
             }
             event.key in listOf(Key.DirectionLeft, Key.DirectionRight) && (seekFocused || !controls) -> {
                 if (event.type == KeyEventType.KeyDown && status.seekable && status.durationMs > 0) {
+                    manualSeek()
                     showControls()
                     seek.handleDpadSeek(status.timeMs, if (event.key == Key.DirectionLeft) -10_000 else 10_000, scope)
                 }
@@ -100,13 +115,67 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
         }
     }
     val currentInput by rememberUpdatedState(input)
+    val currentSession by rememberUpdatedState(session)
+    val currentAccount by rememberUpdatedState(account)
+    val currentResumeTarget by rememberUpdatedState(resumeTarget)
+    val currentConfirmingResume by rememberUpdatedState(confirmingResume)
+    val currentSeek by rememberUpdatedState(seek)
+    val currentExpectedGeneration by rememberUpdatedState(expectedGeneration)
     DisposableEffect(engine) {
+        val save: () -> Unit = {
+            if (currentExpectedGeneration >= 0 && engine.state.value.playbackGeneration == currentExpectedGeneration &&
+                (engine.state.value.ended || currentResumeTarget == null && currentConfirmingResume == null &&
+                    currentSeek.pendingConfirmedSeek == null && currentSeek.seekTarget == null))
+                controller.saveWatchProgress(currentAccount, currentSession, engine.state.value, force = true)
+        }
+        controller.catalog.beforePlaybackChange = save
         registerPlayer(engine); registerInput { currentInput(it) }
-        onDispose { registerInput(null); registerPlayer(null); overlay.hideOverlayImmediately(); engine.close() }
+        onDispose {
+            save()
+            if (controller.catalog.beforePlaybackChange === save) controller.catalog.beforePlaybackChange = null
+            registerInput(null); registerPlayer(null); overlay.hideOverlayImmediately(); engine.close()
+        }
     }
     LaunchedEffect(session.id, session.series, account, retry) {
+        val saved = liveCategoryScope(account)?.let { controller.watchHistory?.resume(it, session) }
         menu = null; seek.cancelSeek(); dragging = null; showControls()
         engine.play(OnDemandPlayback.address(account, session.series, session.id, session.extension), session.id)
+        expectedGeneration = engine.state.value.playbackGeneration
+        resumeTarget = saved?.positionMs
+    }
+    LaunchedEffect(session.id, session.series, account, engine) {
+        engine.state.collect { latest ->
+            if (currentSession.id == session.id && currentSession.series == session.series && currentAccount == account &&
+                currentExpectedGeneration >= 0 && latest.playbackGeneration == currentExpectedGeneration &&
+                (latest.ended || currentResumeTarget == null && currentConfirmingResume == null &&
+                    currentSeek.pendingConfirmedSeek == null && currentSeek.seekTarget == null))
+                controller.saveWatchProgress(account, session, latest, force = latest.paused || latest.ended)
+        }
+    }
+    LaunchedEffect(resumeTarget, status.sourceId, status.playbackGeneration, expectedGeneration, status.seekable, status.durationMs, status.phase) {
+        val target = resumeTarget
+        if (target != null && status.sourceId == session.id && status.playbackGeneration == expectedGeneration && status.seekable && status.durationMs > 0 &&
+            status.phase in listOf("Reproduzindo", "Pausado")) {
+            resumeTarget = null
+            if (target in 5000 until (status.durationMs - 2000)) {
+                seek.handleDpadSeek(status.timeMs, target - status.timeMs, scope)
+                seek.commitSeek()
+                confirmingResume = target
+            }
+        }
+    }
+    LaunchedEffect(status.timeMs, status.ended, status.playbackGeneration, confirmingResume) {
+        val target = confirmingResume
+        if (target != null && status.playbackGeneration == expectedGeneration &&
+            (status.ended || status.timeMs >= target - 2000)) {
+            confirmingResume = null; resumeWarning = null
+        }
+    }
+    LaunchedEffect(confirmingResume) {
+        if (confirmingResume != null) {
+            delay(3000)
+            if (confirmingResume != null) resumeWarning = "A retomada ainda não foi confirmada. Use a barra ou tente novamente; sua posição salva foi preservada."
+        }
     }
     LaunchedEffect(preferences.volume, preferences.muted) {
         engine.setVolume(preferences.volume)
@@ -126,12 +195,13 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
     // Keep the target while waiting for the native position, with a bounded wait on failure.
     val pending = remember(seekRevision, seek) { seek.pendingConfirmedSeek }
     LaunchedEffect(pending) { if (pending != null) { delay(2500); seek.cancelSeek() } }
-    LaunchedEffect(status.ended, status.sourceId, session.id, preferences.autoPlayEpisodes) {
-        if (status.ended && status.sourceId == session.id && preferences.autoPlayEpisodes && session.series &&
+    LaunchedEffect(status.ended, status.sourceId, status.playbackGeneration, expectedGeneration, session.id, preferences.autoPlayEpisodes) {
+        if (status.ended && status.sourceId == session.id && status.playbackGeneration == expectedGeneration && preferences.autoPlayEpisodes && session.series &&
             session.episodeIndex in 0 until session.episodes.lastIndex) controller.catalog.nextEpisode(1)
     }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         NativeVideoSurface(engine, Modifier.fillMaxSize(),
+            controlsVisible = controls, pointerRevealEnabled = menu == null,
             onPointerMove = { if (menu == null) showControls() },
             onClick = { if (menu != null) closeMenu() else if (controls) hideControls() else showControls() })
     }
@@ -143,7 +213,7 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
         }
     }
     NativePlayerLayer(controls && menu == null, PlayerLayerPlacement.BOTTOM,
-        heightDp = if (status.error != null) 300 else 260, onKey = input,
+        heightDp = if (status.error != null || historyError != null || resumeWarning != null || preferencesError != null) 320 else 260, onKey = input,
         onInputCancelled = { holding = false; dragging = null; seek.cancelSeek() }) {
         LaunchedEffect(controls) { if (controls) { withFrameNanos { }; pauseFocus.requestFocus() } }
         VodPlayerCard(
@@ -160,7 +230,7 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
                         keyboardSeeking || dragging != null, palette.primary, palette.onSurface,
                         MaterialTheme.typography.labelLarge, MaterialTheme.typography.labelSmall) {
                         Slider((position.toDouble() / status.durationMs).toFloat().coerceIn(0f, 1f),
-                            onValueChange = { seek.cancelSeek(); dragging = it; interaction() },
+                            onValueChange = { manualSeek(); seek.cancelSeek(); dragging = it; interaction() },
                             onValueChangeFinished = {
                                 dragging?.let {
                                     seek.cancelSeek()
@@ -177,17 +247,27 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
             },
             actions = {
                 CenteredPlayerActions(16.dp, Modifier.fillMaxWidth().height(72.dp), left = {
+                    val favoriteInteraction = rememberVisualInteraction()
+                    PlayerRoundButton(if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                        if (isFavorite) "Remover dos favoritos" else "Adicionar aos favoritos", {
+                            accountScope?.let { account -> settings.update { it.toggleCatalogFavorite(account, catalogKind, session.catalogId) } }
+                            interaction()
+                        }, if (favoriteInteraction.emphasized) palette.primary else palette.surfaceVariant,
+                        if (favoriteInteraction.emphasized) Color.Black else if (isFavorite) palette.error else palette.onSurface,
+                        if (favoriteInteraction.emphasized) palette.primary else palette.outline, 1.dp,
+                        interactionSource = favoriteInteraction.source,
+                        enabled = preferencesLoaded && accountScope != null && session.catalogId > 0)
                     if (session.series) PlayerActionButton(Icons.Rounded.SkipPrevious, { controller.catalog.nextEpisode(-1) },
                         "Episódio anterior", enabled = session.episodeIndex > 0)
                     PlayerActionButton(Icons.Rounded.Replay10,
-                        { if (status.seekable) seek.handleDpadSeek(status.timeMs, -10_000, scope) },
+                        { if (status.seekable) { manualSeek(); seek.handleDpadSeek(status.timeMs, -10_000, scope) } },
                         "Voltar 10 segundos", enabled = status.seekable)
                 }, center = {
                     PlayerPauseButton(!status.paused, { engine.togglePause(); interaction() },
                         Modifier.focusRequester(pauseFocus))
                 }, right = {
                     PlayerActionButton(Icons.Rounded.Forward10,
-                        { if (status.seekable) seek.handleDpadSeek(status.timeMs, 10_000, scope) },
+                        { if (status.seekable) { manualSeek(); seek.handleDpadSeek(status.timeMs, 10_000, scope) } },
                         "Avançar 10 segundos", enabled = status.seekable)
                     if (session.series) PlayerActionButton(Icons.Rounded.SkipNext, { controller.catalog.nextEpisode(1) },
                         "Próximo episódio", enabled = session.episodeIndex in 0 until session.episodes.lastIndex)
@@ -197,6 +277,9 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
             },
             extraControls = {
                 status.error?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall, maxLines = 2) }
+                historyError?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall, maxLines = 2) }
+                preferencesError?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall, maxLines = 2) }
+                resumeWarning?.let { Text(it, color = palette.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 2) }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     PlayerIcon(if (status.muted) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp,
                         "Silenciar/ativar som", { settings.update { it.copy(muted = !it.muted) }; interaction() })
@@ -204,7 +287,13 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
                     Slider(volume, { volume = it; engine.setVolume(it.toInt()); interaction() }, valueRange = 0f..100f,
                         onValueChangeFinished = { settings.update { it.copy(volume = volume.toInt()) } }, modifier = Modifier.width(120.dp))
                     Spacer(Modifier.weight(1f))
-                    PlayerIcon(Icons.Rounded.Refresh, "Tentar novamente", { retry++; interaction() })
+                    PlayerIcon(Icons.Rounded.Refresh, "Tentar novamente", {
+                        scope.launch {
+                            controller.catalog.beforePlaybackChange?.invoke()
+                            controller.awaitWatchSave()
+                            retry++; interaction()
+                        }
+                    })
                     if (session.series) PlayerIcon(Icons.Rounded.VideoLibrary, "Episódios", { openMenu(VodMenu.EPISODES) })
                     PlayerIcon(if (fullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen, "Alternar tela cheia (F11)", toggleFullscreen)
                     PlayerIcon(Icons.Rounded.Close, "Encerrar reprodução", controller.catalog::stopPlayback)

@@ -2,18 +2,21 @@
 
 Aplicativo para Android e Windows para assistir a canais ao vivo, filmes e séries de servidores compatíveis com Xtream Codes. Tema escuro, com navegação por controle remoto/toque no Android e mouse/teclado no Windows. A versão Windows está em desenvolvimento e ainda não tem todas as funções Android.
 
-[Android](https://github.com/Rafael020703/SquiTV/releases/latest) · [Windows 1.22.2](https://github.com/Rafael020703/SquiTV/releases/tag/v1.22.2.1) · [Histórico de versões](https://github.com/Rafael020703/SquiTV/releases)
+[Android](https://github.com/Rafael020703/SquiTV/releases/latest) · [Windows 1.23.0](https://github.com/Rafael020703/SquiTV/releases/tag/v1.23) · [Histórico de versões](https://github.com/Rafael020703/SquiTV/releases)
 
 Este README descreve o código do projeto. Recursos em desenvolvimento podem ainda não estar disponíveis no APK da última release.
 
 ## Recursos
+
+PiP, segundo plano, downloads e transferência pela rede local desta lista são funções Android. No Windows, consulte a seção própria abaixo para o que já foi portado e seus limites.
 
 - **Ao vivo:** agrupamento de versões SD/HD/Full HD/4K, escolha de qualidade e troca circular dentro da lista de origem, incluindo favoritos. A disponibilidade das versões depende do provedor.
 - **Programação no player:** programa atual e seguintes durante a reprodução de canais, quando fornecidos pelo servidor.
 - **Filmes e séries:** detalhes, temporadas, episódios, favoritos, histórico e continuação da reprodução.
 - **Categorias:** modo do servidor ou filtros por gênero; títulos sem gênero utilizam a categoria do servidor como fallback de apresentação.
 - **Organização:** categorias ocultas, ordem personalizada e categorias fixadas.
-- **Player:** Media3/ExoPlayer, áudio, legendas, proporção da imagem, velocidade e temporizador, conforme o conteúdo disponível.
+- **Player:** Media3/ExoPlayer no Android e LibVLC no Windows; áudio, legendas, Ajustar/Preencher/Zoom, velocidade e temporizador, conforme o conteúdo disponível.
+- **Multi-view:** grade 2×2, seleção por categorias e busca, respeitando agrupamento e qualidade dos canais; a quantidade de streams simultâneos depende do provedor e aparelho.
 - **PiP e segundo plano:** controles independentes; Picture-in-Picture depende do suporte do aparelho.
 - **Downloads:** gerenciamento de filmes e episódios para reprodução local, conforme suporte do conteúdo.
 - **Backup e transferência:** exportação/importação seletiva, incluindo favoritos e organização, e transferência pela rede local entre versões compatíveis.
@@ -35,7 +38,7 @@ Para atualizar, use um APK do mesmo pacote e com assinatura compatível. A vers�
 
 ## Instalação no Windows
 
-1. Abra a [release Windows 1.22.2](https://github.com/Rafael020703/SquiTV/releases/tag/v1.22.2.1) e baixe `SquiTV-1.22.2.exe` para Windows x64.
+1. Abra a [release v1.23](https://github.com/Rafael020703/SquiTV/releases/tag/v1.23) e baixe `SquiTV-1.23.0.exe` para Windows x64.
 2. Execute o instalador e siga as etapas. A partir do Windows 1.22.1, o EXE verifica as bibliotecas de reprodução e baixa/prepara automaticamente o VLC oficial somente quando necessário. Java está incluído; não é preciso instalar dependências manualmente. A primeira preparação sem bibliotecas válidas requer internet.
 3. Instalações novas usam `C:\Program Files\Squi TV`, com permissão de administrador e opção de outra pasta. Atualizações preservam a pasta e o contexto da instalação existente, inclusive as antigas por usuário; conta e configurações são mantidas. Debug possui identidade/dados separados.
 4. A desinstalação normal remove arquivos, atalhos, dados e componentes em cache do aplicativo. Essa limpeza não roda durante upgrades. Instaladores baixados manualmente e registros de manutenção do próprio Windows ficam sob controle do usuário/sistema.
@@ -135,7 +138,7 @@ O `.gitignore` exclui builds, caches, arquivos locais, material privado de assin
 
 ## Windows — desenvolvimento inicial
 
-`:desktopApp` contém login Xtream, dashboard, categorias/busca e player ao vivo com LibVLC, EPG e troca circular na lista de origem. Inclui uma primeira implementação de Filmes/Séries com detalhes, temporadas, episódios e reprodução, além de configurações de conta, DNS, zoom, reprodução automática, agrupamento/qualidade ao vivo, organização/ocultação de categorias por conta e Atualizações. O backup local de preferências Windows inclui essa organização; ainda não é intercambiável com o backup Android. O player VOD reutiliza seek e controles de interação Android; o atualizador release Windows oferece verificação, download e instalação explícita via contrato compartilhado. Na debug, a tela de Atualizações permanece visível com operações de produção desabilitadas. Reaproveita os modelos Xtream do Android em `:shared`. Favoritos, histórico/progresso persistente, preparação por gênero, demais configurações e comprovação do fluxo real de atualização Windows continuam pendentes; não há paridade completa com o Android.
+`:desktopApp` contém login Xtream, dashboard, categorias/busca e player ao vivo com LibVLC, EPG e troca circular na lista de origem. Filmes/Séries têm detalhes, temporadas, episódios, favoritos e histórico/retomada. Catálogos oferecem categorias Servidor/Filtros por gênero com preparação econômica, contagens e ocultação das vazias. Favoritos da dashboard e Multi-view têm destinos funcionais; Continuar assistindo fica nos catálogos/detalhes. Configurações incluem conta, DNS, reprodução, agrupamento/qualidade ao vivo, organização/ocultação por conta e Atualizações. O backup de preferências inclui favoritos, modos e organização; histórico/cache de preparação ficam em arquivos próprios e não entram nesse backup. Ainda não é intercambiável com Android. Players reutilizam seek, controles e apresentação Android em `:shared`/`uiCommon`; cada plataforma mantém seu motor e armazenamento. A atualização release Windows oferece verificação, download e instalação explícita. Na debug, Atualizações permanece visível com produção desabilitada. Downloads, perfis/sincronização e cache offline completo de favoritos continuam pendentes. Não há paridade completa nem comprovação local de reprodução/upgrade da release nesta etapa.
 
 As variantes Windows release e debug têm nomes, identidades e armazenamento separados. A release usa instalador `.exe`; para desenvolver, a debug pode ser portátil com atalho no menu Iniciar (`tools/deploy-windows-debug.ps1`). A debug portátil inclui Java e LibVLC; a release inclui Java e seu instalador prepara as bibliotecas de reprodução quando necessário. A conta é salva opcionalmente com DPAPI do usuário do Windows, sem senha em texto no disco.
 
@@ -164,6 +167,6 @@ Desenvolvido por **rafasqui**. Todos os direitos reservados.
 
 A versão v1.22 reúne Android 1.22/code 23 e Windows 1.22.0. Notas por plataforma: [Android](docs/releases/v1.22-android.md) e [Windows](docs/releases/v1.22-windows.md).
 
-A atualização exclusiva [Windows 1.22.2](https://github.com/Rafael020703/SquiTV/releases/tag/v1.22.2.1) inclui apresentação compartilhada com Android, agrupamento de canais, retorno às listas, cache de imagens e organização de categorias; [notas Windows](docs/releases/v1.22.2-windows.md). Mantém o instalador online reduzido. A versão Android permanece 1.22.
+A versão conjunta [v1.23](https://github.com/Rafael020703/SquiTV/releases/tag/v1.23) reúne Android 1.23/code 24 e Windows 1.23.0. Inclui melhorias no Multi-view e enquadramento nas duas plataformas; Windows recebe favoritos, histórico/retomada, filtros por gênero e contagens de categorias. Notas separadas: [Android](docs/releases/v1.23-android.md) e [Windows](docs/releases/v1.23-windows.md). Mantém o instalador online reduzido e não modifica os assets das versões anteriores.
 
 `tools/prepare_release.py` prepara APK/EXE, checksums, manifesto com changelogs separados, plano de release e candidatos de referência por plataforma. Não publica. Correções exclusivas podem manter o mesmo número nos dois apps; as tags únicas e a proteção de Latest estão descritas no [contrato](docs/contrato-atualizacoes.md). Os arquivos de [referência](updates/README.md) só são avançados depois de uma publicação autorizada e conferida.

@@ -38,6 +38,7 @@ import rsv.squitv.domain.model.LiveChannelLabels
 import rsv.squitv.domain.model.ChannelQuality
 import rsv.squitv.shared.xtream.LiveChannelGroups
 import rsv.squitv.core.ui.components.cards.ChannelQualityBadge
+import rsv.squitv.core.ui.components.cards.CompactFavoriteButton
 import rsv.squitv.ui.content.components.rememberContentGridState
 import rsv.squitv.core.ui.components.common.PageHeadingText
 import rsv.squitv.shared.catalog.CategoryCustomization
@@ -45,24 +46,66 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import rsv.squitv.shared.catalog.LiveCatalogView
 
 /** Desktop adaptation of Android AppHeader, AppSidebar and ChannelCard; same data/actions. */
 @Composable
 internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopController, store: DesktopPreferencesStore, modifier: Modifier) {
     val preferences by store.state.collectAsState()
     val logos = rememberDesktopImages(DesktopImageKind.CHANNELS)
-    var search by rememberSaveable(state.selectedCategory?.id) { mutableStateOf("") }
     val categoriesState = rememberLazyListState()
     var editingSearch by remember { mutableStateOf(false) }
     val accountScope = remember(state.credentials) { liveCategoryScope(state.credentials) }
+    var favoriteCategory by rememberSaveable(accountScope) { mutableStateOf(false) }
+    val selectedId = if (favoriteCategory) "FAVORITES" else state.selectedCategory?.id
+    val selectedName = if (favoriteCategory) "Favoritos" else state.selectedCategory?.name
+    var search by rememberSaveable(accountScope, selectedId) { mutableStateOf("") }
+    var favoritesOnly by rememberSaveable(accountScope, selectedId) { mutableStateOf(false) }
+    val favoriteFilterFocus = remember { FocusRequester() }
+    val favoriteRowFocus = remember { FocusRequester() }
+    val firstCategoryFocus = remember { FocusRequester() }
+    val favoriteIds = preferences.favoriteLiveChannelsByAccount[accountScope].orEmpty()
+    val favoritesState by controller.favorites.state.collectAsState()
+    val favoriteSnapshot = favoritesState.takeIf { it.accountScope == accountScope && it.requestedType == DesktopSearchType.LIVE }
+    val favoriteResults = favoriteSnapshot?.results.orEmpty().filter { it.type == DesktopSearchType.LIVE &&
+        it.channel?.isFavorite(favoriteIds) == true }
+    val favoriteChannels = favoriteResults.mapNotNull { it.channel }
+    val preferencesError by store.error.collectAsState()
     val hidden = preferences.hiddenLiveCategoriesByAccount[accountScope].orEmpty()
     val categoryOrder = preferences.liveCategoryOrderByAccount[accountScope]
-    val categories = remember(state.categories, hidden, categoryOrder) {
+    val providerCategories = remember(state.categories, hidden, categoryOrder) {
         CategoryCustomization.apply(state.categories, categoryOrder, hidden) { it.id }
     }
+    val index by controller.liveIndex.state.collectAsState()
+    var countedView by remember(accountScope) { mutableStateOf<LiveCatalogView?>(null) }
+    LaunchedEffect(state.credentials) { state.credentials?.let { controller.liveIndex.load(it) } }
+    DisposableEffect(controller) { onDispose { controller.liveIndex.cancel() } }
+    LaunchedEffect(index, state.categories, hidden, categoryOrder, preferences.groupLiveChannels, preferences.preferredChannelQuality) {
+        countedView = withContext(Dispatchers.Default) {
+            if (!index.loaded || index.accountScope != accountScope) null else
+                LiveCatalogView.build(state.categories, index.channels, accountScope.orEmpty(), preferences.groupLiveChannels,
+                    ChannelQuality.fromPreference(preferences.preferredChannelQuality), categoryOrder.orEmpty(), hidden)
+        }
+    }
+    val categories = remember(providerCategories, countedView) {
+        countedView?.categories?.map { rsv.squitv.shared.xtream.LiveCategory(it.id, it.name) } ?: providerCategories
+    }
+    LaunchedEffect(index.channels, index.loaded, favoriteCategory) {
+        if (!favoriteCategory && index.loaded) controller.refreshLiveSelectionFromIndex()
+    }
     val preferencesLoaded by store.loaded.collectAsState()
+    LaunchedEffect(favoriteCategory, state.credentials, preferencesLoaded, preferences) {
+        if (favoriteCategory && preferencesLoaded) {
+            if (favoriteIds.isEmpty()) favoriteCategory = false
+            else state.credentials?.let { controller.favorites.open(it, preferences, onlyType = DesktopSearchType.LIVE) }
+        }
+    }
+    DisposableEffect(favoriteCategory) { onDispose { if (favoriteCategory) controller.favorites.leave() } }
     LaunchedEffect(categories, state.selectedCategory?.id, preferencesLoaded, state.busy,
-        state.channelsLoaded, state.loadingChannels, state.channelError) {
+        state.channelsLoaded, state.loadingChannels, state.channelError, favoriteCategory, index.loaded, index.error, countedView) {
+        if (favoriteCategory) return@LaunchedEffect
+        if (!index.loaded && index.error == null) return@LaunchedEffect
+        if (index.loaded && countedView == null) return@LaunchedEffect
         if (preferencesLoaded && !state.busy && state.selectedCategory?.id !in categories.map { it.id }) {
             if (categories.isEmpty()) {
                 if (state.selectedCategory != null) controller.clearLiveSelection()
@@ -71,18 +114,19 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
             categories.firstOrNull { it.id == state.selectedCategory?.id }?.let(controller::loadChannels)
         }
     }
-    val allHidden = state.categories.isNotEmpty() && categories.isEmpty()
+    val allHidden = state.categories.isNotEmpty() && providerCategories.isEmpty() && categories.isEmpty()
     val showAll: () -> Unit = { store.update {
         val key = accountScope ?: return@update it
         it.copy(hiddenLiveCategoriesByAccount = it.hiddenLiveCategoriesByAccount - key)
     } }
     val query = search.trim()
-    var preparedChannels by remember(state.channels, accountScope, preferences.groupLiveChannels,
+    val rawChannels = if (favoriteCategory) favoriteChannels else state.channels
+    var preparedChannels by remember(rawChannels, accountScope, preferences.groupLiveChannels,
         preferences.preferredChannelQuality, query) { mutableStateOf<List<LiveChannel>?>(null) }
-    LaunchedEffect(state.channels, accountScope, preferences.groupLiveChannels, preferences.preferredChannelQuality, query) {
+    LaunchedEffect(rawChannels, accountScope, preferences.groupLiveChannels, preferences.preferredChannelQuality, query, favoriteCategory) {
         preparedChannels = withContext(Dispatchers.Default) {
             // Android CategoryViewModel also prepares/sorts its projection on Dispatchers.Default.
-            val visible = LiveChannelGroups.visible(state.channels, accountScope.orEmpty(), preferences.groupLiveChannels,
+            val visible = if (favoriteCategory) rawChannels else LiveChannelGroups.visible(rawChannels, accountScope.orEmpty(), preferences.groupLiveChannels,
                 ChannelQuality.fromPreference(preferences.preferredChannelQuality))
             val filtered = if (query.isBlank()) visible else visible.filter { channel ->
                 ensureActive()
@@ -94,8 +138,11 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
             filtered.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
         }
     }
-    val channels = if (state.selectedCategory?.id in hidden) emptyList() else preparedChannels.orEmpty()
-    val gridMemory = rememberContentGridState("${accountScope.orEmpty()}/live/${state.selectedCategory?.id}/$query")
+    val channels = remember(preparedChannels, favoritesOnly, favoriteIds, state.selectedCategory?.id in hidden, favoriteCategory) {
+        if (!favoriteCategory && state.selectedCategory?.id in hidden) emptyList()
+        else preparedChannels.orEmpty().let { source -> if (favoritesOnly) source.filter { it.isFavorite(favoriteIds) } else source }
+    }
+    val gridMemory = rememberContentGridState("${accountScope.orEmpty()}/live/$selectedId/$query/$favoritesOnly")
     val gridState = gridMemory.scroll
     val gridFocus = remember { FocusRequester() }
     val useFocus = LocalInputModeManager.current.inputMode == InputMode.Keyboard
@@ -124,23 +171,41 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
             }
         }
     }
+    LaunchedEffect(channels, favoritesOnly, preparedChannels != null, favoriteCategory) {
+        // Removing a favorite can remove the focused card; keep keyboard navigation in this filtered list.
+        if ((favoritesOnly || favoriteCategory) && preparedChannels != null && !state.loadingChannels && useFocus && !editingSearch &&
+            gridMemory.hasInteracted && savedIndex < 0) {
+            withFrameNanos { }
+            if (channels.isNotEmpty() && gridState.layoutInfo.visibleItemsInfo.none { it.index == focusIndex })
+                gridState.scrollToItem(focusIndex)
+            withFrameNanos { }
+            runCatching { if (channels.isNotEmpty()) gridFocus.requestFocus()
+                else if (favoriteCategory && favoriteIds.isNotEmpty()) favoriteRowFocus.requestFocus()
+                else if (favoriteCategory) firstCategoryFocus.requestFocus() else favoriteFilterFocus.requestFocus() }
+        }
+    }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(18.dp)) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            if (maxWidth < 920.dp && state.selectedCategory != null) {
+            if (maxWidth < 920.dp && selectedName != null) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        CatalogHeading(state.selectedCategory.name, Modifier.weight(1f))
+                        CatalogHeading(selectedName, Modifier.weight(1f))
                     }
                     CatalogSearch(search, { search = it }, Modifier.fillMaxWidth()) { editingSearch = it }
                 }
             } else {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                    CatalogHeading(state.selectedCategory?.name, Modifier.weight(1f))
-                    if (state.selectedCategory != null)
+                    CatalogHeading(selectedName, Modifier.weight(1f))
+                    if (selectedName != null)
                         CatalogSearch(search, { search = it }, Modifier.width(300.dp)) { editingSearch = it }
                 }
             }
+        }
+        preferencesError?.let { StatusNotice(it, error = true) }
+        index.error?.let { error ->
+            StatusNotice(error, error = true)
+            TextButton({ state.credentials?.let { controller.liveIndex.load(it, force = true) } }) { Text("Tentar contagens novamente") }
         }
         state.notice?.let { StatusNotice(it) }
         state.error?.let { StatusNotice(it, error = true) }
@@ -154,10 +219,10 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
                     Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("CATEGORIAS", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
                             color = palette.onSurfaceVariant, modifier = Modifier.weight(1f))
-                        Text(if (state.busy || state.refreshingCatalog) "…" else categories.size.toString(),
+                        Text(if (state.busy || state.refreshingCatalog) "…" else (categories.size + if (favoriteIds.isNotEmpty()) 1 else 0).toString(),
                             style = MaterialTheme.typography.labelSmall, color = palette.primary)
                     }
-                    if (state.busy || state.refreshingCatalog) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if (state.busy || state.refreshingCatalog || index.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                     if (!state.busy && !state.refreshingCatalog && categories.isEmpty()) {
                         Text(if (allHidden) "Todas as categorias estão ocultas." else "Nenhuma categoria disponível.", style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(8.dp))
@@ -168,13 +233,20 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
                     Box(Modifier.weight(1f)) {
                     LazyColumn(state = categoriesState, modifier = Modifier.fillMaxSize().padding(end = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        if (favoriteIds.isNotEmpty()) item(key = "SPECIAL:FAVORITES") {
+                            DesktopCategoryRow("Favoritos", favoriteCategory,
+                                count = favoriteSnapshot?.takeIf { !it.loading }?.results?.size,
+                                modifier = Modifier.focusRequester(favoriteRowFocus), onClick = { favoriteCategory = true })
+                        }
                         items(categories, key = { it.id }) { category ->
-                            val selected = category.id == state.selectedCategory?.id
+                            val selected = !favoriteCategory && category.id == state.selectedCategory?.id
                             DesktopCategoryRow(
                                 name = category.name,
                                 selected = selected,
+                                count = countedView?.categories?.firstOrNull { it.id == category.id }?.count,
 
-                                onClick = { controller.loadChannels(category) }
+                                modifier = if (category.id == categories.firstOrNull()?.id) Modifier.focusRequester(firstCategoryFocus) else Modifier,
+                                onClick = { favoriteCategory = false; controller.loadChannels(category) }
                             )
                         }
                     }
@@ -185,19 +257,36 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (favoriteCategory) favoriteSnapshot?.errors?.get(DesktopSearchType.LIVE)?.let { error ->
+                    StatusNotice(error, error = true)
+                    TextButton({ state.credentials?.let { controller.favorites.open(it, preferences, force = true, onlyType = DesktopSearchType.LIVE) } }) {
+                        Text("Tentar novamente")
+                    }
+                }
+                if (selectedName != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(if ((!favoriteCategory && state.loadingChannels) || favoriteCategory && (favoriteSnapshot == null || favoriteSnapshot.loading) || preparedChannels == null) "Carregando…" else "${channels.size} canais",
+                        Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = palette.onSurfaceVariant)
+                    if (!favoriteCategory) FilterChip(favoritesOnly, { favoritesOnly = !favoritesOnly }, { Text("Favoritos desta categoria") },
+                        enabled = preferencesLoaded,
+                        leadingIcon = { Icon(if (favoritesOnly) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                            null, Modifier.size(16.dp)) }, modifier = Modifier.focusRequester(favoriteFilterFocus))
+                }
                 when {
-                    allHidden -> CatalogMessage("Todas as categorias estão ocultas", modifier = Modifier.weight(1f),
+                    !favoriteCategory && ((!index.loaded && index.loading) || index.loaded && countedView == null) -> CatalogMessage("Carregando contagens…", loading = true, modifier = Modifier.weight(1f))
+                    allHidden && !favoriteCategory -> CatalogMessage("Todas as categorias estão ocultas", modifier = Modifier.weight(1f),
                         onRetry = showAll, actionLabel = "Mostrar todas")
-                    state.loadingChannels || preparedChannels == null -> CatalogMessage("Carregando canais…", loading = true, modifier = Modifier.weight(1f))
-                    state.channelError != null -> CatalogMessage(state.channelError, error = true,
+                    favoriteCategory && channels.isEmpty() && (favoriteSnapshot == null || favoriteSnapshot.loading) ||
+                        !favoriteCategory && state.loadingChannels || preparedChannels == null -> CatalogMessage("Carregando canais…", loading = true, modifier = Modifier.weight(1f))
+                    state.channelError != null && !favoriteCategory -> CatalogMessage(state.channelError, error = true,
                         modifier = Modifier.weight(1f), onRetry = state.selectedCategory?.let { category ->
                             { controller.loadChannels(category) }
                         })
-                    state.selectedCategory == null -> CatalogMessage("Selecione uma categoria para assistir", modifier = Modifier.weight(1f))
-                    channels.isEmpty() -> CatalogMessage(if (search.isBlank()) "Nenhum canal disponível" else "Nenhum canal encontrado",
+                    state.selectedCategory == null && !favoriteCategory -> CatalogMessage("Selecione uma categoria para assistir", modifier = Modifier.weight(1f))
+                    channels.isEmpty() -> CatalogMessage(if (favoritesOnly) "Nenhum favorito nesta categoria corresponde ao filtro"
+                        else if (search.isBlank()) "Nenhum canal disponível" else "Nenhum canal encontrado",
                         modifier = Modifier.weight(1f))
                     else -> {
-                        Text("${channels.size} canais", style = MaterialTheme.typography.labelSmall, color = palette.onSurfaceVariant)
                         Box(Modifier.weight(1f)) {
                         LazyVerticalGrid(columns = GridCells.Adaptive(175.dp), state = gridState,
                             modifier = Modifier.fillMaxSize().padding(end = 12.dp),
@@ -211,12 +300,20 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
                                         gridMemory.focusedIndex = index
                                         gridMemory.hasInteracted = true
                                     } }
-                                DesktopChannelCard(channel, logos, modifier) {
+                                DesktopChannelCard(channel, logos, modifier, isFavorite = channel.isFavorite(favoriteIds),
+                                    favoriteEnabled = preferencesLoaded && accountScope != null,
+                                    onToggleFavorite = { accountScope?.let { account -> store.update {
+                                        it.toggleLiveFavorite(account, channel.id, channel.versions.map { it.id })
+                                    } } }) {
                                     gridMemory.focusedItem = channel.stableKey
                                     gridMemory.focusedStreamKey = "LIVE:${channel.id}"
                                     gridMemory.focusedIndex = index
                                     gridMemory.hasInteracted = true
-                                    controller.play(channel, channels)
+                                    if (favoriteCategory) favoriteResults.firstOrNull { it.channel == channel }?.let { item ->
+                                        val byKey = favoriteResults.associateBy { it.channel?.stableKey }
+                                        val visible = channels.mapNotNull { byKey[it.stableKey] }
+                                        if (visible.size == channels.size) controller.openFavoriteResult(item, visible)
+                                    } else controller.play(channel, channels, favoriteSource = favoritesOnly)
                                 }
                             }
                         }
@@ -310,7 +407,8 @@ internal fun DesktopCategoryRow(
 }
 
 @Composable
-internal fun DesktopChannelCard(channel: LiveChannel, logos: ChannelLogos, modifier: Modifier = Modifier, play: () -> Unit) {
+internal fun DesktopChannelCard(channel: LiveChannel, logos: ChannelLogos, modifier: Modifier = Modifier,
+    isFavorite: Boolean = false, favoriteEnabled: Boolean = true, onToggleFavorite: (() -> Unit)? = null, play: () -> Unit) {
     val interaction = rememberVisualInteraction()
     val quality = remember(channel.name, channel.versions) {
         channel.versions.mapNotNull { LiveChannelLabels.parse(it.name).resolution }.maxByOrNull { it.rank }
@@ -328,6 +426,16 @@ internal fun DesktopChannelCard(channel: LiveChannel, logos: ChannelLogos, modif
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .85f)))))
             ChannelQualityBadge(quality, palette.primary, palette.onSurfaceVariant,
                 Modifier.align(Alignment.TopStart).padding(8.dp))
+            if (onToggleFavorite != null) {
+                val favoriteInteraction = rememberVisualInteraction()
+                CompactFavoriteButton(isFavorite,
+                    "${channel.name}: ${if (isFavorite) "Remover dos favoritos" else "Adicionar aos favoritos"}",
+                    onToggleFavorite, if (favoriteInteraction.emphasized) palette.primary else palette.background.copy(alpha = .68f),
+                    if (favoriteInteraction.emphasized) Color.Black else palette.error,
+                    if (favoriteInteraction.emphasized) Color.Black else palette.onSurface,
+                    Modifier.align(Alignment.TopEnd).padding(4.dp), enabled = favoriteEnabled,
+                    interactionSource = favoriteInteraction.source)
+            }
             Text(channel.name.uppercase(Locale.ROOT), modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
                 style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Black,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (interaction.emphasized) palette.primary else Color.White)

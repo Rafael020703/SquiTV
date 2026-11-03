@@ -9,7 +9,7 @@ import rsv.squitv.desktop.data.*
 import rsv.squitv.shared.xtream.*
 import rsv.squitv.domain.model.ChannelQuality
 
-enum class DesktopPage { DASHBOARD, LIVE, MOVIES, SERIES, SETTINGS, UPDATES, SEARCH }
+enum class DesktopPage { DASHBOARD, LIVE, MOVIES, SERIES, SETTINGS, UPDATES, SEARCH, FAVORITES, MULTIVIEW }
 data class LiveSession(val sourceName: String, val channels: List<LiveChannel>, val index: Int,
     val sourceScope: String = "", val selectedStreamId: Int? = null) {
     val channel: LiveChannel get() = LiveChannelGroups.select(channels[index], selectedStreamId) ?: channels[index]
@@ -41,8 +41,13 @@ class DesktopController(
 ) : AutoCloseable {
     private val mutable = MutableStateFlow(DesktopState())
     val state = mutable.asStateFlow()
-    internal val catalog = OnDemandController(client, scope)
+    internal var watchHistory: DesktopWatchHistory? = null
+    internal val catalog = OnDemandController(client, scope) { watchHistory }
     internal val search = DesktopSearchController(client, scope)
+    internal val favorites = DesktopFavoritesController(client, scope)
+    internal val liveIndex = DesktopLiveIndex(client, scope)
+    internal val multiView = DesktopMultiViewController(liveIndex)
+    private var watchSaveJob: Job? = null
     private var connectionJob: Job? = null
     private var channelsJob: Job? = null
     private var dnsJob: Job? = null
@@ -55,6 +60,29 @@ class DesktopController(
     private val credentialWrites = Mutex()
     private val dnsProbe = DnsProbe()
     val availableDns: List<String> = ProviderServers.addresses.map(ServerAddress::normalize)
+
+    internal fun saveWatchProgress(account: ServerCredentials, session: VodSession,
+        status: rsv.squitv.desktop.player.PlayerStatus, force: Boolean = false) {
+        val key = liveCategoryScope(account) ?: return
+        val observed = System.currentTimeMillis()
+        watchSaveJob = scope.launch { watchHistory?.record(key, session, status, force, observed) }
+    }
+
+    internal suspend fun flushWatchProgress(status: rsv.squitv.desktop.player.PlayerStatus?) {
+        catalog.beforePlaybackChange?.let { save -> save(); watchSaveJob?.join(); return }
+        val account = liveCategoryScope(mutable.value.credentials) ?: return
+        val session = catalog.state.value.playback ?: return
+        if (status != null) watchHistory?.record(account, session, status, force = true)
+    }
+
+    internal suspend fun awaitWatchSave() { watchSaveJob?.join() }
+
+    internal fun openContinueEntry(entry: DesktopWatchEntry) {
+        val account = mutable.value.credentials ?: return
+        val key = liveCategoryScope(account) ?: return
+        val actual = watchHistory?.continuing(key)?.firstOrNull { it.key == entry.key } ?: return
+        catalog.openSearchDetail(if (actual.series) CatalogKind.SERIES else CatalogKind.MOVIES, actual.item(), account)
+    }
 
     init {
         scope.launch {
@@ -126,7 +154,7 @@ class DesktopController(
                     catch (e: Exception) { lastFailure = e }
                 }
                 val (credentials, account) = connected ?: throw (lastFailure ?: ServerProblem("Nenhum DNS respondeu ao login."))
-                search.reset()
+                search.reset(); favorites.reset(); multiView.reset(); liveIndex.reset()
                 var notice: String? = null
                 credentialWrites.withLock { withContext(Dispatchers.IO) {
                     try { if (remember) store.save(credentials) else store.clear() }
@@ -165,7 +193,12 @@ class DesktopController(
             loadingChannels = true, channelsLoaded = false, channelError = null)
         channelsJob = scope.launch {
             try {
-                val channels = withContext(Dispatchers.IO) { client.channels(credentials, category.id) }
+                val index = liveIndex.state.value
+                val knownCategoryIds = current.categories.map { it.id }.toSet()
+                val channels = if (index.loaded && index.accountScope == liveCategoryScope(credentials))
+                    index.channels.filter { if (category.id == rsv.squitv.shared.catalog.LiveCatalogView.UNCLASSIFIED)
+                        it.categoryId !in knownCategoryIds else it.categoryId == category.id }
+                    else withContext(Dispatchers.IO) { client.channels(credentials, category.id) }
                 ensureActive()
                 mutable.value = mutable.value.copy(channels = channels, loadingChannels = false, channelsLoaded = true)
             } catch (e: CancellationException) { throw e }
@@ -181,8 +214,15 @@ class DesktopController(
         mutable.value = mutable.value.copy(selectedCategory = null, channels = emptyList(),
             loadingChannels = false, channelsLoaded = false, channelError = null)
     }
+    internal fun refreshLiveSelectionFromIndex() {
+        val current = mutable.value
+        val index = liveIndex.state.value
+        if (current.page == DesktopPage.LIVE && index.loaded && index.accountScope == liveCategoryScope(current.credentials))
+            current.selectedCategory?.let { loadChannels(it, force = true) }
+    }
 
     fun openLive() {
+        favorites.leave(); multiView.leave()
         search.leave()
         catalog.leave()
         mutable.value = mutable.value.copy(page = DesktopPage.LIVE)
@@ -190,13 +230,14 @@ class DesktopController(
     }
 
     fun home() {
+        favorites.leave(); multiView.leave()
         search.leave()
         catalog.leave()
         stopPlayback()
         mutable.value = mutable.value.copy(page = DesktopPage.DASHBOARD)
     }
 
-    fun play(channel: LiveChannel, visibleChannels: List<LiveChannel>) {
+    fun play(channel: LiveChannel, visibleChannels: List<LiveChannel>, favoriteSource: Boolean = false) {
         val current = mutable.value
         val category = current.selectedCategory ?: return
         if (current.credentials == null || current.loadingChannels || visibleChannels.isEmpty()) return
@@ -207,7 +248,8 @@ class DesktopController(
         val source = visibleChannels.distinctBy { it.id }.toList()
         val index = source.indexOfFirst { it.id == channel.id }
         if (index < 0) return
-        mutable.value = current.copy(playback = LiveSession(category.name, source, index, sourceScope))
+        val sourceName = if (favoriteSource) "Favoritos · ${category.name}" else category.name
+        mutable.value = current.copy(playback = LiveSession(sourceName, source, index, sourceScope))
         refreshEpg()
     }
 
@@ -284,6 +326,7 @@ class DesktopController(
     }
 
     fun disconnect() {
+        favorites.reset(); multiView.reset(); liveIndex.reset()
         ++catalogSyncRevision
         catalogSyncJob?.cancel()
         search.reset()
@@ -317,6 +360,9 @@ class DesktopController(
                 ensureActive()
                 if (mutable.value.credentials != account || catalogSyncRevision != revision) return@launch
                 mutable.value = mutable.value.copy(categories = categories, notice = "Categorias ao vivo atualizadas.")
+                // Counts must not continue using a previous catalog after an explicit refresh.
+                liveIndex.reset()
+                if (mutable.value.page == DesktopPage.LIVE) liveIndex.load(account)
                 mutable.value.selectedCategory?.let { old ->
                     val selected = categories.firstOrNull { it.id == old.id }
                     if (selected == null) clearLiveSelection()
@@ -377,6 +423,7 @@ class DesktopController(
     }
 
     override fun close() {
+        favorites.reset(); multiView.reset(); liveIndex.reset()
         search.reset()
         catalog.reset()
         connectionJob?.cancel(); channelsJob?.cancel(); dnsJob?.cancel(); epgJob?.cancel(); catalogSyncJob?.cancel()
@@ -384,6 +431,7 @@ class DesktopController(
     }
 
     internal fun openCatalog(kind: CatalogKind) {
+        favorites.leave(); multiView.leave()
         val account = mutable.value.credentials ?: return
         search.leave()
         stopPlayback()
@@ -392,22 +440,70 @@ class DesktopController(
     }
 
     fun openUpdates() {
+        favorites.leave(); multiView.leave()
         search.leave()
         catalog.leave(); stopPlayback()
         mutable.value = mutable.value.copy(page = DesktopPage.UPDATES)
     }
 
     fun openSettings() {
+        favorites.leave(); multiView.leave()
         search.leave()
         catalog.leave(); stopPlayback()
         mutable.value = mutable.value.copy(page = DesktopPage.SETTINGS)
     }
 
     internal fun openSearch() {
+        favorites.leave(); multiView.leave()
         val account = mutable.value.credentials ?: return
         catalog.leave(); stopPlayback()
         search.open(account)
         mutable.value = mutable.value.copy(page = DesktopPage.SEARCH)
+    }
+
+    fun openFavorites() {
+        if (mutable.value.credentials == null) return
+        search.leave(); catalog.leave(); stopPlayback(); multiView.leave()
+        mutable.value = mutable.value.copy(page = DesktopPage.FAVORITES)
+    }
+
+    fun openMultiView() {
+        if (mutable.value.credentials == null) return
+        search.leave(); catalog.leave(); stopPlayback(); favorites.leave()
+        mutable.value = mutable.value.copy(page = DesktopPage.MULTIVIEW)
+    }
+
+    internal fun openFavoriteResult(item: DesktopSearchItem, visible: List<DesktopSearchItem>) {
+        val current = mutable.value
+        val credentials = current.credentials ?: return
+        val snapshot = favorites.state.value
+        if (snapshot.accountScope != liveCategoryScope(credentials)) return
+        val originType = when (current.page) {
+            DesktopPage.FAVORITES -> null
+            DesktopPage.LIVE -> DesktopSearchType.LIVE
+            DesktopPage.MOVIES -> DesktopSearchType.MOVIES
+            DesktopPage.SERIES -> DesktopSearchType.SERIES
+            else -> return
+        }
+        if (snapshot.requestedType != originType || originType != null && item.type != originType) return
+        val allowed = snapshot.results.associateBy { it.key }
+        if (item !in visible || visible.any { allowed[it.key] != it || originType != null && it.type != originType }) return
+        favorites.leave()
+        if (item.channel != null) {
+            val source = visible.mapNotNull { it.channel }.toList()
+            val index = source.indexOfFirst { it.containsStream(item.id) }
+            if (index < 0) return
+            mutable.value = current.copy(playback = LiveSession("Favoritos", source, index, liveCategoryScope(credentials).orEmpty()))
+            refreshEpg()
+        } else {
+            val catalogItem = item.catalogItem ?: return
+            val kind = when (item.type) {
+                DesktopSearchType.MOVIES -> CatalogKind.MOVIES
+                DesktopSearchType.SERIES -> CatalogKind.SERIES
+                else -> return
+            }
+            catalog.openSearchDetail(kind, catalogItem, credentials)
+        }
     }
 
     internal fun openSearchResult(item: DesktopSearchItem) {
@@ -437,6 +533,7 @@ class DesktopController(
     }
 
     fun clearCache() {
+        favorites.reset(); multiView.reset(); liveIndex.reset()
         catalog.clearCache()
         search.reset()
         mutable.value = mutable.value.copy(notice = "Cache em memória dos catálogos e da busca limpo.")

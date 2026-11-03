@@ -46,7 +46,7 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
     val account = state.account ?: return
     val windowDragArea = LocalWindowDragArea.current
     var now by remember { mutableStateOf(LocalDateTime.now()) }
-    // Only hours/minutes and date are displayed: update at the next minute boundary.
+    // Match Android's HH:mm clock without a second date row.
     LaunchedEffect(Unit) { while (true) {
         delay(60_000L - System.currentTimeMillis().mod(60_000L)); now = LocalDateTime.now()
     } }
@@ -95,7 +95,8 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
 
         PortalBackdrop(palette.background, palette.surfaceVariant, palette.primary, showAtmosphere = true) {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = viewportHeight)
-                .padding(horizontal = (if (narrow) 16.dp else 48.dp) * viewport, vertical = 32.dp * viewport),
+                .padding(horizontal = (if (narrow) 16.dp else 48.dp) * viewport,
+                    vertical = (if (narrow) 16.dp else 32.dp) * viewport),
                 verticalArrangement = Arrangement.SpaceBetween) {
                 val profile: @Composable (Modifier) -> Unit = { profileModifier ->
                     windowDragArea(profileModifier) {
@@ -130,13 +131,9 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
                         DashboardAction(Icons.Rounded.Settings, "Configurações", controller::openSettings,
                             Modifier.focusRequester(headerFocus[2]).focusProperties { down = cardFocus.getOrElse(2) { firstCardFocus } })
                         Spacer(Modifier.width(12.dp))
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(now.format(DateTimeFormatter.ofPattern("HH:mm")), style = MaterialTheme.typography.displayLarge.copy(fontSize =
-                                    maxOf(MaterialTheme.typography.displayLarge.fontSize.value * textScale, 10f).sp),
-                                fontWeight = FontWeight.Black)
-                            Text(now.format(DateTimeFormatter.ofPattern("EEEE, dd MMMM", Locale.forLanguageTag("pt-BR"))),
-                                color = palette.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
-                        }
+                        Text(now.format(DateTimeFormatter.ofPattern("HH:mm")), style = MaterialTheme.typography.displayLarge.copy(fontSize =
+                                maxOf(MaterialTheme.typography.displayLarge.fontSize.value * textScale, 10f).sp),
+                            fontWeight = FontWeight.Black)
                     }
                 }
                 if (narrow) {
@@ -151,7 +148,7 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(itemSpacing)) {
                         main.forEachIndexed { index, tile ->
                             val focusIndex = index
-                            DashboardCard(tile, true,
+                            DashboardCard(if (narrow) tile.copy(description = "") else tile, true,
                                 Modifier.weight(1f).height(280.dp * viewport).then(
                                     Modifier.focusRequester(cardFocus[focusIndex])
                                         .onFocusChanged { if (it.isFocused) lastFocused = focusIndex }
@@ -159,7 +156,8 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
                                             left = if (focusIndex > 0) cardFocus[focusIndex - 1] else FocusRequester.Cancel
                                             right = if (focusIndex < main.size - 1) cardFocus[focusIndex + 1] else FocusRequester.Cancel
                                             up = headerFocus[if (narrow && focusIndex == 1) 0 else focusIndex.coerceIn(0, 2)]
-                                            down = if (secondary.isNotEmpty()) cardFocus[(main.size + focusIndex).coerceAtMost(visibleTilesCount - 1)] else FocusRequester.Cancel
+                                            down = if (secondary.isNotEmpty()) cardFocus[(main.size + focusIndex).coerceAtMost(visibleTilesCount - 1)]
+                                                else FocusRequester.Cancel
                                         }
                                 ), viewport, textScale,
                                 when (tile.type) {
@@ -185,7 +183,11 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
                                             up = if (main.isNotEmpty()) cardFocus[index.coerceAtMost(main.size - 1)] else headerFocus[if (narrow && index == 1) 0 else index.coerceIn(0, 2)]
                                             down = FocusRequester.Cancel
                                         }
-                                ), viewport, textScale)
+                                ), viewport, textScale, when (tile.type) {
+                                    HomeCardType.MULTI_VIEW -> controller::openMultiView
+                                    HomeCardType.FAVORITES -> controller::openFavorites
+                                    else -> null
+                                })
                         }
                     }
                 }
