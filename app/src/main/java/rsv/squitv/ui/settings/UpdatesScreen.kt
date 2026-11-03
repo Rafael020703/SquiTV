@@ -3,6 +3,8 @@ package rsv.squitv.ui.settings
 import android.content.Intent
 import android.text.format.Formatter
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -16,6 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.res.stringResource
@@ -26,7 +31,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import rsv.squitv.R
 import rsv.squitv.core.ui.components.navigation.AppHeader
 import rsv.squitv.core.ui.theme.AppDesignSystem
@@ -46,15 +51,31 @@ fun UpdatesScreen(viewModel: UpdateViewModel = hiltViewModel(), onBack: () -> Un
     val context = LocalContext.current
     val colors = AppDesignSystem.colors
     val actionFocus = remember { FocusRequester() }
+    val summaryFocus = remember { FocusRequester() }
+    val errorFocus = remember { FocusRequester() }
+    val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    var summaryFocused by remember { mutableStateOf(false) }
+    var errorFocused by remember { mutableStateOf(false) }
+    val hasError = state is UpdateUiState.Error
+    val hasPrimaryAction = state !is UpdateUiState.Checking && state !is UpdateUiState.Verifying &&
+        state !is UpdateUiState.OpeningInstaller && state !is UpdateUiState.DebugBuild
     // Read the ViewModel at resume time; do not capture an obsolete UI state in the observer.
     DisposableEffect(lifecycleOwner, viewModel) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) viewModel.onResume() }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    LaunchedEffect(state::class) {
-        delay(150)
-        runCatching { actionFocus.requestFocus() }
+    LaunchedEffect(state::class, (state as? UpdateUiState.Error)?.message) {
+        // Progress emissions do not steal focus. On failure, keep the error visible
+        // instead of jumping down to Retry and scrolling the explanation away.
+        if (hasError) scrollState.scrollTo(0)
+        withFrameNanos { }
+        when {
+            hasError -> errorFocus.requestFocus()
+            hasPrimaryAction -> actionFocus.requestFocus()
+            else -> summaryFocus.requestFocus()
+        }
     }
     val info = when (val value = state) {
         is UpdateUiState.UpdateAvailable -> value.updateInfo
@@ -105,59 +126,96 @@ fun UpdatesScreen(viewModel: UpdateViewModel = hiltViewModel(), onBack: () -> Un
         else -> Icons.Rounded.SystemUpdate
     }
     val primaryModifier = Modifier.fillMaxWidth().focusRequester(actionFocus)
+        .focusProperties { up = summaryFocus }
+    val statusContent: @Composable ColumnScope.() -> Unit = {
+        Box(Modifier.fillMaxWidth()
+            .border(1.dp, if (summaryFocused) colors.primary else androidx.compose.ui.graphics.Color.Transparent,
+                AppDesignSystem.shapes.large)
+            .focusRequester(summaryFocus)
+            .focusProperties {
+                up = if (hasError) errorFocus else FocusRequester.Default
+                down = if (hasPrimaryAction) actionFocus else FocusRequester.Default
+            }
+            .onFocusChanged {
+                summaryFocused = it.isFocused
+                if (it.isFocused) scope.launch { scrollState.scrollTo(0) }
+            }
+            .semantics(mergeDescendants = true) { }
+            .focusable()) {
+            UpdateVersionSummary(viewModel.currentVersionName, info)
+        }
+        if (info != null) {
+            ReleaseMetadata(info)
+            UpdateStages(when (state) {
+                is UpdateUiState.Verifying -> 1
+                is UpdateUiState.ReadyToInstall, is UpdateUiState.PermissionRequired,
+                is UpdateUiState.OpeningInstaller, is UpdateUiState.InstallerOpened -> 2
+                else -> 0
+            })
+        }
+        when (val value = state) {
+            UpdateUiState.Checking, is UpdateUiState.Verifying, is UpdateUiState.OpeningInstaller -> {
+                LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.primary)
+            }
+            is UpdateUiState.DebugBuild -> Unit
+            is UpdateUiState.UpToDate -> UpdateAction(stringResource(R.string.updater_check), { viewModel.checkForUpdates(true) }, primaryModifier, icon = Icons.Rounded.Refresh)
+            is UpdateUiState.UpdateAvailable -> {
+                if (value.isIgnored) Text(stringResource(R.string.updater_ignored_desc), color = colors.textSecondary, style = AppDesignSystem.typography.body)
+                UpdateAction(stringResource(R.string.updater_download), viewModel::startDownload, primaryModifier, icon = Icons.Rounded.Download)
+                if (!value.isIgnored) UpdateAction(stringResource(R.string.updater_silence), viewModel::ignoreVersion, Modifier.fillMaxWidth(), primary = false, icon = Icons.Rounded.NotificationsOff)
+            }
+            is UpdateUiState.Downloading -> {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (value.totalBytes > 0) {
+                        LinearProgressIndicator(progress = { value.progressPercent / 100f }, modifier = Modifier.fillMaxWidth(), color = colors.primary)
+                    } else LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.primary)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(if (value.totalBytes > 0) "${value.progressPercent}%" else stringResource(R.string.updater_download), color = colors.textPrimary)
+                        Text(if (value.totalBytes > 0) stringResource(R.string.updater_download_bytes,
+                            Formatter.formatShortFileSize(context, value.bytesDownloaded), Formatter.formatShortFileSize(context, value.totalBytes))
+                            else Formatter.formatShortFileSize(context, value.bytesDownloaded), color = colors.textSecondary)
+                    }
+                }
+                UpdateAction(stringResource(R.string.updater_cancel), viewModel::cancelDownload, primaryModifier, primary = false)
+            }
+            is UpdateUiState.ReadyToInstall -> UpdateAction(stringResource(R.string.updater_install), viewModel::installUpdate, primaryModifier, icon = Icons.Rounded.SystemUpdate)
+            is UpdateUiState.PermissionRequired -> UpdateAction(stringResource(R.string.updater_allow_install), viewModel::openSettingsForPermission, primaryModifier, icon = Icons.Rounded.Settings)
+            is UpdateUiState.InstallerOpened -> UpdateAction(stringResource(R.string.updater_reopen_installer), viewModel::installUpdate, primaryModifier, icon = Icons.Rounded.SystemUpdate)
+            is UpdateUiState.Error -> UpdateAction(stringResource(R.string.updater_retry), viewModel::retry, primaryModifier, icon = Icons.Rounded.Refresh)
+        }
+    }
     PortalBackground {
         Column(Modifier.fillMaxSize()) {
             AppHeader(title = stringResource(R.string.app_updates_title), subtitle = stringResource(R.string.updater_header_desc))
-            Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 20.dp), contentAlignment = Alignment.TopCenter) {
-                Column(Modifier.widthIn(max = 720.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (hasError) {
+                // This explanation is outside the scroller and remains readable while
+                // navigating actions/notes below with a remote, keyboard or touch.
+                Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), contentAlignment = Alignment.TopCenter) {
                     UpdateStatusCard(title, description, icon,
-                        accent = when (state) {
-                            is UpdateUiState.Error -> colors.error
-                            is UpdateUiState.UpToDate -> colors.success
-                            is UpdateUiState.PermissionRequired -> colors.warning
-                            else -> colors.primary
+                        modifier = Modifier.widthIn(max = 720.dp)
+                            .border(2.dp, if (errorFocused) colors.primary else androidx.compose.ui.graphics.Color.Transparent,
+                                AppDesignSystem.shapes.extraLarge)
+                            .focusRequester(errorFocus)
+                            .focusProperties { down = summaryFocus }
+                            .onFocusChanged { errorFocused = it.isFocused }
+                            .semantics(mergeDescendants = true) { }
+                            .focusable(), accent = colors.error)
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState).padding(horizontal = 24.dp, vertical = 20.dp), contentAlignment = Alignment.TopCenter) {
+                Column(Modifier.widthIn(max = 720.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    if (hasError) {
+                        Surface(shape = AppDesignSystem.shapes.extraLarge, color = colors.surface) {
+                            Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp),
+                                content = statusContent)
                         }
-                    ) {
-                        UpdateVersionSummary(viewModel.currentVersionName, info)
-                        if (info != null) {
-                            ReleaseMetadata(info)
-                            UpdateStages(when (state) {
-                                is UpdateUiState.Verifying -> 1
-                                is UpdateUiState.ReadyToInstall, is UpdateUiState.PermissionRequired,
-                                is UpdateUiState.OpeningInstaller, is UpdateUiState.InstallerOpened -> 2
-                                else -> 0
-                            })
-                        }
-                        when (val value = state) {
-                            UpdateUiState.Checking, is UpdateUiState.Verifying, is UpdateUiState.OpeningInstaller -> {
-                                LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.primary)
-                            }
-                            is UpdateUiState.DebugBuild -> Unit
-                            is UpdateUiState.UpToDate -> UpdateAction(stringResource(R.string.updater_check), { viewModel.checkForUpdates(true) }, primaryModifier, icon = Icons.Rounded.Refresh)
-                            is UpdateUiState.UpdateAvailable -> {
-                                if (value.isIgnored) Text(stringResource(R.string.updater_ignored_desc), color = colors.textSecondary, style = AppDesignSystem.typography.body)
-                                UpdateAction(stringResource(R.string.updater_download), viewModel::startDownload, primaryModifier, icon = Icons.Rounded.Download)
-                                if (!value.isIgnored) UpdateAction(stringResource(R.string.updater_silence), viewModel::ignoreVersion, Modifier.fillMaxWidth(), primary = false, icon = Icons.Rounded.NotificationsOff)
-                            }
-                            is UpdateUiState.Downloading -> {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (value.totalBytes > 0) {
-                                        LinearProgressIndicator(progress = { value.progressPercent / 100f }, modifier = Modifier.fillMaxWidth(), color = colors.primary)
-                                    } else LinearProgressIndicator(Modifier.fillMaxWidth(), color = colors.primary)
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text(if (value.totalBytes > 0) "${value.progressPercent}%" else stringResource(R.string.updater_download), color = colors.textPrimary)
-                                        Text(if (value.totalBytes > 0) stringResource(R.string.updater_download_bytes,
-                                            Formatter.formatShortFileSize(context, value.bytesDownloaded), Formatter.formatShortFileSize(context, value.totalBytes))
-                                            else Formatter.formatShortFileSize(context, value.bytesDownloaded), color = colors.textSecondary)
-                                    }
-                                }
-                                UpdateAction(stringResource(R.string.updater_cancel), viewModel::cancelDownload, primaryModifier, primary = false)
-                            }
-                            is UpdateUiState.ReadyToInstall -> UpdateAction(stringResource(R.string.updater_install), viewModel::installUpdate, primaryModifier, icon = Icons.Rounded.SystemUpdate)
-                            is UpdateUiState.PermissionRequired -> UpdateAction(stringResource(R.string.updater_allow_install), viewModel::openSettingsForPermission, primaryModifier, icon = Icons.Rounded.Settings)
-                            is UpdateUiState.InstallerOpened -> UpdateAction(stringResource(R.string.updater_reopen_installer), viewModel::installUpdate, primaryModifier, icon = Icons.Rounded.SystemUpdate)
-                            is UpdateUiState.Error -> UpdateAction(stringResource(R.string.updater_retry), viewModel::retry, primaryModifier, icon = Icons.Rounded.Refresh)
-                        }
+                    } else {
+                        UpdateStatusCard(title, description, icon,
+                            accent = when (state) {
+                                is UpdateUiState.UpToDate -> colors.success
+                                is UpdateUiState.PermissionRequired -> colors.warning
+                                else -> colors.primary
+                            }, content = statusContent)
                     }
                     if (info != null && state !is UpdateUiState.Downloading && state !is UpdateUiState.Verifying && state !is UpdateUiState.OpeningInstaller) {
                         UpdateReleaseNotes(info)

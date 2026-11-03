@@ -76,3 +76,11 @@ Verificações: assembleDebug Android, compileReleaseKotlin Android, createDistr
 WindowsLivePlayer associa mídia, polling e comandos pendentes à geração do pedido, reduz JNI em estados terminais e mantém operações nativas fora dos updates repetíveis do StateFlow. DesktopWatchHistory elimina a revalidação completa para amostras idênticas. No Android, SyncWatchProgressUseCase serializa gravações, respeita cancelamento e só avança o controle de frequência após sucesso; chamadas finais forçadas continuam disponíveis. O ticker atualiza a interface antes de suspender para persistir; o salvamento final captura tipo/série antes do IO.
 
 Essas mudanças preservam buffers e motores atuais. Compilação/lint/assinatura não medem estabilidade de uma conexão IPTV nem desempenho em aparelho. Nenhuma release instalada deve ser usada em testes de desenvolvimento.
+
+## Atualizador Android — v1.24.1
+
+PackageInstallerHelper separa assinatura diferente de dados indisponíveis. Certificados atuais não vazios e idênticos são aceitos diretamente; troca de chave exige histórico moderno comprovado. Somente ausência de dados modernos permite reler GET_SIGNATURES para ambos os pacotes, com igualdade exata não vazia e conferência da identidade/versão do arquivo. A leitura compatível nunca substitui uma divergência moderna confirmada. Ausência nas duas APIs permanece bloqueada; SHA-256, pacote, versão e instalador do sistema preservados.
+
+UpdatesScreen mantém falhas fora da área rolável. O foco inicial da falha fica na explicação; D-pad para baixo alcança o resumo e a ação, e para cima na ação retorna ao resumo e ao topo. Emissões de progresso não reiniciam o foco. Não há botão visual de voltar/Home nem alteração nos painéis Windows compartilhados.
+
+O atualizador que decide abrir a instalação é o da versão atualmente instalada. Em um aparelho bloqueado pela versão anterior, a correção requer instalar manualmente o APK oficial compatível sobre a instalação existente. Não gerar chave nova, trocar pacote ou remover dados para contornar o erro.

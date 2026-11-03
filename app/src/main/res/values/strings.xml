@@ -536,6 +536,7 @@
     <string name="updater_wrong_version">O APK recebido não corresponde à versão anunciada. Tente baixar novamente.</string>
     <string name="updater_old_apk">Este APK não é mais recente que o aplicativo instalado.</string>
     <string name="updater_wrong_signature">A assinatura deste APK não corresponde ao aplicativo instalado.</string>
+    <string name="updater_signature_unavailable">Não foi possível ler os certificados de assinatura neste aparelho. A instalação não foi iniciada. Você pode abrir a publicação no GitHub para obter o APK oficial.</string>
     <string name="updater_installer_failed">Não foi possível abrir o instalador do Android. Tente novamente.</string>
     <string name="updater_permission_failed">Não foi possível abrir a permissão. Nas configurações do Android, permita que o Squi TV instale aplicativos.</string>
     <string name="updater_show_less">Mostrar menos</string>
