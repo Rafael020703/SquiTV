@@ -20,64 +20,21 @@ import rsv.squitv.R
 import rsv.squitv.core.ui.theme.*
 import rsv.squitv.data.model.EpgProgramme
 import java.util.Locale
+import rsv.squitv.core.ui.components.player.PlayerLiveBadge
+import rsv.squitv.core.ui.components.player.PlayerProgrammeProgress
 
 @Composable
 fun LiveBadge() {
     val tokens = AppDesignSystem
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "alpha"
-    )
-    Surface(
-        color = tokens.colors.error.copy(alpha = alpha), 
-        shape = tokens.shapes.small
-    ) {
-        Text(
-            text = stringResource(R.string.live_badge).uppercase(),
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            style = tokens.typography.caption,
-            fontWeight = FontWeight.Black,
-            color = Color.White,
-            letterSpacing = 1.sp
-        )
-    }
+    PlayerLiveBadge(stringResource(R.string.live_badge), tokens.colors.error, tokens.typography.caption)
 }
 
 @Composable
 fun EpgMiniProgress(program: EpgProgramme, isTv: Boolean) {
     val tokens = AppDesignSystem
-    Column(modifier = Modifier.fillMaxWidth()) {
-        LinearProgressIndicator(
-            progress = { calculateProgramProgress(program) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(if (isTv) 6.dp else 4.dp)
-                .clip(CircleShape),
-            color = tokens.colors.primary,
-            trackColor = tokens.colors.surfaceVariant.copy(alpha = 0.1f)
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = tokens.spacing.tiny), 
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-             Text(
-                 text = formatProgramTime(program.start),
-                 style = tokens.typography.caption, 
-                 color = tokens.colors.textSecondary.copy(alpha = 0.5f)
-             )
-             Text(
-                 text = formatProgramTime(program.stop),
-                 style = tokens.typography.caption, 
-                 color = tokens.colors.textSecondary.copy(alpha = 0.5f)
-             )
-        }
-    }
+    PlayerProgrammeProgress(calculateProgramProgress(program), formatProgramTime(program.start),
+        formatProgramTime(program.stop), isTv, tokens.colors.primary, tokens.colors.surfaceVariant,
+        tokens.colors.textSecondary, tokens.typography.caption)
 }
 
 

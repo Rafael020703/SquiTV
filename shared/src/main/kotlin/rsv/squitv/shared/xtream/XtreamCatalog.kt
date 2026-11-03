@@ -16,7 +16,11 @@ data class ServerAccount(
     val serverTime: String?, val outputFormats: List<String>
 )
 data class LiveCategory(val id: String, val name: String)
-data class LiveChannel(val id: Int, val name: String, val categoryId: String?, val iconUrl: String?, val epgId: String?)
+data class LiveChannel(val id: Int, val name: String, val categoryId: String?, val iconUrl: String?, val epgId: String?,
+    val versions: List<LiveChannel> = emptyList(), val groupKey: String? = null) {
+    val stableKey: String get() = groupKey ?: "LIVE:$id"
+    fun containsStream(streamId: Int) = id == streamId || versions.any { it.id == streamId }
+}
 class ServerAccountException(message: String) : Exception(message)
 
 object ServerAddress {

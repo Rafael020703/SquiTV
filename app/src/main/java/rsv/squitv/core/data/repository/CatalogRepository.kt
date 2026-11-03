@@ -524,14 +524,6 @@ class CatalogRepository @Inject constructor(
         customOrder: List<String>? = null,
         hiddenCategories: Set<String>? = null
     ): List<IptvCategoryEntity> {
-        var result = categories
-        if (!hiddenCategories.isNullOrEmpty()) {
-            result = result.filter { it.id !in hiddenCategories }
-        }
-        if (!customOrder.isNullOrEmpty()) {
-            val orderMap = customOrder.withIndex().associate { it.value to it.index }
-            result = result.sortedWith(compareBy { orderMap[it.id] ?: Int.MAX_VALUE })
-        }
-        return result
+        return rsv.squitv.shared.catalog.CategoryCustomization.apply(categories, customOrder, hiddenCategories) { it.id }
     }
 }

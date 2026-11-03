@@ -16,9 +16,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /** SearchScreen Android: title input, four content filters and a poster/logo grid. */
@@ -30,8 +28,7 @@ internal fun DesktopSearchScreen(controller: DesktopController) {
     val inputFocus = remember { FocusRequester() }
     var lastFocused by rememberSaveable { mutableStateOf<String?>(null) }
     var restoringFocus by remember { mutableStateOf(lastFocused != null) }
-    val images = remember { ChannelLogos(384, 2 * 1024 * 1024) }
-    DisposableEffect(images) { onDispose { images.close() } }
+    val images = rememberDesktopImages(DesktopImageKind.POSTERS)
     LaunchedEffect(Unit) {
         search.resume()
         withFrameNanos { }
@@ -40,6 +37,20 @@ internal fun DesktopSearchScreen(controller: DesktopController) {
     LaunchedEffect(state.query, state.type) {
         // On re-entry retain the saved grid; only changed input starts from the first result.
         if (lastFocused == null) grid.scrollToItem(0)
+    }
+    LaunchedEffect(state.loading, state.results, restoringFocus) {
+        if (restoringFocus && !state.loading) {
+            val index = state.results.indexOfFirst { it.key == lastFocused }
+            if (index < 0) {
+                // Grouping may replace an individual provider ID with a stable family key.
+                lastFocused = null
+                restoringFocus = false
+                withFrameNanos { }
+                inputFocus.requestFocus()
+            } else if (grid.layoutInfo.visibleItemsInfo.none { it.index == index }) {
+                grid.scrollToItem(index)
+            }
+        }
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         DesktopPageHeading("BUSCAR", "Canais, filmes e séries")
@@ -99,7 +110,7 @@ internal fun DesktopSearchScreen(controller: DesktopController) {
                         }
                         Column {
                             val open = { lastFocused = item.key; controller.openSearchResult(item) }
-                            if (item.channel != null) SearchChannelCard(item, images, modifier, open)
+                            if (item.channel != null) DesktopChannelCard(item.channel, images, modifier, open)
                             else item.catalogItem?.let { CatalogPoster(it, images, modifier, open) }
                             if (state.type == DesktopSearchType.ALL) Text(item.type.label,
                                 Modifier.fillMaxWidth().padding(top = 4.dp), textAlign = TextAlign.Center,
@@ -111,23 +122,6 @@ internal fun DesktopSearchScreen(controller: DesktopController) {
                     VerticalScrollbar(rememberScrollbarAdapter(grid), Modifier.align(Alignment.CenterEnd),
                         style = desktopScrollbarStyle())
             }
-        }
-    }
-}
-
-@Composable
-private fun SearchChannelCard(item: DesktopSearchItem, images: ChannelLogos, modifier: Modifier, open: () -> Unit) {
-    val interaction = rememberVisualInteraction()
-    Surface(onClick = open, interactionSource = interaction.source, modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp), color = palette.surface,
-        border = if (interaction.emphasized) BorderStroke(2.dp, palette.primary) else BorderStroke(1.dp, Color.White.copy(alpha = .06f))) {
-        Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
-                ChannelLogo(item.channel?.iconUrl, images, Modifier.fillMaxSize().padding(16.dp))
-            }
-            Text(item.name, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
-                color = if (interaction.emphasized) palette.primary else palette.onSurface)
         }
     }
 }

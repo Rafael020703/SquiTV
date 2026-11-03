@@ -1,6 +1,5 @@
 ﻿package rsv.squitv.core.ui.components.cards
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,7 +16,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import rsv.squitv.core.ui.theme.*
 import rsv.squitv.domain.model.IptvItem
@@ -40,9 +38,8 @@ fun ChannelCard(
     val iconSize = responsive.dp(16.dp)
 
     val highestQuality = remember(item.versions, item.name) {
-        val quality = item.versions.mapNotNull { it.resolution }.maxByOrNull { it.rank }
+        item.versions.mapNotNull { it.resolution }.maxByOrNull { it.rank }
             ?: rsv.squitv.domain.model.LiveChannelGrouping.parse(item.name).resolution
-        if (quality == rsv.squitv.domain.model.ChannelQuality.UHD) "4K" else quality?.name
     }
 
     Column(
@@ -80,29 +77,15 @@ fun ChannelCard(
                     )
             )
 
-            if (!highestQuality.isNullOrEmpty() && highestQuality != "AUTO") {
-                val qualityColor = when (highestQuality) {
-                    "4K" -> Color(0xFFFFD700)
-                    "FHD", "1080P" -> tokens.colors.primary
-                    "HD", "720P" -> tokens.colors.success
-                    else -> tokens.colors.textSecondary
-                }
-                Surface(
-                    color = Color.Black.copy(alpha = 0.6f),
-                    shape = tokens.shapes.small,
-                    border = BorderStroke(1.dp, qualityColor.copy(alpha = 0.5f)),
-                    modifier = Modifier.align(Alignment.TopStart).padding(cardPadding)
-                ) {
-                    Text(
-                        text = highestQuality,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        style = tokens.typography.caption,
-                        fontWeight = FontWeight.Black,
-                        color = qualityColor,
-                        fontSize = 9.sp
-                    )
-                }
-            }
+            ChannelQualityBadge(
+                quality = highestQuality,
+                primaryColor = tokens.colors.primary,
+                secondaryColor = tokens.colors.textSecondary,
+                successColor = tokens.colors.success,
+                shape = tokens.shapes.small,
+                textStyle = tokens.typography.caption,
+                modifier = Modifier.align(Alignment.TopStart).padding(cardPadding)
+            )
 
             if (onToggleFavorite != null) {
                 CardFavoriteButton(

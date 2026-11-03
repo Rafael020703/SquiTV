@@ -1,9 +1,6 @@
 ﻿package rsv.squitv.core.ui.components.cards
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -12,13 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import rsv.squitv.core.ui.theme.*
@@ -26,7 +17,6 @@ import rsv.squitv.domain.model.IptvItem
 import rsv.squitv.core.ui.components.common.adaptiveFocus
 import rsv.squitv.core.ui.components.badges.RatingBadge
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PosterCard(
     item: IptvItem,
@@ -44,42 +34,21 @@ fun PosterCard(
     val badgePadding = responsive.dp(tokens.spacing.small)
     val iconSize = responsive.dp(24.dp)
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .adaptiveFocus(
-                shape = tokens.shapes.card,
-                onFocus = { isFocused = it }
-            )
+    PosterCardContent(
+        name = item.name, focused = isFocused, primary = tokens.colors.primary,
+        text = tokens.colors.textPrimary, background = tokens.colors.surfaceVariant.copy(alpha = 0.1f),
+        titleStyle = tokens.typography.caption, titleSize = fontSize, shape = tokens.shapes.card,
+        aspectRatio = tokens.dimensions.posterAspectRatio, spacing = cardSpacing,
+        titlePadding = responsive.dp(tokens.spacing.tiny), progressHeight = responsive.dp(tokens.spacing.micro),
+        modifier = modifier.fillMaxWidth()
+            .adaptiveFocus(shape = tokens.shapes.card, onFocus = { isFocused = it })
             .clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(tokens.dimensions.posterAspectRatio)
-                .clip(tokens.shapes.card)
-                .background(tokens.colors.surfaceVariant.copy(alpha = 0.1f))
-        ) {
-            AsyncImage(
-                model = item.icon,
-                contentDescription = item.name,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-
-            // Dynamic Gradient for better readability of metadata if added
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.4f)),
-                            startY = 0.7f
-                        )
-                    )
-            )
-
+        progress = progress ?: item.progress,
+        image = { imageModifier ->
+            AsyncImage(model = item.icon, contentDescription = item.name, modifier = imageModifier,
+                contentScale = ContentScale.Crop)
+        },
+        badges = {
             if (onToggleFavorite != null) {
                 CardFavoriteButton(
                     isFavorite = item.isFavorite,
@@ -97,34 +66,9 @@ fun PosterCard(
                 }
             }
 
-            val rating = item.rating
-            if (!rating.isNullOrBlank() && rating != "0") {
-                RatingBadge(
-                    rating = rating,
-                    modifier = Modifier.align(Alignment.TopStart).padding(badgePadding)
-                )
-            }
-
-            val displayProgress = progress ?: item.progress
-            if (displayProgress != null && displayProgress > 0.01f) {
-                LinearProgressIndicator(
-                    progress = { displayProgress.coerceIn(0f, 1f) },
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(responsive.dp(tokens.spacing.micro)),
-                    color = tokens.colors.primary,
-                    trackColor = Color.White.copy(alpha = 0.2f)
-                )
+            item.rating?.takeIf { it.isNotBlank() && it != "0" }?.let { rating ->
+                RatingBadge(rating, Modifier.align(Alignment.TopStart).padding(badgePadding))
             }
         }
-        Spacer(modifier = Modifier.height(cardSpacing))
-        Text(
-            text = item.name.uppercase(),
-            color = if (isFocused) tokens.colors.primary else tokens.colors.textPrimary,
-            style = tokens.typography.caption.copy(fontSize = fontSize),
-            fontWeight = if (isFocused) FontWeight.Black else FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = responsive.dp(tokens.spacing.tiny))
-        )
-    }
+    )
 }

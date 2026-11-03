@@ -854,16 +854,8 @@ class SettingsRepository @Inject constructor(
         context.dataStore.edit { preferences ->
             val orders = readOrderMap(preferences)
             val key = "${accountKey.lowercase().trim()}_${contentType.lowercase().trim()}"
-            val available = availableIds.toSet()
-            val previous = orders[key].orEmpty()
-            val ordered = (previous.filter { it in available } + availableIds).distinct().toMutableList()
-            val from = ordered.indexOf(categoryId)
-            if (from < 0) return@edit
-            val to = (position ?: (from + offset)).coerceIn(0, ordered.lastIndex)
-            if (to == from) return@edit
-            ordered.add(to, ordered.removeAt(from))
-            // Retain temporarily missing categories so a later sync does not erase their organisation.
-            orders[key] = ordered + previous.filter { it !in available }
+            orders[key] = rsv.squitv.shared.catalog.CategoryCustomization.move(
+                orders[key].orEmpty(), availableIds, categoryId, offset, position) ?: return@edit
             preferences[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(orders)
         }
     }

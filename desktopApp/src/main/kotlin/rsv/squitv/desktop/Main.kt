@@ -61,6 +61,10 @@ private fun runApplication() {
         DisposableEffect(updates) { onDispose { updates.close() } }
         val settings by preferences.state.collectAsState()
         val preferencesLoaded by preferences.loaded.collectAsState()
+        LaunchedEffect(preferencesLoaded, settings.groupLiveChannels, settings.preferredChannelQuality) {
+            if (preferencesLoaded) controller.configureLiveChannels(settings.groupLiveChannels,
+                rsv.squitv.domain.model.ChannelQuality.fromPreference(settings.preferredChannelQuality))
+        }
         val windowState = rememberWindowState(placement = WindowPlacement.Fullscreen, width = 1120.dp, height = 630.dp)
         var windowModeRestored by remember { mutableStateOf(false) }
         var closing by remember { mutableStateOf(false) }
@@ -174,6 +178,19 @@ internal fun DesktopScreen(state: DesktopState, controller: DesktopController, p
     fullscreen: Boolean = false, toggleFullscreen: () -> Unit = {},
     registerPlayer: (WindowsLivePlayer?) -> Unit = {},
     registerLiveInput: (((KeyEvent) -> Boolean)?) -> Unit = {}, installUpdate: () -> Unit = {}) {
+    val images = remember(state.credentials) { DesktopImages() }
+    DisposableEffect(images) { onDispose { images.close() } }
+    CompositionLocalProvider(LocalDesktopImages provides images) {
+        DesktopScreenContent(state, controller, preferences, fullscreen, toggleFullscreen,
+            registerPlayer, registerLiveInput, installUpdate)
+    }
+}
+
+@Composable
+private fun DesktopScreenContent(state: DesktopState, controller: DesktopController, preferences: DesktopPreferencesStore,
+    fullscreen: Boolean, toggleFullscreen: () -> Unit,
+    registerPlayer: (WindowsLivePlayer?) -> Unit,
+    registerLiveInput: (((KeyEvent) -> Boolean)?) -> Unit, installUpdate: () -> Unit) {
     val screens = rememberSaveableStateHolder()
     val catalog by controller.catalog.state.collectAsState()
     var savedDetailKey by remember { mutableStateOf<String?>(null) }
@@ -210,9 +227,9 @@ internal fun DesktopScreen(state: DesktopState, controller: DesktopController, p
         } else if (state.account == null) {
             LoginForm(state, controller, Modifier.weight(1f))
         } else if (state.page == DesktopPage.DASHBOARD) {
-            screens.SaveableStateProvider("dashboard") { Dashboard(state, controller, Modifier.weight(1f)) }
+            screens.SaveableStateProvider("dashboard") { Dashboard(state, controller, preferences, Modifier.weight(1f)) }
         } else if (state.page == DesktopPage.LIVE) {
-            screens.SaveableStateProvider("live") { LiveCatalogScreen(state, controller, Modifier.weight(1f)) }
+            screens.SaveableStateProvider("live") { LiveCatalogScreen(state, controller, preferences, Modifier.weight(1f)) }
         } else if (state.page == DesktopPage.UPDATES) {
             DesktopUpdatesScreen(installUpdate)
         } else if (state.page == DesktopPage.SETTINGS) {
@@ -225,7 +242,7 @@ internal fun DesktopScreen(state: DesktopState, controller: DesktopController, p
         } else if (state.page == DesktopPage.SEARCH) {
             screens.SaveableStateProvider("search") { DesktopSearchScreen(controller) }
         } else {
-            screens.SaveableStateProvider(catalog.kind.name) { OnDemandCatalogScreen(catalog, controller) }
+            screens.SaveableStateProvider(catalog.kind.name) { OnDemandCatalogScreen(catalog, controller, preferences) }
         }
     }
 }

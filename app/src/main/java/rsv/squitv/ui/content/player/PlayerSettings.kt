@@ -34,8 +34,11 @@ import rsv.squitv.core.ui.components.settings.channelQualityLabel
 import rsv.squitv.core.ui.theme.AppDesignSystem
 import rsv.squitv.domain.model.ChannelVersion
 import java.util.Locale
+import rsv.squitv.core.ui.components.player.PlayerSettingsTab as SettingsTab
+import rsv.squitv.core.ui.components.player.PlayerSettingsPanel
+import rsv.squitv.core.ui.components.player.PlayerSettingsOption
 
-private data class SettingsTab(val id: Int, val title: String)
+
 
 @Composable
 fun PlayerSettingsDialog(
@@ -67,81 +70,17 @@ fun PlayerSettingsDialog(
     val openingTab = initialTab.takeIf { id -> tabs.any { it.id == id } } ?: tabs.first().id
     var selectedTab by remember(openingTab) { mutableStateOf(openingTab) }
     val initialFocus = remember { FocusRequester() }
-    val tabsState = rememberLazyListState(initialFirstVisibleItemIndex = tabs.indexOfFirst { it.id == openingTab })
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        BoxWithConstraints(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
-            val wide = maxWidth >= 600.dp && !speedOnly
-            Surface(
-                modifier = Modifier.widthIn(max = if (speedOnly) 420.dp else 760.dp)
-                    .fillMaxWidth().fillMaxHeight(0.9f),
-                shape = RoundedCornerShape(20.dp), color = colors.surface,
-                border = BorderStroke(1.dp, colors.border.copy(alpha = 0.5f))
-            ) {
-                Column(Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(if (speedOnly) "Velocidade" else "Configurações do player",
-                                style = MaterialTheme.typography.titleLarge, color = colors.textPrimary,
-                                fontWeight = FontWeight.SemiBold)
-                            Text("Ajustes para a reprodução", style = MaterialTheme.typography.bodySmall,
-                                color = colors.textSecondary)
-                        }
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.Rounded.Close, "Fechar configurações", tint = colors.textSecondary)
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    HorizontalDivider(color = colors.border.copy(alpha = 0.4f))
-                    Spacer(Modifier.height(12.dp))
-                    val tabContent: @Composable (SettingsTab) -> Unit = { tab ->
-                        var focused by remember { mutableStateOf(false) }
-                        val selected = selectedTab == tab.id
-                        OutlinedButton(
-                            onClick = { selectedTab = tab.id },
-                            modifier = (if (wide || speedOnly) Modifier.fillMaxWidth() else Modifier)
-                                .then(if (tab.id == openingTab) Modifier.focusRequester(initialFocus) else Modifier)
-                                .onFocusChanged { focused = it.isFocused },
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = if (selected || focused) colors.primary.copy(alpha = 0.14f) else Color.Transparent,
-                                contentColor = if (selected || focused) colors.primary else colors.textSecondary),
-                            border = BorderStroke(if (focused) 2.dp else 1.dp,
-                                if (selected || focused) colors.primary else colors.border)
-                        ) { Text(tab.title, style = MaterialTheme.typography.labelLarge) }
-                    }
-                    val options: @Composable () -> Unit = {
-                        key(selectedTab) {
-                            PlayerSettingsOptions(selectedTab, tracks, trackSelectionParameters, sleepTimer,
-                                currentSpeed, resizeMode, groupChannels, versions, selectedVersionId,
-                                onSelectTrack, onClearOverride, onSetSleepTimer, onSetSpeed,
-                                onToggleResizeMode, onGroupingChanged, onVersionSelected,
-                                if (speedOnly) initialFocus else null)
-                        }
-                    }
-                    if (wide) {
-                        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                            LazyColumn(Modifier.width(164.dp), state = tabsState,
-                                verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(tabs, key = { it.id }) { tabContent(it) }
-                            }
-                            VerticalDivider(color = colors.border.copy(alpha = 0.4f))
-                            Box(Modifier.weight(1f)) { options() }
-                        }
-                    } else {
-                        if (!speedOnly) {
-                            LazyRow(state = tabsState, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                items(tabs, key = { it.id }) { tabContent(it) }
-                            }
-                            Spacer(Modifier.height(12.dp))
-                        }
-                        Box(Modifier.weight(1f)) { options() }
-                    }
-                }
+        PlayerSettingsPanel(tabs, selectedTab, openingTab, { selectedTab = it }, onDismiss, initialFocus,
+            colors.primary, colors.surface, colors.textPrimary, colors.textSecondary, colors.border,
+            modifier = Modifier.fillMaxSize().padding(16.dp), speedOnly = speedOnly, heightFraction = .9f) {
+            key(selectedTab) {
+                PlayerSettingsOptions(selectedTab, tracks, trackSelectionParameters, sleepTimer,
+                    currentSpeed, resizeMode, groupChannels, versions, selectedVersionId,
+                    onSelectTrack, onClearOverride, onSetSleepTimer, onSetSpeed,
+                    onToggleResizeMode, onGroupingChanged, onVersionSelected,
+                    if (speedOnly) initialFocus else null)
             }
-        }
-        LaunchedEffect(Unit) {
-            withFrameNanos { }
-            initialFocus.requestFocus()
         }
     }
 }
@@ -261,29 +200,8 @@ fun TvOptionRowItem(
     modifier: Modifier = Modifier, enabled: Boolean = true, action: Boolean = false, onClick: () -> Unit
 ) {
     val colors = AppDesignSystem.colors
-    var focused by remember { mutableStateOf(false) }
-    Surface(
-        modifier = modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }
-            .selectable(selected = isSelected, enabled = enabled,
-                role = if (action) Role.Button else Role.RadioButton, onClick = onClick),
-        shape = RoundedCornerShape(10.dp),
-        color = if (focused) colors.primary.copy(alpha = 0.2f)
-            else if (isSelected) colors.primary.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.035f),
-        border = BorderStroke(1.dp, if (focused) colors.primary else Color.Transparent)
-    ) {
-        Row(Modifier.heightIn(min = 52.dp).padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = colors.textPrimary.copy(alpha = if (enabled) 1f else 0.45f))
-                if (!sublabel.isNullOrBlank()) Text(sublabel,
-                    style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
-            }
-            if (isSelected) Icon(Icons.Rounded.Check, "Selecionado",
-                tint = colors.primary, modifier = Modifier.size(20.dp))
-        }
-    }
+    PlayerSettingsOption(label, sublabel, isSelected, colors.primary, colors.textPrimary,
+        colors.textSecondary, modifier, enabled, action, onClick)
 }
 
 @Composable

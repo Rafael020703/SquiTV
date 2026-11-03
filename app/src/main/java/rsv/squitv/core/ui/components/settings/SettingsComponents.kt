@@ -1,10 +1,8 @@
 ﻿package rsv.squitv.core.ui.components.settings
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.*
@@ -16,7 +14,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import rsv.squitv.core.ui.components.common.adaptiveFocus
@@ -31,68 +28,33 @@ fun SettingsGridCard(
     isDestructive: Boolean = false
 ) {
     val tokens = AppDesignSystem
-    val responsive = tokens.responsive
     var isFocused by remember { mutableStateOf(false) }
     val baseColor = if (isDestructive) tokens.colors.error else tokens.colors.primary
 
-    val cardHeight = responsive.dp(120.dp).coerceAtLeast(102.dp)
-    val iconSize = responsive.dp(32.dp).coerceAtLeast(26.dp)
-    val fontSize = responsive.sp(11.sp)
-
-    Surface(
+    CommonSettingsGridCard(
+        label = label,
+        icon = icon,
+        focused = isFocused,
+        baseColor = baseColor,
+        surfaceColor = Color(0xFF0D1322).copy(alpha = 0.82f),
+        textColor = tokens.colors.textPrimary,
+        labelStyle = tokens.typography.label,
+        cardHeight = tokens.responsive.dp(120.dp).coerceAtLeast(102.dp),
+        iconSize = tokens.responsive.dp(32.dp).coerceAtLeast(26.dp),
+        fontSize = tokens.responsive.sp(11.sp),
+        shape = tokens.shapes.extraLarge,
+        borderColor = tokens.colors.border.copy(alpha = .22f),
+        focusedBorder = false,
+        idleIconBackground = tokens.colors.primary.copy(alpha = .08f),
         modifier = modifier
-            .fillMaxWidth()
-            .height(cardHeight)
             .adaptiveFocus(
                 shape = tokens.shapes.extraLarge,
                 glowColor = baseColor,
                 focusedScale = 1.05f,
                 onFocus = { isFocused = it }
-            )
-            .clickable { onClick() },
-        color = if (isFocused) baseColor.copy(alpha = 0.18f) else Color(0xFF0D1322).copy(alpha = 0.82f),
-        shape = tokens.shapes.extraLarge,
-        border = if (!isFocused) BorderStroke(1.dp, tokens.colors.border.copy(alpha = 0.22f)) else null,
-        shadowElevation = 0.dp
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 10.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(iconSize + 16.dp)
-                    .background(
-                        if (isFocused) baseColor.copy(alpha = 0.25f) else tokens.colors.primary.copy(alpha = 0.08f),
-                        CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(iconSize),
-                    tint = if (isFocused) baseColor else tokens.colors.textPrimary
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = label.uppercase(),
-                style = tokens.typography.label.copy(fontSize = fontSize),
-                fontWeight = FontWeight.Black,
-                color = if (isFocused) baseColor else tokens.colors.textPrimary,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                letterSpacing = 1.sp
-            )
-        }
-    }
+            ),
+        onClick = onClick
+    )
 }
 
 @Composable

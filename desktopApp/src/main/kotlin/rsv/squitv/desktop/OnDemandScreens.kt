@@ -4,6 +4,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -13,45 +14,111 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.*
+import rsv.squitv.core.ui.components.player.*
 import rsv.squitv.shared.xtream.OnDemandPlayback
 import rsv.squitv.shared.brand.AppBrand
+import rsv.squitv.ui.content.components.rememberContentGridState
+import rsv.squitv.core.ui.components.common.PageHeadingText
+import rsv.squitv.shared.catalog.CategoryCustomization
 import java.text.Collator
 import java.util.Locale
 
 /** Android MoviesScreen/SeriesScreen layout: header, provider categories, poster grid. */
 @Composable
-internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopController) {
+internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopController, store: DesktopPreferencesStore) {
     val browse = state.current
     val kind = state.kind
+    val preferences by store.state.collectAsState()
+    val preferencesLoaded by store.loaded.collectAsState()
+    val preferencesError by store.error.collectAsState()
+    val account = controller.state.value.credentials
+    val accountScope = remember(account) { liveCategoryScope(account).orEmpty() }
     var search by rememberSaveable(kind, browse.category?.id) { mutableStateOf("") }
     var alphabetical by rememberSaveable(kind) { mutableStateOf(false) }
-    val grid = rememberLazyGridState()
+    var editingSearch by remember { mutableStateOf(false) }
     val sidebar = androidx.compose.foundation.lazy.rememberLazyListState()
-    val images = remember { ChannelLogos(384, 2 * 1024 * 1024) }
-    DisposableEffect(images) { onDispose { images.close() } }
-    val items = remember(browse.items, search, alphabetical) {
-        val filtered = if (search.isBlank()) browse.items else browse.items.filter { it.name.contains(search.trim(), true) }
-        if (!alphabetical) filtered else {
-            val collator = Collator.getInstance(Locale.forLanguageTag("pt-BR"))
-            filtered.sortedWith { a, b -> collator.compare(a.name, b.name) }
+    val images = rememberDesktopImages(DesktopImageKind.POSTERS)
+    val hidden = preferences.hiddenCategories(accountScope, kind)
+    val categoryOrder = preferences.categoryOrder(accountScope, kind)
+    val categories = remember(browse.categories, hidden, categoryOrder) {
+        CategoryCustomization.apply(browse.categories, categoryOrder, hidden) { it.id }
+    }
+    val allHidden = browse.categories.isNotEmpty() && categories.isEmpty()
+    LaunchedEffect(categories, browse.category?.id, browse.categoriesLoaded, browse.loadingCategories,
+        browse.itemsLoaded, browse.loading, browse.error, preferencesLoaded) {
+        if (preferencesLoaded && browse.categoriesLoaded && !browse.loadingCategories && browse.error == null) {
+            val selected = categories.firstOrNull { it.id == browse.category?.id }
+            if (selected == null) {
+                if (categories.isNotEmpty()) controller.catalog.selectCategory(categories.first())
+                else if (browse.category != null) controller.catalog.clearSelection(kind)
+            } else if (!browse.itemsLoaded && !browse.loading) controller.catalog.selectCategory(selected)
+        }
+    }
+    val query = search.trim()
+    var preparedItems by remember(browse.items, query, alphabetical) { mutableStateOf<List<CatalogItem>?>(null) }
+    LaunchedEffect(browse.items, query, alphabetical) {
+        preparedItems = withContext(Dispatchers.Default) {
+            val filtered = if (query.isBlank()) browse.items else browse.items.filter {
+                ensureActive()
+                it.name.contains(query, true)
+            }
+            ensureActive()
+            if (!alphabetical) filtered else {
+                val collator = Collator.getInstance(Locale.forLanguageTag("pt-BR"))
+                filtered.sortedWith { a, b -> collator.compare(a.name, b.name) }
+            }
+        }
+    }
+    val items = if (browse.category?.id in hidden) emptyList() else preparedItems.orEmpty()
+    val gridMemory = rememberContentGridState("$accountScope/${kind.name}/${browse.category?.id}/$alphabetical/${search.trim()}")
+    val grid = gridMemory.scroll
+    val gridFocus = remember { FocusRequester() }
+    val useFocus = LocalInputModeManager.current.inputMode == InputMode.Keyboard
+    val savedIndex = remember(items, gridMemory.focusedItem) { items.indexOfFirst { it.id.toString() == gridMemory.focusedItem } }
+    val focusIndex = if (savedIndex >= 0) savedIndex else {
+        (if (gridMemory.hasInteracted) gridMemory.focusedIndex else grid.firstVisibleItemIndex)
+            .coerceIn(0, items.lastIndex.coerceAtLeast(0))
+    }
+    var entered by remember(gridMemory) { mutableStateOf(false) }
+    LaunchedEffect(gridMemory) {
+        snapshotFlow { grid.isScrollInProgress }.collect { if (it) gridMemory.hasInteracted = true }
+    }
+    LaunchedEffect(gridMemory, items.isNotEmpty()) {
+        if (!entered && items.isNotEmpty()) {
+            entered = true
+            if (useFocus && !editingSearch) {
+                withFrameNanos { }
+                if (grid.layoutInfo.visibleItemsInfo.none { it.index == focusIndex }) grid.scrollToItem(focusIndex)
+                withFrameNanos { }
+                runCatching { gridFocus.requestFocus() }
+            }
         }
     }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        DesktopPageHeading(kind.title, browse.category?.name ?: "Categorias do servidor") {
+        DesktopPageHeading(kind.title, browse.category?.takeUnless { it.id in hidden }?.name ?: "Categorias do servidor") {
             FilterChip(alphabetical, { alphabetical = !alphabetical }, { Text("A–Z") },
                 leadingIcon = { Icon(Icons.Rounded.SortByAlpha, null, Modifier.size(18.dp)) })
             OutlinedTextField(search, { search = it }, singleLine = true,
                 placeholder = { Text("Buscar nesta categoria") },
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                modifier = Modifier.width(260.dp), shape = RoundedCornerShape(16.dp))
+                modifier = Modifier.width(260.dp).onFocusChanged { editingSearch = it.hasFocus }, shape = RoundedCornerShape(16.dp))
         }
+        preferencesError?.let { StatusNotice(it, error = true) }
         Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             Surface(Modifier.width(220.dp).fillMaxHeight(), shape = RoundedCornerShape(18.dp),
                 color = palette.surface.copy(alpha = .55f), border = BorderStroke(1.dp, palette.outline.copy(alpha = .2f))) {
@@ -62,19 +129,14 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
                     Box(Modifier.weight(1f)) {
                         LazyColumn(state = sidebar, verticalArrangement = Arrangement.spacedBy(5.dp),
                             modifier = Modifier.fillMaxSize().padding(end = 8.dp)) {
-                            items(browse.categories, key = { it.id }) { category ->
+                            items(categories, key = { it.id }) { category ->
                                 val selected = browse.category?.id == category.id
-                                val interaction = rememberVisualInteraction()
-                                Surface(onClick = { controller.catalog.selectCategory(category) },
-                                    interactionSource = interaction.source, modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = if (selected || interaction.emphasized) palette.primary.copy(alpha = .12f) else Color.Transparent,
-                                    border = if (interaction.emphasized) BorderStroke(2.dp, palette.primary) else null) {
-                                    Text(category.name, Modifier.padding(14.dp), maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                        color = if (selected) palette.primary else palette.onSurface,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                        style = MaterialTheme.typography.bodySmall)
-                                }
+                                DesktopCategoryRow(
+                                    name = category.name,
+                                    selected = selected,
+
+                                    onClick = { controller.catalog.selectCategory(category) }
+                                )
                             }
                         }
                         if (sidebar.canScrollBackward || sidebar.canScrollForward)
@@ -85,7 +147,10 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
             }
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 when {
-                    browse.loading || browse.loadingCategories -> CatalogStateMessage("Carregando catálogo…", loading = true)
+                    allHidden -> CatalogStateMessage("Todas as categorias estão ocultas", actionLabel = "Mostrar todas") {
+                        store.update { it.withHiddenCategories(accountScope, kind, emptySet()) }
+                    }
+                    browse.loading || browse.loadingCategories || preparedItems == null -> CatalogStateMessage("Carregando catálogo…", loading = true)
                     browse.error != null -> CatalogStateMessage(browse.error) {
                         browse.category?.let(controller.catalog::selectCategory) ?: controller.catalog.refreshCategories()
                     }
@@ -94,7 +159,20 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
                         LazyVerticalGrid(GridCells.Adaptive(140.dp), state = grid,
                             modifier = Modifier.fillMaxSize().padding(end = 12.dp), contentPadding = PaddingValues(4.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                            items(items, key = { it.id }) { item -> CatalogPoster(item, images) { controller.catalog.openDetail(item) } }
+                            itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
+                                val modifier = (if (index == focusIndex) Modifier.focusRequester(gridFocus) else Modifier)
+                                    .onFocusChanged { focus -> if (focus.hasFocus) {
+                                        gridMemory.focusedItem = item.id.toString()
+                                        gridMemory.focusedIndex = index
+                                        gridMemory.hasInteracted = true
+                                    } }
+                                CatalogPoster(item, images, modifier) {
+                                    gridMemory.focusedItem = item.id.toString()
+                                    gridMemory.focusedIndex = index
+                                    gridMemory.hasInteracted = true
+                                    controller.catalog.openDetail(item)
+                                }
+                            }
                         }
                         if (grid.canScrollBackward || grid.canScrollForward)
                             VerticalScrollbar(rememberScrollbarAdapter(grid), Modifier.align(Alignment.CenterEnd), style = desktopScrollbarStyle())
@@ -107,19 +185,44 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
 
 @Composable
 internal fun DesktopPageHeading(title: String, subtitle: String,
-    actions: @Composable RowScope.() -> Unit = {}) {
+    actions: (@Composable RowScope.() -> Unit)? = null) {
     val drag = LocalWindowDragArea.current
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        drag(Modifier.weight(1f)) {
-            Column {
-                Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black,
-                    color = palette.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle.uppercase(Locale.ROOT), style = MaterialTheme.typography.labelSmall,
-                    color = palette.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    val heading: @Composable () -> Unit = {
+        PageHeadingText(title, subtitle, palette.primary, palette.onSurfaceVariant,
+            MaterialTheme.typography.headlineLarge, MaterialTheme.typography.labelSmall,
+            titleMaxLines = 1, subtitleMaxLines = 2)
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth < 760.dp && actions != null) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                drag(Modifier.fillMaxWidth(), heading)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp), content = actions)
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                drag(Modifier.weight(1f), heading)
+                actions?.invoke(this)
             }
         }
-        actions()
+    }
+}
+
+@Composable
+internal fun DesktopMetadataBadge(text: String) {
+    Surface(
+        color = Color.White.copy(alpha = 0.1f),
+        shape = RoundedCornerShape(6.dp)
+    ) {
+        Text(
+            text = text.uppercase(Locale.ROOT),
+            color = palette.onSurface,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 1.sp
+        )
     }
 }
 
@@ -128,25 +231,20 @@ internal fun CatalogPoster(item: CatalogItem, images: ChannelLogos, modifier: Mo
     val interaction = rememberVisualInteraction()
     Surface(onClick = open, interactionSource = interaction.source, modifier = modifier, color = Color.Transparent,
         shape = RoundedCornerShape(AppBrand.CARD_CORNER_DP.dp),
-        border = if (interaction.emphasized) BorderStroke(2.dp, palette.primary) else null) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(palette.surfaceVariant)) {
-                CatalogImage(item.cover, images, Modifier.fillMaxSize())
-                item.rating?.takeIf { it.isNotBlank() && it != "0" }?.let {
-                    Surface(Modifier.align(Alignment.TopStart).padding(6.dp), color = Color.Black.copy(alpha = .75f),
-                        shape = RoundedCornerShape(6.dp)) {
-                        Row(Modifier.padding(5.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.Star, null, Modifier.size(12.dp), tint = Color(0xFFFFAB00))
-                            Text(it, style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
+        border = if (interaction.emphasized) BorderStroke(2.dp, palette.primary) else BorderStroke(1.dp, palette.outline.copy(alpha = 0.15f))) {
+        rsv.squitv.core.ui.components.cards.PosterCardContent(
+            name = item.name, focused = interaction.emphasized, primary = palette.primary,
+            text = palette.onSurface, background = palette.surfaceVariant.copy(alpha = .1f),
+            titleStyle = MaterialTheme.typography.labelSmall, titleSize = MaterialTheme.typography.labelSmall.fontSize,
+            shape = RoundedCornerShape(AppBrand.CARD_CORNER_DP.dp), aspectRatio = 2f / 3f,
+            spacing = 8.dp, titlePadding = 4.dp, progressHeight = 2.dp,
+            image = { CatalogImage(item.cover, images, it) },
+            badges = {
+                item.rating?.takeIf { it.isNotBlank() && it != "0" }?.let { rating ->
+                    rsv.squitv.core.ui.components.cards.RatingBadgeContent(rating, MaterialTheme.typography.labelLarge,
+                        Modifier.align(Alignment.TopStart).padding(8.dp))
                 }
-            }
-            Text(item.name.uppercase(Locale.ROOT), Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp, start = 3.dp, end = 3.dp),
-                style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                color = if (interaction.emphasized) palette.primary else palette.onSurface)
-        }
+            })
     }
 }
 
@@ -160,13 +258,13 @@ internal fun CatalogImage(url: String?, images: ChannelLogos, modifier: Modifier
 }
 
 @Composable
-internal fun CatalogStateMessage(message: String, loading: Boolean = false, retry: (() -> Unit)? = null) {
+internal fun CatalogStateMessage(message: String, loading: Boolean = false, actionLabel: String = "Tentar novamente", retry: (() -> Unit)? = null) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(Modifier.widthIn(max = 400.dp).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (loading) CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
             Text(message, color = palette.onSurfaceVariant, textAlign = TextAlign.Center)
-            retry?.let { Button(it) { Text("Tentar novamente") } }
+            retry?.let { Button(it) { Text(actionLabel) } }
         }
     }
 }
@@ -174,8 +272,7 @@ internal fun CatalogStateMessage(message: String, loading: Boolean = false, retr
 /** Android details hierarchy: poster, metadata/synopsis and play; seasons with real episodes. */
 @Composable
 internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopController) {
-    val images = remember { ChannelLogos(512, 2 * 1024 * 1024) }
-    DisposableEffect(images) { onDispose { images.close() } }
+    val images = rememberDesktopImages(DesktopImageKind.DETAILS)
     val info = detail.series
     val seasons = remember(info) { info?.let(OnDemandPlayback::seasons).orEmpty() }
     var season by rememberSaveable(detail.kind, detail.item.id) { mutableStateOf<Int?>(null) }
@@ -189,6 +286,28 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
     val scroll = androidx.compose.foundation.lazy.rememberLazyListState()
     val seasonScroll = androidx.compose.foundation.lazy.rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val seasonsFocus = remember { FocusRequester() }
+    val episodesFocus = remember { FocusRequester() }
+    var focusedEpisode by rememberSaveable(detail.item.id) { mutableStateOf<String?>(null) }
+    val useFocus = LocalInputModeManager.current.inputMode == InputMode.Keyboard
+    val episodeFocusIndex = episodes.indexOfFirst { it.id == (detail.lastPlayedEpisodeId ?: focusedEpisode) }
+        .coerceAtLeast(0)
+    LaunchedEffect(seasons, selectedSeason) {
+        val index = seasons.indexOfFirst { it.first == selectedSeason }
+        if (index >= 0) {
+            withFrameNanos { }
+            if (seasonScroll.layoutInfo.visibleItemsInfo.none { it.index == index }) seasonScroll.scrollToItem(index)
+        }
+    }
+    LaunchedEffect(selectedSeason, episodes, detail.lastPlayedEpisodeId) {
+        if (!detail.loading && episodes.isNotEmpty() && useFocus) {
+            val index = episodeFocusIndex + 2 // Metadata and season heading precede episode rows.
+            withFrameNanos { }
+            if (scroll.layoutInfo.visibleItemsInfo.none { it.index == index }) scroll.scrollToItem(index)
+            withFrameNanos { }
+            runCatching { episodesFocus.requestFocus() }
+        }
+    }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         DesktopPageHeading(detail.kind.title, detail.item.name) {
             IconButton(controller.catalog::closeDetail) { Icon(Icons.Rounded.Close, "Fechar detalhes") }
@@ -215,18 +334,16 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
                                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 items(seasons, key = { it.first }) { (number, name) ->
                                     val selected = selectedSeason == number
-                                    val interaction = rememberVisualInteraction()
-                                    Surface(onClick = {
-                                        season = number
-                                        scope.launch { scroll.scrollToItem(1) }
-                                    }, modifier = Modifier.fillMaxWidth(), interactionSource = interaction.source,
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = if (selected || interaction.emphasized) palette.primary.copy(alpha = .12f) else Color.Transparent,
-                                        border = if (interaction.emphasized) BorderStroke(2.dp, palette.primary) else null) {
-                                        Text(name, Modifier.padding(16.dp), maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (selected) palette.primary else palette.onSurface)
-                                    }
+                                    DesktopCategoryRow(
+                                        name = name,
+                                        selected = selected,
+                                        modifier = (if (selected) Modifier.focusRequester(seasonsFocus) else Modifier)
+                                            .focusProperties { right = episodesFocus },
+                                        onClick = {
+                                            season = number
+                                            scope.launch { scroll.scrollToItem(1) }
+                                        }
+                                    )
                                 }
                             }
                             if (seasonScroll.canScrollBackward || seasonScroll.canScrollForward)
@@ -250,8 +367,11 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
                             val facts = listOfNotNull(movie?.releaseDate ?: metadata?.releaseDate,
                                 movie?.genre ?: metadata?.genre, movie?.duration ?: metadata?.episodeRunTime,
                                 (movie?.rating ?: metadata?.rating ?: detail.item.rating)?.let { "★ $it" })
-                            if (facts.isNotEmpty()) Text(facts.joinToString("  ·  "), color = palette.primary,
-                                style = MaterialTheme.typography.bodySmall)
+                            if (facts.isNotEmpty()) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    facts.forEach { fact -> DesktopMetadataBadge(fact) }
+                                }
+                            }
                             if (detail.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                             Text(movie?.plot?.takeIf(String::isNotBlank) ?: metadata?.plot?.takeIf(String::isNotBlank)
                                 ?: "Sinopse não informada pelo servidor.", color = palette.onSurfaceVariant,
@@ -280,27 +400,44 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
                             if (episodes.isEmpty()) item(key = "no-episodes") {
                                 Text("Nenhum episódio disponível nesta temporada.", color = palette.onSurfaceVariant)
                             }
-                            items(episodes, key = { "episode-${it.id}" }) { episode ->
+                            itemsIndexed(episodes, key = { _, episode -> "episode-${episode.id}" }) { index, episode ->
                                 val interaction = rememberVisualInteraction()
-                                Surface(onClick = { controller.catalog.playEpisode(requireNotNull(selectedSeason), episode) },
+                                val episodeNumStr = episode.episodeNum ?: "${index + 1}"
+                                val play = {
+                                    focusedEpisode = episode.id
+                                    controller.catalog.playEpisode(requireNotNull(selectedSeason), episode)
+                                }
+                                Surface(onClick = play,
+                                    modifier = (if (index == episodeFocusIndex) Modifier.focusRequester(episodesFocus) else Modifier)
+                                        .focusProperties { left = seasonsFocus }
+                                        .onFocusChanged { if (it.hasFocus) focusedEpisode = episode.id },
                                     interactionSource = interaction.source, shape = RoundedCornerShape(14.dp),
-                                    color = if (interaction.emphasized) palette.primary.copy(alpha = .12f) else palette.surface) {
-                                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                                    color = if (interaction.emphasized) palette.primary.copy(alpha = .12f) else palette.surface,
+                                    border = if (interaction.emphasized) BorderStroke(2.dp, palette.primary) else null) {
+                                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                        episode.info?.movieImage?.takeIf(String::isNotBlank)?.let { image ->
-                                            Surface(shape = RoundedCornerShape(8.dp), color = palette.surfaceVariant) {
-                                                CatalogImage(image, images, Modifier.width(112.dp).aspectRatio(16f / 9f))
+                                        Box(Modifier.width(128.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp))) {
+                                            episode.info?.movieImage?.takeIf(String::isNotBlank)?.let { image ->
+                                                CatalogImage(image, images, Modifier.fillMaxSize())
+                                            } ?: Box(Modifier.fillMaxSize().background(palette.surfaceVariant), contentAlignment = Alignment.Center) {
+                                                Icon(Icons.Rounded.PlayCircle, null, tint = palette.primary, modifier = Modifier.size(32.dp))
                                             }
+                                            PlayerEpisodeNumber("E$episodeNumStr", palette.primary, MaterialTheme.typography.labelSmall,
+                                                Modifier.align(Alignment.TopStart))
                                         }
-                                        Icon(Icons.Rounded.PlayCircle, null, tint = palette.primary)
-                                        Column(Modifier.weight(1f)) {
-                                            Text(episode.title ?: "Episódio ${episode.episodeNum.orEmpty()}", fontWeight = FontWeight.Bold)
-                                            episode.info?.plot?.takeIf(String::isNotBlank)?.let {
-                                                Text(it, color = palette.onSurfaceVariant, style = MaterialTheme.typography.bodySmall,
-                                                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                            }
+                                        PlayerEpisodeDescription(
+                                            title = episode.title ?: "Episódio $episodeNumStr",
+                                            plot = episode.info?.plot ?: "",
+                                            watched = false,
+                                            text = palette.onSurface,
+                                            secondary = palette.onSurfaceVariant,
+                                            titleStyle = MaterialTheme.typography.titleMedium,
+                                            bodyStyle = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        IconButton(onClick = play) {
+                                            Icon(Icons.Rounded.PlayArrow, "Assistir episódio", tint = palette.primary)
                                         }
-                                        episode.info?.duration?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
                                     }
                                 }
                             }

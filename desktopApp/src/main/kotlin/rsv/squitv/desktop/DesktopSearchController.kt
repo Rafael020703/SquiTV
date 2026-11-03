@@ -7,6 +7,8 @@ import rsv.squitv.desktop.data.XtreamClient
 import rsv.squitv.desktop.data.ServerProblem
 import rsv.squitv.shared.xtream.LiveChannel
 import rsv.squitv.shared.xtream.ServerCredentials
+import rsv.squitv.shared.xtream.LiveChannelGroups
+import rsv.squitv.domain.model.ChannelQuality
 import java.text.Collator
 import java.text.Normalizer
 import java.util.Locale
@@ -20,7 +22,7 @@ internal data class DesktopSearchItem(
     val type: DesktopSearchType, val id: Int, val name: String,
     val channel: LiveChannel? = null, val catalogItem: CatalogItem? = null
 ) {
-    val key: String get() = "${type.name}:$id"
+    val key: String get() = channel?.stableKey ?: "${type.name}:$id"
 }
 
 internal data class DesktopSearchState(
@@ -42,6 +44,8 @@ internal class DesktopSearchController(private val client: XtreamClient, private
     private var job: Job? = null
     private var revision = 0L
     private var resumeNeeded = false
+    private var groupLiveChannels = true
+    private var preferredChannelQuality = ChannelQuality.AUTO
     private val cache = mutableMapOf<DesktopSearchType, Listing>()
 
     fun open(account: ServerCredentials) {
@@ -63,6 +67,14 @@ internal class DesktopSearchController(private val client: XtreamClient, private
 
     fun resume() { if (resumeNeeded) runSearch(0, preserveResults = true) }
 
+    fun configureLiveChannels(grouped: Boolean, preferred: ChannelQuality) {
+        if (groupLiveChannels == grouped && preferredChannelQuality == preferred) return
+        groupLiveChannels = grouped
+        preferredChannelQuality = preferred
+        // Rebuild on return to Search; changing a player option must not start background queries.
+        resumeNeeded = mutable.value.query.isNotBlank()
+    }
+
     fun retry() = runSearch(0, preserveResults = true)
 
     private fun runSearch(debounceMs: Long, preserveResults: Boolean = false) {
@@ -70,6 +82,8 @@ internal class DesktopSearchController(private val client: XtreamClient, private
         val currentRevision = ++revision
         val account = credentials ?: return
         val input = mutable.value
+        val grouped = groupLiveChannels
+        val preferred = preferredChannelQuality
         val tokens = normalize(input.query).split(' ').filter(String::isNotEmpty)
         resumeNeeded = tokens.isNotEmpty()
         mutable.value = input.copy(results = if (preserveResults) input.results else emptyList(),
@@ -99,17 +113,24 @@ internal class DesktopSearchController(private val client: XtreamClient, private
                 } catch (e: CancellationException) { throw e }
                 catch (e: Exception) { errors[type] = "${type.label}: " + ((e as? ServerProblem)?.message
                     ?: "Não foi possível pesquisar este catálogo.") }
-                val sorted = withContext(Dispatchers.Default) {
+                val (sorted, total) = withContext(Dispatchers.Default) {
+                    val presented = if (grouped) {
+                        val live = LiveChannelGroups.visible(matches.mapNotNull { it.channel },
+                            liveCategoryScope(account).orEmpty(), true, preferred).map {
+                            DesktopSearchItem(DesktopSearchType.LIVE, it.id, it.name, channel = it)
+                        }
+                        matches.filter { it.channel == null } + live
+                    } else matches.toList()
                     val collator = Collator.getInstance(Locale.forLanguageTag("pt-BR"))
-                    matches.sortedWith { a, b ->
+                    presented.sortedWith { a, b ->
                         collator.compare(a.name, b.name).takeIf { it != 0 }
                             ?: a.key.compareTo(b.key)
-                    }.take(300)
+                    }.take(300) to presented.size
                 }
                 ensureActive()
                 if (revision != currentRevision) return@launch
                 if (preserveResults && type != types.last()) continue
-                mutable.value = mutable.value.copy(results = sorted, totalMatches = matches.size,
+                mutable.value = mutable.value.copy(results = sorted, totalMatches = total,
                     errors = errors.toMap(), loading = type != types.last())
             }
             resumeNeeded = false

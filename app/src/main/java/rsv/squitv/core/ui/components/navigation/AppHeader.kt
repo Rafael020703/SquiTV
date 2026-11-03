@@ -1,12 +1,11 @@
 ﻿package rsv.squitv.core.ui.components.navigation
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import rsv.squitv.core.ui.theme.*
+import rsv.squitv.core.ui.components.common.PageHeadingText
 
 /** Page heading and actions; back navigation is handled by Android and the remote. */
 @Composable
@@ -25,23 +24,10 @@ fun AppHeader(
             .padding(horizontal = responsive.dp(tokens.spacing.extraLarge), vertical = responsive.dp(tokens.spacing.large)),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            if (title.isNotBlank()) {
-                Text(
-                    text = title.uppercase(),
-                    style = tokens.typography.headline.copy(fontSize = responsive.sp(tokens.typography.headline.fontSize)),
-                    fontWeight = FontWeight.Black,
-                    color = tokens.colors.primary
-                )
-            }
-            if (!subtitle.isNullOrBlank()) {
-                Text(
-                    text = subtitle.uppercase(),
-                    style = tokens.typography.caption.copy(fontSize = responsive.sp(tokens.typography.caption.fontSize)),
-                    color = tokens.colors.textSecondary
-                )
-            }
-        }
+        PageHeadingText(title, subtitle, tokens.colors.primary, tokens.colors.textSecondary,
+            tokens.typography.headline.copy(fontSize = responsive.sp(tokens.typography.headline.fontSize)),
+            tokens.typography.caption.copy(fontSize = responsive.sp(tokens.typography.caption.fontSize)),
+            Modifier.weight(1f))
         
         Row(
             verticalAlignment = Alignment.CenterVertically,

@@ -3,13 +3,9 @@
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Star
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -49,32 +45,9 @@ fun AgeBadge(age: String, modifier: Modifier = Modifier) {
 
 @Composable
 fun RatingBadge(rating: String, modifier: Modifier = Modifier) {
-    if (rating == "0" || rating.isEmpty()) return
     val tokens = AppDesignSystem
-    Surface(
-        color = Color(0xFFFFD700), 
-        shape = RoundedCornerShape(6.dp),
-        modifier = modifier
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = tokens.spacing.small, vertical = tokens.spacing.micro),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Star, 
-                null, 
-                modifier = Modifier.size(16.dp), 
-                tint = Color.Black
-            )
-            Spacer(modifier = Modifier.width(tokens.spacing.tiny))
-            Text(
-                text = rating, 
-                color = Color.Black, 
-                fontWeight = FontWeight.Black, 
-                style = tokens.typography.label
-            )
-        }
-    }
+    rsv.squitv.core.ui.components.cards.RatingBadgeContent(rating, tokens.typography.label, modifier,
+        tokens.spacing.small, tokens.spacing.micro, tokens.spacing.tiny)
 }
 
 @Composable

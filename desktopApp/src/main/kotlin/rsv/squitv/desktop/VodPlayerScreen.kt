@@ -1,5 +1,6 @@
 package rsv.squitv.desktop
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,13 +16,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.*
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import rsv.squitv.core.ui.components.player.CenteredPlayerActions
+import rsv.squitv.core.ui.components.player.*
 import rsv.squitv.desktop.player.WindowsLivePlayer
 import rsv.squitv.shared.xtream.OnDemandPlayback
 import rsv.squitv.shared.xtream.ServerCredentials
@@ -132,91 +135,140 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
             onPointerMove = { if (menu == null) showControls() },
             onClick = { if (menu != null) closeMenu() else if (controls) hideControls() else showControls() })
     }
-    NativePlayerLayer(controls && menu == null, PlayerLayerPlacement.BOTTOM, heightDp = 256, onKey = input) {
-        LaunchedEffect(controls) { if (controls) { withFrameNanos { }; pauseFocus.requestFocus() } }
-        Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp)
-            .onPointerEvent(PointerEventType.Move) { interaction() }
-            .onPointerEvent(PointerEventType.Press) { holding = true; interaction() }
-            .onPointerEvent(PointerEventType.Release) { holding = false; interaction() },
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(session.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(status.phase, style = MaterialTheme.typography.labelSmall, color = palette.onSurfaceVariant)
-                }
-                PlayerIcon(Icons.Rounded.Refresh, "Tentar novamente", { retry++; interaction() })
-                PlayerIcon(Icons.Rounded.Close, "Encerrar reprodução", controller.catalog::stopPlayback)
-            }
-            if (status.durationMs > 0) {
-                val position = dragging?.let { (it * status.durationMs).toLong() } ?: seek.seekTarget ?: pending ?: status.timeMs
-                Text("${mediaTime(position)} / ${mediaTime(status.durationMs)}", style = MaterialTheme.typography.labelMedium,
-                    color = if (keyboardSeeking || dragging != null) palette.primary else palette.onSurface)
-                Slider((position.toDouble() / status.durationMs).toFloat().coerceIn(0f, 1f),
-                    onValueChange = { seek.cancelSeek(); dragging = it; interaction() },
-                    onValueChangeFinished = {
-                        dragging?.let {
-                            seek.cancelSeek()
-                            seek.handleDpadSeek(status.timeMs, (it * status.durationMs).toLong() - status.timeMs, scope)
-                            seek.commitSeek()
-                        }
-                        dragging = null
-                    }, enabled = status.seekable, modifier = Modifier.fillMaxWidth().height(24.dp)
-                        .onFocusChanged { seekFocused = it.isFocused; if (!it.isFocused && seek.seekTarget != null) seek.commitSeek() })
-            } else Text("Duração ainda não informada", style = MaterialTheme.typography.labelSmall, color = palette.onSurfaceVariant)
-            CenteredPlayerActions(12.dp, Modifier.weight(1f), left = {
-                if (session.series) IconButton({ controller.catalog.nextEpisode(-1) }, enabled = session.episodeIndex > 0) {
-                    Icon(Icons.Rounded.SkipPrevious, "Episódio anterior")
-                }
-                IconButton({ if (status.seekable) seek.handleDpadSeek(status.timeMs, -10_000, scope) }, enabled = status.seekable) {
-                    Icon(Icons.Rounded.Replay10, "Voltar 10 segundos")
-                }
-            }, center = {
-                FilledIconButton({ engine.togglePause(); interaction() }, Modifier.size(64.dp).focusRequester(pauseFocus), shape = CircleShape) {
-                    Icon(if (status.paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
-                        if (status.paused) "Reproduzir" else "Pausar", Modifier.size(38.dp))
-                }
-            }, right = {
-                IconButton({ if (status.seekable) seek.handleDpadSeek(status.timeMs, 10_000, scope) }, enabled = status.seekable) {
-                    Icon(Icons.Rounded.Forward10, "Avançar 10 segundos")
-                }
-                if (session.series) IconButton({ controller.catalog.nextEpisode(1) }, enabled = session.episodeIndex in 0 until session.episodes.lastIndex) {
-                    Icon(Icons.Rounded.SkipNext, "Próximo episódio")
-                }
-            })
-            status.error?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall, maxLines = 2) }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                PlayerIcon(if (status.muted) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp,
-                    "Silenciar/ativar som", { settings.update { it.copy(muted = !it.muted) }; interaction() })
-                var volume by remember(preferences.volume) { mutableFloatStateOf(preferences.volume.toFloat()) }
-                Slider(volume, { volume = it; engine.setVolume(it.toInt()); interaction() }, valueRange = 0f..100f,
-                    onValueChangeFinished = { settings.update { it.copy(volume = volume.toInt()) } }, modifier = Modifier.width(120.dp))
-                Spacer(Modifier.weight(1f))
-                if (session.series) PlayerIcon(Icons.Rounded.VideoLibrary, "Episódios", { openMenu(VodMenu.EPISODES) })
-                PlayerIcon(Icons.Rounded.Settings, "Configurações do player", { openMenu(VodMenu.SETTINGS) })
-                PlayerIcon(if (fullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen, "Alternar tela cheia (F11)", toggleFullscreen)
-            }
+    NativePlayerLayer(controls && menu == null, PlayerLayerPlacement.TOP, heightDp = 112,
+        interactive = false) {
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+            listOf(Color.Black.copy(alpha = .6f), Color.Transparent))).padding(24.dp)) {
+            PlayerTitle(session.title, MaterialTheme.typography.titleLarge, palette.onSurface)
         }
     }
-    NativePlayerLayer(menu != null, PlayerLayerPlacement.CENTER, heightDp = 450, widthDp = 760, onKey = input) {
-        when (menu) {
-            VodMenu.SETTINGS -> LiveSettingsPanel(status, engine, sleepMinutes, { sleepMinutes = it }, closeMenu)
-            VodMenu.EPISODES -> Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Episódios", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                    IconButton(closeMenu) { Icon(Icons.Rounded.Close, "Fechar episódios") }
-                }
-                val listState = androidx.compose.foundation.lazy.rememberLazyListState(session.episodeIndex.coerceAtLeast(0))
-                LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    itemsIndexed(session.episodes, key = { _, item -> requireNotNull(item.id) }) { index, episode ->
-                        OutlinedButton({ controller.catalog.selectEpisode(requireNotNull(episode.id)); closeMenu() }, Modifier.fillMaxWidth()) {
-                            Text(listOfNotNull(episode.season?.let { "T$it" }, episode.episodeNum?.let { "E$it" }, episode.title)
-                                .joinToString(" · "), Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            if (index == session.episodeIndex) Icon(Icons.Rounded.Check, null)
-                        }
+    NativePlayerLayer(controls && menu == null, PlayerLayerPlacement.BOTTOM,
+        heightDp = if (status.error != null) 300 else 260, onKey = input,
+        onInputCancelled = { holding = false; dragging = null; seek.cancelSeek() }) {
+        LaunchedEffect(controls) { if (controls) { withFrameNanos { }; pauseFocus.requestFocus() } }
+        VodPlayerCard(
+            background = palette.background,
+            modifier = Modifier
+                .fillMaxSize()
+                .onPointerEvent(PointerEventType.Move) { interaction() }
+                .onPointerEvent(PointerEventType.Press) { holding = true; interaction() }
+                .onPointerEvent(PointerEventType.Release) { holding = false; interaction() },
+            timeline = {
+                if (status.durationMs > 0) {
+                    val position = dragging?.let { (it * status.durationMs).toLong() } ?: seek.seekTarget ?: pending ?: status.timeMs
+                    PlayerTimeline("${mediaTime(position)} / ${mediaTime(status.durationMs)}",
+                        keyboardSeeking || dragging != null, palette.primary, palette.onSurface,
+                        MaterialTheme.typography.labelLarge, MaterialTheme.typography.labelSmall) {
+                        Slider((position.toDouble() / status.durationMs).toFloat().coerceIn(0f, 1f),
+                            onValueChange = { seek.cancelSeek(); dragging = it; interaction() },
+                            onValueChangeFinished = {
+                                dragging?.let {
+                                    seek.cancelSeek()
+                                    seek.handleDpadSeek(status.timeMs, (it * status.durationMs).toLong() - status.timeMs, scope)
+                                    seek.commitSeek()
+                                }
+                                dragging = null
+                            }, enabled = status.seekable, modifier = Modifier.fillMaxWidth().height(24.dp)
+                                .onFocusChanged { seekFocused = it.isFocused; if (!it.isFocused && seek.seekTarget != null) seek.commitSeek() },
+                            colors = SliderDefaults.colors(thumbColor = palette.primary, activeTrackColor = palette.primary,
+                                inactiveTrackColor = palette.surface.copy(alpha = .3f)))
                     }
+                } else Text("Duração ainda não informada", style = MaterialTheme.typography.labelSmall, color = palette.onSurfaceVariant)
+            },
+            actions = {
+                CenteredPlayerActions(16.dp, Modifier.fillMaxWidth().height(72.dp), left = {
+                    if (session.series) PlayerActionButton(Icons.Rounded.SkipPrevious, { controller.catalog.nextEpisode(-1) },
+                        "Episódio anterior", enabled = session.episodeIndex > 0)
+                    PlayerActionButton(Icons.Rounded.Replay10,
+                        { if (status.seekable) seek.handleDpadSeek(status.timeMs, -10_000, scope) },
+                        "Voltar 10 segundos", enabled = status.seekable)
+                }, center = {
+                    PlayerPauseButton(!status.paused, { engine.togglePause(); interaction() },
+                        Modifier.focusRequester(pauseFocus))
+                }, right = {
+                    PlayerActionButton(Icons.Rounded.Forward10,
+                        { if (status.seekable) seek.handleDpadSeek(status.timeMs, 10_000, scope) },
+                        "Avançar 10 segundos", enabled = status.seekable)
+                    if (session.series) PlayerActionButton(Icons.Rounded.SkipNext, { controller.catalog.nextEpisode(1) },
+                        "Próximo episódio", enabled = session.episodeIndex in 0 until session.episodes.lastIndex)
+                    Spacer(Modifier.width(12.dp))
+                    PlayerIcon(Icons.Rounded.Settings, "Configurações do player", { openMenu(VodMenu.SETTINGS) })
+                })
+            },
+            extraControls = {
+                status.error?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall, maxLines = 2) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    PlayerIcon(if (status.muted) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp,
+                        "Silenciar/ativar som", { settings.update { it.copy(muted = !it.muted) }; interaction() })
+                    var volume by remember(preferences.volume) { mutableFloatStateOf(preferences.volume.toFloat()) }
+                    Slider(volume, { volume = it; engine.setVolume(it.toInt()); interaction() }, valueRange = 0f..100f,
+                        onValueChangeFinished = { settings.update { it.copy(volume = volume.toInt()) } }, modifier = Modifier.width(120.dp))
+                    Spacer(Modifier.weight(1f))
+                    PlayerIcon(Icons.Rounded.Refresh, "Tentar novamente", { retry++; interaction() })
+                    if (session.series) PlayerIcon(Icons.Rounded.VideoLibrary, "Episódios", { openMenu(VodMenu.EPISODES) })
+                    PlayerIcon(if (fullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen, "Alternar tela cheia (F11)", toggleFullscreen)
+                    PlayerIcon(Icons.Rounded.Close, "Encerrar reprodução", controller.catalog::stopPlayback)
                 }
             }
+        )
+    }
+    NativePlayerLayer(menu != null, if (menu == VodMenu.EPISODES) PlayerLayerPlacement.START else PlayerLayerPlacement.CENTER,
+        heightDp = if (menu == VodMenu.EPISODES) null else 450,
+        widthDp = if (menu == VodMenu.EPISODES) 380 else 760, onKey = input) {
+        when (menu) {
+            VodMenu.SETTINGS -> LiveSettingsPanel(status, engine, sleepMinutes, { sleepMinutes = it }, closeMenu)
+            VodMenu.EPISODES -> VodEpisodesPanel(session, controller, closeMenu)
             null -> Unit
+        }
+    }
+}
+
+@Composable
+private fun VodEpisodesPanel(session: VodSession, controller: DesktopController, closeMenu: () -> Unit) {
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState(session.episodeIndex.coerceAtLeast(0))
+    val selectedFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { withFrameNanos { }; selectedFocus.requestFocus() }
+    Column(Modifier.fillMaxSize().background(palette.surface.copy(alpha = .95f))) {
+        Surface(Modifier.fillMaxWidth().height(80.dp), color = Color.White.copy(alpha = .05f),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = .05f))) {
+            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("EPISÓDIOS", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge,
+                    color = palette.onSurface, fontWeight = FontWeight.Black, letterSpacing = 2.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                IconButton(closeMenu) { Icon(Icons.Rounded.Close, "Fechar episódios", tint = palette.onSurfaceVariant) }
+            }
+        }
+        Box(Modifier.weight(1f)) {
+            LazyColumn(Modifier.fillMaxSize(), state = listState,
+                contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                itemsIndexed(session.episodes, key = { _, item -> requireNotNull(item.id) }) { index, episode ->
+                    val selected = index == session.episodeIndex
+                    val interaction = rememberVisualInteraction()
+                    val text by animateColorAsState(if (interaction.emphasized) Color.Black else if (selected) palette.primary else palette.onSurface)
+                    val background by animateColorAsState(if (interaction.emphasized) palette.primary else if (selected) palette.primary.copy(alpha = .12f) else Color.Transparent)
+                    PlayerEpisodeRow(
+                        episodeNum = episode.episodeNum ?: "—",
+                        title = episode.title ?: "Episódio",
+                        plot = episode.info?.plot,
+                        selected = selected,
+                        focused = interaction.emphasized,
+                        primary = palette.primary,
+                        text = text,
+                        secondary = palette.onSurfaceVariant,
+                        background = background,
+                        titleStyle = MaterialTheme.typography.titleMedium,
+                        bodyStyle = MaterialTheme.typography.bodySmall,
+                        tagStyle = MaterialTheme.typography.labelSmall,
+                        modifier = (if (selected) Modifier.focusRequester(selectedFocus) else Modifier)
+                            .clickable(interactionSource = interaction.source, indication = null) {
+                                controller.catalog.selectEpisode(requireNotNull(episode.id))
+                                closeMenu()
+                            }
+                    )
+                }
+            }
+            if (listState.canScrollBackward || listState.canScrollForward)
+                VerticalScrollbar(rememberScrollbarAdapter(listState), Modifier.align(Alignment.CenterEnd), style = desktopScrollbarStyle())
         }
     }
 }

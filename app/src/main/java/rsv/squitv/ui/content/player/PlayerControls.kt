@@ -1,6 +1,6 @@
 ﻿package rsv.squitv.ui.content.player
 
-import rsv.squitv.core.ui.components.player.CenteredPlayerActions
+import rsv.squitv.core.ui.components.player.*
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -103,13 +103,8 @@ fun PlayerControlOverlay(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
-                Text(
-                    text = streamName.uppercase(),
-                    style = if (isTv) tokens.typography.headline else tokens.typography.title,
-                    fontWeight = FontWeight.Black,
-                    color = tokens.colors.textPrimary,
-                    letterSpacing = 1.sp
-                )
+                PlayerTitle(streamName, if (isTv) tokens.typography.headline else tokens.typography.title,
+                    tokens.colors.textPrimary)
                 if (isLive && currentProgram != null) {
                     Text(
                         text = currentProgram.title ?: "",
@@ -170,24 +165,10 @@ fun PlayerControlOverlay(
                     }
                 },
                 center = {
-                    Surface(
-                        onClick = onTogglePlayPause,
-                        modifier = Modifier
-                            .size(if (isTv) 90.dp else 72.dp)
-                            .focusRequester(playPauseFocusRequester)
+                    PlayerPauseButton(uiState.isPlaying, onTogglePlayPause,
+                        Modifier.focusRequester(playPauseFocusRequester)
                             .adaptiveFocus(shape = CircleShape, focusedScale = 1.15f),
-                        shape = CircleShape,
-                        color = tokens.colors.primary,
-                        contentColor = Color.Black
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = if (uiState.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(if (isTv) 50.dp else 40.dp)
-                            )
-                        }
-                    }
+                        large = isTv, primary = tokens.colors.primary)
                 },
                 right = {
                     if (!isLive) {
@@ -241,41 +222,9 @@ fun DpadSeekBar(
     val currentProgress = (displayPosition.toFloat() / duration.coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
     val isSeekingActive = seekController.seekTarget != null || isDragging
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = tokens.spacing.small)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "${formatTime(displayPosition, forceHours)} / ${formatTime(duration, forceHours)}",
-                color = if (isSeekingActive) tokens.colors.primary else tokens.colors.textPrimary,
-                style = tokens.typography.label,
-                fontWeight = FontWeight.Bold
-            )
-            if (isSeekingActive) {
-                Surface(
-                    color = tokens.colors.primary.copy(alpha = 0.2f),
-                    shape = tokens.shapes.small,
-                    border = BorderStroke(1.dp, tokens.colors.primary)
-                ) {
-                    Text(
-                        text = "BUSCANDO...",
-                        style = tokens.typography.caption,
-                        fontWeight = FontWeight.Black,
-                        color = tokens.colors.primary,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
+    PlayerTimeline("${formatTime(displayPosition, forceHours)} / ${formatTime(duration, forceHours)}",
+        isSeekingActive, tokens.colors.primary, tokens.colors.textPrimary, tokens.typography.label,
+        tokens.typography.caption) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -354,19 +303,8 @@ fun PlayerActionIcon(
     tint: Color = Color.White,
     contentDescription: String? = null
 ) {
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier
-            .size(if (isTv) 64.dp else 48.dp)
-            .appFocus(shape = CircleShape)
-    ) {
-        Icon(
-            icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(if (isTv) 32.dp else 24.dp)
-        )
-    }
+    PlayerActionButton(icon, onClick, contentDescription,
+        Modifier.appFocus(shape = CircleShape), large = isTv, tint = tint)
 }
 
 @Composable

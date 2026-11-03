@@ -2,11 +2,11 @@
 
 ## Escopo atual
 
-**Publicada:** [Windows 1.22.1](https://github.com/Rafael020703/SquiTV/releases/tag/v1.22.1.1), exclusiva Windows. EXE de 70.658.560 bytes (67,39 MiB), 58,66% menor que o anterior. Android permanece na v1.22. A referência estável Windows aponta o manifesto desta publicação.
+**Candidata desta rodada:** Windows 1.22.2, exclusiva Windows, com publicação autorizada pelo usuário. Android permanece na v1.22. Até a conferência da nova publicação, a referência estável permanece na Windows 1.22.1. Não executar nem atualizar a release instalada no PC durante este processo.
 
 Windows x64: login Xtream, conta ativa/validade, dashboard, categorias/busca de canais, filmes e séries, detalhes de filmes, temporadas/episódios, reprodução integrada com LibVLC e configurações iniciais. Catálogos e preferências Windows ainda não têm paridade completa com o Android.
 
-Ao abrir Ao vivo, a primeira categoria é selecionada; as demais são consultadas sob demanda. Não há consulta global automática na entrada da dashboard. A lista visível ao abrir o canal é congelada para anterior/próximo, incluindo o filtro de busca. A navegação é circular nessa origem, sem fallback global. Ao encerrar o player, busca e posição da lista são preservadas na sessão. Favoritos, histórico/progresso persistente, categorias por gênero/preparação e sincronização ainda não foram portados. O atualizador Windows inicial está implementado, com os limites descritos adiante.
+Ao abrir Ao vivo, a primeira categoria é selecionada; as demais são consultadas sob demanda. Não há consulta global automática na entrada da dashboard. A lista visível ao abrir o canal é congelada para anterior/próximo, incluindo o filtro de busca. A navegação é circular nessa origem, sem fallback global. Ao abrir a lista de canais durante a reprodução, o Windows exibe o painel lateral deslizante (`PlayerLayerPlacement.START`, 360 dp), alinhado com `LiveSplitView`/`ChannelListItem` do Android, exibindo cabeçalho estilizado, ícone/logo do canal e compartilhando `PlayerChannelRow`. As telas de catálogo (TV Ao Vivo, Filmes e Séries) utilizam a linha de categoria unificada `DesktopCategoryRow` com indicador lateral ativo, borda de foco e contagem de itens, além dos cartões de pôster (`CatalogPoster`) com gradiente e bordas de avaliação alinhados ao visual Android. Na tela de detalhes (`OnDemandDetailScreen`), a seção de fatos utiliza distintivos de metadados (`DesktopMetadataBadge`), a lista de temporadas usa `DesktopCategoryRow` e os episódios utilizam as tags numeradas (`PlayerEpisodeNumber`) e descrições (`PlayerEpisodeDescription`) compartilhadas com o Android. As Configurações Windows ainda têm paridade parcial. Opções sem consumidor real de idioma/segundo plano/janela foram retiradas da interface na revisão, com seus valores preservados. Qualidade ao vivo voltou à interface após receber consumidor real nas regras compartilhadas. Backup é somente de preferências Windows, local e separado por variante. Ordem e ocultação de categorias são isoladas por conta e por tipo (Ao vivo/Filmes/Séries); filmes/séries não reutilizam IDs ao vivo nem IDs globais legados. No player de séries, o menu de episódios também utiliza painel lateral deslizante (`PlayerLayerPlacement.START`, 380 dp) com `PlayerEpisodeRow` compartilhado. Ao encerrar o player, busca e posição da lista são preservadas na sessão. Favoritos, histórico/progresso persistente, categorias por gênero/preparação e sincronização ainda não foram portados. O atualizador Windows inicial está implementado, com os limites descritos adiante.
 
 O núcleo `:shared` fornece modelos/parser Xtream, DNS, cores, índice circular, controlador de interação do player, montagem de endereço de canal e contrato de distribuição. Android e Windows usam as regras portáveis sem dependência entre aplicações. O desenho do launcher Android foi extraído para `buildSrc/BrandIcon`; dele saem também PNG/ICO Windows. Os ícones de ações usam a mesma família Material Rounded. Logos de canais vêm do servidor, com cache limitado a 64 imagens e até quatro consultas simultâneas.
 
@@ -24,7 +24,7 @@ O acesso Buscar abre campo de texto e filtros Todos/Canais/Filmes/Séries, segui
 
 Como o Windows ainda não tem o catálogo Room Android, a primeira busca com texto consulta as listagens globais do provedor para os tipos selecionados, uma por vez. Não consulta detalhes individuais, episódios, EPG ou mídia para indexar, nem inicia consultas globais no login/dashboard. Listagens bem-sucedidas recebem índice em memória por até 10 minutos para reutilização em buscas seguintes; sair da conta descarta o índice. Digitação tem debounce de 250 ms; mudar consulta/filtro ou sair cancela o trabalho anterior, com revisão para impedir resultados antigos de substituírem os atuais. Filtragem/ordenação acontecem fora da UI. Retornar a uma busca concluída conserva o resultado; pesquisas interrompidas são retomadas.
 
-Exibe até 300 resultados em ordem alfabética, com total e indicação para refinar a busca quando necessário. Falhas aparecem por catálogo, preservando resultados dos tipos que responderam e permitindo tentar novamente. O transporte mantém prazo de 45 s e limite de 16 MiB por listagem: provedores que excedam o limite apresentam erro, sem simular resultado vazio/completo. Busca de episódios individuais, voz, favoritos e agrupamento de qualidades Android ainda não foram portados. Esta etapa foi compilada na debug; não houve execução de busca/provedor ou inspeção visual pelo agente.
+Exibe até 300 resultados em ordem alfabética, com total e indicação para refinar a busca quando necessário. Falhas aparecem por catálogo, preservando resultados dos tipos que responderam e permitindo tentar novamente. O transporte mantém prazo de 45 s e limite de 16 MiB por listagem: provedores que excedam o limite apresentam erro, sem simular resultado vazio/completo. Busca de episódios individuais, voz e favoritos ainda não foram portados. Agrupamento de qualidades usa as regras Android compartilhadas. Esta etapa foi compilada na debug; não houve execução de busca/provedor ou inspeção visual pelo agente.
 
 ## Build
 
@@ -59,8 +59,8 @@ Os dados continuam em `%LOCALAPPDATA%/SquiTVDebug`, inclusive DPAPI e preenchime
 
 | Variante | Instalador | Diretório de build | Dados locais |
 | --- | --- | --- | --- |
-| Release | SquiTV-1.22.1.exe | desktopApp/build/release/compose/binaries/main/exe | %LOCALAPPDATA%/SquiTV |
-| Debug | SquiTVDebug-1.22.1.exe | desktopApp/build/debug/compose/binaries/main/exe | %LOCALAPPDATA%/SquiTVDebug |
+| Release | SquiTV-1.22.2.exe | desktopApp/build/release/compose/binaries/main/exe | %LOCALAPPDATA%/SquiTV |
+| Debug | SquiTVDebug-1.22.2.exe | desktopApp/build/debug/compose/binaries/main/exe | %LOCALAPPDATA%/SquiTVDebug |
 
 Cada variante tem nome no menu Iniciar e UUID de upgrade próprios. Preservar os UUIDs no Gradle em atualizações futuras. `packageExe` é o instalador da variante escolhida por `desktopVariant`; os nomes de tarefas de minificação do plugin não definem a identidade debug/release do aplicativo.
 
@@ -138,7 +138,7 @@ O controlador de visibilidade/interação `PlayerOverlayController` foi movido i
 
 No Windows, o vídeo ocupa o player inteiro. Os controles aparecem com mouse, clique ou Enter/Espaço e ocultam por inatividade. Pausa fica centralizada, há anterior/próximo e uma lista que usa exclusivamente o snapshot da categoria/busca de origem. Esc fecha primeiro menu/controles/aviso, depois retorna à lista, sem sair da tela cheia. O aviso compacto na troca dura 3 segundos; EPG/progresso e próximo programa usam os dados existentes, somente durante reprodução. Erros permanecem legíveis; volume/silêncio agora compartilham as preferências persistentes também no ao vivo.
 
-O menu segue a organização Android (abas adaptadas por largura): Imagem, Áudio, Legendas, Velocidade e Temporizador. Proporção original/16:9/4:3, faixas anunciadas pelo LibVLC, legendas desativáveis, velocidades suportadas e temporizador têm comandos nativos/ação efetiva; falhas de escolha são apresentadas sem encerrar o vídeo. A seleção de faixas depende da transmissão e pode ser atualizada no menu. Agrupamento/seletor de qualidade, favoritos, PiP e outros detalhes Android ainda não têm paridade completa.
+O menu segue a organização Android (abas adaptadas por largura): Imagem, Áudio, Legendas, Velocidade e Temporizador. Proporção original/16:9/4:3, faixas anunciadas pelo LibVLC, legendas desativáveis, velocidades suportadas e temporizador têm comandos nativos/ação efetiva; falhas de escolha são apresentadas sem encerrar o vídeo. A seleção de faixas depende da transmissão e pode ser atualizada no menu. Agrupamento/seletor de qualidade ao vivo estão implementados; favoritos, PiP e outros detalhes Android ainda não têm paridade completa.
 
 ## Conta e rede
 
@@ -173,15 +173,15 @@ A referência é o código Android existente. A versão Windows inicial não é 
 | Identidade visual do login | Cores e logo compartilhados; composição institucional/formulário baseada no Android |
 | Preenchimento da debug | Suporte local protegido; depende das credenciais reais fornecidas para desenvolvimento |
 | Dashboard, relógio, atalhos e organização | Seis cartões Android e atalhos Busca/Notificações/Configurações presentes visualmente; TV ao vivo, Filmes, Séries e Configurações possuem navegação implementada. Saudação, validade e relógio usam dados reais |
-| Categorias e listagem ao vivo | Grade de cartões quadrados com logos, cabeçalho e sidebar baseados no Android; agrupamento, favoritos e personalização pendentes |
+| Categorias e listagem ao vivo | Grade de cartões quadrados com logos, cabeçalho e sidebar baseados no Android; agrupamento SD/HD/FHD/4K e preferência de qualidade implementados com regras Android compartilhadas; favoritos pendentes; ordem e ocultação ao vivo por conta implementadas |
 | Player, EPG dentro da reprodução, áudio, legendas, proporção e temporizador | Ao vivo com HUD, EPG, controles, menu nativo de faixas/proporção/velocidade/temporizador implementados; comportamento final ainda sem validação visual. Paridade completa pendente |
 | Troca circular restrita à categoria/lista de origem | Implementada com índice compartilhado e snapshot da lista visível; favoritos ainda não disponíveis no Windows |
 | Filmes, detalhes, atores, categorias servidor/gênero e preparação | Catálogo do servidor, busca, detalhes textuais e reprodução iniciais implementados; navegação por ator/gênero, preparação e biblioteca persistente pendentes |
 | Séries, temporadas, episódios e continuação | Catálogo/detalhes, temporadas, episódios, reprodução e sequência automática iniciais implementados; histórico/retomada persistente pendentes |
 | Favoritos, histórico, progresso e perfis por conta | Pendentes; preservar escopos e formatos Android |
-| Busca global | Busca por títulos de canais/filmes/séries do provedor, filtros, detalhes/reprodução e retorno à grade implementados; episódios individuais, voz e agrupamento pendentes; sem validação em execução nesta etapa |
+| Busca global | Busca por títulos de canais/filmes/séries do provedor, filtros, detalhes/reprodução e retorno à grade implementados; agrupamento ao vivo compartilhado implementado; episódios individuais e voz pendentes; sem validação em execução nesta etapa |
 | Downloads e multiview | Pendentes |
-| Configurações, categorias ocultas/ordem personalizada e idiomas/zoom | Grade inicial com conta, DNS, zoom, auto-reprodução e logout; demais opções pendentes |
+| Configurações, categorias ocultas/ordem personalizada e zoom | Conta, DNS, zoom, auto-reprodução, agrupamento/qualidade ao vivo, personalização da dashboard e organização/ocultação de categorias por conta/tipo; demais opções pendentes |
 | Importação/exportação seletiva e sincronização local | Pendentes; manter contrato compatível com Android |
 | Atualizações Windows | Tela nas Configurações em ambas as variantes; rede/download/instalação habilitados somente na release. Fluxo compilado/empacotado, sem atualização real exercitada |
 | Login pela rede local | Pendente |
@@ -211,6 +211,16 @@ Em 02/11/2026 o usuário confirmou que os canais reproduziram com sucesso no Win
 
 A release Android v1.21 não contém instalador Windows. Não alterar seu manifesto após a publicação. Uma futura release conjunta deverá declarar os artefatos Windows realmente compilados no mesmo contrato schema v1, com nome, tamanho e SHA-256 exatos, preservando o APK exigido pelos clientes Android legados.
 
+## Visual compartilhado dos players — 02/11/2026
+
+A solicitação atual é aproximar todos os players Windows do Android, com reaproveitamento efetivo. `uiCommon/.../player/PlayerChrome.kt` concentra título, botão de pausa (72/90 dp), ações, linha do tempo/indicador de seek, botões circulares, selo ao vivo, progresso EPG e cartão LiveBottomOverlay. O Android passou a chamar esses mesmos composables, preservando adaptadores Media3, foco e callbacks; o Windows os usa sobre o LibVLC. `PlayerSettingsPresentation.kt` contém o mesmo painel adaptativo, abas, foco inicial, cores/seleção e linhas de opções nas duas plataformas.
+
+Filmes e séries Windows têm título no topo, gradientes e controles inferiores com pausa central, seek e configurações. O ao vivo usa o cartão Android com logo, nome/programação, EPG e botões circulares; conserva as ações Windows já existentes, incluindo volume, anterior/próximo e pausa. Listas de canais/episódios continuam disponíveis e usam superfície escura. Não foram criados botões de favoritos/PiP sem implementação. Diferenças funcionais entre plataformas continuam documentadas.
+
+O HUD continua em JWindow/ComposePanel com SwingGraphics, sem mexer no Canvas LibVLC ou no modo de tela cheia. Solicita transparência por pixel somente quando suportada pela configuração de vídeo, com fundo escuro de compatibilidade; a transparência foi implementada, mas ainda não observada em execução pelo agente. Composables dos controles são removidos quando o HUD é ocultado para não manter o selo pulsante ativo durante a reprodução sem controles. F11/Esc, snapshot da origem, seek e temporizadores permanecem nos adaptadores existentes.
+
+Compilação de fontes Android debug/release e debug portátil Windows concluída; `git diff --check` sem erros. Build debug `4a0b0f18d92ddd47` disponibilizado pelo atalho do Iniciar, sem iniciar/encerrar processos. Nenhum teste acrescentado/executado, execução visual ou reprodução observada nesta etapa. A release instalada e os assets publicados não foram alterados; não houve mudança de versão, push ou publicação.
+
 ## Player de filmes/séries e Atualizações — 02/11/2026
 
 O VOD reaproveita PlayerOverlayController, PlayerSeekController e CenteredPlayerActions do Android. Controles ocultam após 5 segundos de inatividade, mantêm pausa central e suspendem ocultação durante seek/menu/interação contínua. Seek por teclado é coalescido em 300 ms, cancelável por Esc/Voltar; duração e seekability vêm do player. A confirmação do alvo considera a direção para não aceitar posição antiga em saltos para trás. Filmes têm três controles centrais; séries têm cinco incluindo episódio anterior/próximo, além de lista de episódios do snapshot atual. Não há loop entre último e primeiro episódio. sourceId/generation evitam usar ended de uma reprodução anterior. Temporada do episódio reproduzido é selecionada ao retornar. Áudio, legendas, imagem, velocidade e temporizador usam o menu e comandos LibVLC existentes. Histórico/retomada entre sessões permanecem pendentes.
@@ -234,3 +244,100 @@ Changelog novo vem da chave windows do manifesto; Android lê android. Fallback 
 ### Verificação da publicação Windows 1.22.1
 
 CI do código e280c20 aprovada ([execução](https://github.com/Rafael020703/SquiTV/actions/runs/41523154187)). Os três assets públicos foram baixados novamente e comparados por tamanho/SHA-256 com o staging final. Um verificador temporário usando classes DEBUG executou o WindowsUpdateRepository real contra o GitHub e descobriu 1.22.1 a partir de 1.22.0, conferindo tag/hash/notas Windows. Não abriu app ou instalador, nem removeu os bloqueios da UI debug. A primeira consulta imediatamente após publicar não encontrou a atualização; a repetição encontrou a publicação. Isso não equivale a executar o upgrade da release instalada ou observar a interface/UAC.
+
+## Revisão das alterações Gemini — 02/11/2026
+
+Snapshot de 25 fontes/documentos preservado localmente em `.artifacts/revisao-gemini-2026-11-02/before`. Mantidos os componentes visuais comuns, logos/listas laterais, metadados, personalização de seções e menu ao vivo compacto. A revisão não identifica autoria apenas pelo diff: havia mudanças Codex e Gemini misturadas sem commits intermediários.
+
+| Problema confirmado no código | Correção |
+| --- | --- |
+| Ao vivo solicitava foco no botão de pausa removido | Foco ligado ao acesso real à lista; pausa por Espaço e tentativa explícita em erro |
+| Número do episódio preto sobre fundo preto no foco | Contraste do marcador e sinopse corrigidos; pausa VOD com espaço de 72 dp |
+| Dashboard criava foco fictício ao ocultar todos os cartões; categorias observavam source de foco sem ligação | Fallback para Buscar e interação própria da linha |
+| Idioma/qualidade/segundo plano/janela só gravavam preferências sem efeito | Opções removidas da interface; campos existentes preservados para compatibilidade |
+| Redefinir base reconectava e salvava credenciais com remember=true | Ação redundante removida; limpeza limita-se ao cache de catálogos/busca |
+| IDs globais de categorias ao vivo escondiam filmes/séries e outras contas | Novo escopo de conta apenas ao vivo; seleção visível reconciliada; legado ambíguo preservado sem aplicação/migração automática |
+| Backup sempre usava SquiTVDebug, fazia I/O na UI e anunciava sucesso antes da gravação | Pasta por variante, I/O fora da UI, limite de 64 KiB, schema/faixas validados, arquivo atômico e confirmação após escrita |
+| Atualização de categorias podia continuar após logout e mostrar sucesso na falha | Job/revisão canceláveis, erro visível e descrição restrita às categorias ao vivo |
+| Extração do cartão de Configurações removeu medidas responsivas Android | Tokens/tamanhos/fontes/borda/forma Android restaurados por parâmetros compartilhados |
+
+Valores antigos sem consumidor e IDs de ocultação sem conta/tipo não são apagados nem atribuídos por suposição. Backup não inclui credenciais, favoritos, catálogo ou compatibilidade com o backup Android. Sua localização é `%LOCALAPPDATA%/<variante>/squitv-backup.json`. A limpeza de cache não apaga imagens, dados pessoais nem uma base persistente inexistente.
+
+Verificações desta revisão: leitura do diff/fontes, `git diff --check`, compilação Windows debug portátil e fontes Android debug/release, com sucesso. Debug `fa2971e796f5fe4b` no atalho do Iniciar, sem iniciar/encerrar processos. Nenhum teste adicionado/executado nem interface/player observado em uso. Nenhum push/tag/publicação/mudança de versão ou edição na release instalada.
+
+### Persistência: limite de gravação — 02/11/2026
+
+O `DesktopPreferencesStore` já recusava arquivos maiores que 64 KiB na leitura, mas a gravação normal não conferia o tamanho serializado. Um conjunto grande de preferências podia ser salvo e recusado pelo próprio app na abertura seguinte. Agora a escrita mede os bytes UTF-8 antes de criar o temporário/substituir o arquivo; se ultrapassar o mesmo limite da leitura, mantém arquivo/estado anterior e informa falha pelo tratamento existente. Sem truncamento, limpeza ou migração de dados.
+
+Verificação: leitura do caminho de gravação/erro, `git diff --check` e build Windows debug portátil concluído (4 s). Build `a43b7afe458e2c2f` disponível no atalho do Iniciar. Nenhum teste, leitura/escrita das preferências reais, execução de app ou mudança na release instalada nesta rodada.
+
+## Paridade ao vivo: identificação de qualidade — 02/11/2026
+
+Os cartões ao vivo Windows agora mostram SD/HD/FHD/4K quando a identificação está presente no nome informado pelo provedor. `ChannelQuality` e o parser original Android foram extraídos para `shared/.../domain/model`; `LiveChannelGrouping.parse` usa a mesma implementação que o Windows. Mantidos números, regiões, idiomas e nomes legítimos, marcadores completos e tratamento conservador de rótulos conflitantes. A qualidade é a descrição do provedor, não medição da resolução reproduzida; sem identificação reconhecida, nenhum selo aparece.
+
+`uiCommon/.../cards/ChannelQualityBadge.kt` concentra o selo original Android, usado pelas duas plataformas com seus tokens de tema. O Android continua considerando a maior qualidade das versões agrupadas. Esta etapa não agrupa canais Windows, não escolhe outra URL e não altera snapshot/navegação/reprodução. A próxima fatia é compartilhar a regra de formação dos grupos, preservando conta, categoria, EPG e todas as versões.
+
+Build conjunto Windows debug portátil e fontes Android debug/release concluído (10 s; após limpeza dos imports, 4 s). `git diff --check` sem erros. Debug `fb7123484ac716bb` entregue pelo atalho do Iniciar, sem iniciar/encerrar processos. Sem testes adicionados/executados ou inspeção visual real nesta etapa. Release instalada, versões e distribuição preservadas.
+
+## Paridade ao vivo: agrupamento, versões e busca — 02/11/2026
+
+A formação das famílias e a escolha de qualidade originais Android agora estão em `shared/.../domain/model/LiveChannelFamilies.kt`; o Android mantém seu adaptador IptvItem/ChannelVersion e favoritos. O Windows usa `LiveChannelGroups` sobre os dados Xtream já carregados. Conta, categoria, nome normalizado e identidade EPG delimitam as famílias; versões desconhecidas/alternativas permanecem disponíveis. Não agrega idiomas, regiões ou números diferentes por heurística nova.
+
+Ao vivo e busca global apresentam os grupos quando a preferência existente está habilitada (padrão). A grade usa chaves de grupo estáveis, selo da maior qualidade identificada e ordem alfabética, seguindo CategoryViewModel Android. A busca também usa os cartões ao vivo já existentes, sem apresentação duplicada; contagens consideram grupos e o limite de resultados é aplicado após agrupamento. Preparação/filtro/ordenação da grade ocorrem fora da thread de interface; resultados cancelados não substituem a projeção atual.
+
+Configurações → Canais ao vivo oferece agrupar e qualidade preferida; os campos antes sem consumidor agora têm efeito e só então voltaram à UI. No player, a aba Canais oferece agrupamento e seleção de um endereço real do provedor, usando o mesmo painel/opções Android. VOD continua sem essa aba. Alterar agrupamento preserva o stream tocando; o player mantém todas as versões do snapshot da lista aberta. Anterior/próximo pulam famílias e fazem loop apenas nesse snapshot, sem consultar lista global ou reiniciar uma lista com um único canal. Preferência escolhe a versão para a próxima abertura/troca, sem interromper a atual.
+
+Build conjunto Windows debug e fontes Android debug/release concluído; build final Windows 5 s. Debug `6196e510b0bc0d58` no Iniciar (intermediário `c6ff0c4d6f56c021` preservado). Diferença revisada e sem erros de whitespace após correção de newline. Sem testes adicionados/executados nem observação real da nova UI/player. Nenhum processo reiniciado, versão alterada, release instalada modificada ou publicação feita.
+
+## Filmes/Séries: retorno à grade e consultas repetidas — 02/11/2026
+
+O ContentGridState original Android foi movido sem alterar seu Saver para uiCommon, mantendo pacote/API, e passou a ser usado pelos catálogos Windows. Salva somente índice/offset/chave de foco e interação; nenhum catálogo ou credencial entra no estado salvo. Windows separa o estado por conta (hash), tipo, categoria, ordenação e busca. Ao retornar dos detalhes em navegação por teclado, recupera o cartão e desloca a grade apenas se ele estiver fora da área visível. A busca com foco não é interrompida por um pedido automático de foco da grade.
+
+O controlador distingue uma listagem vazia carregada de uma ainda não carregada, seguindo o reaproveitamento de requisição concluída do CategoryViewModel Android. Voltar para uma categoria vazia não repete a consulta automaticamente; selecionar a categoria atual já carregada/em consulta também não. Uma leitura interrompida continua elegível para retomada. Handlers de erro de categorias, listagem e detalhes verificam cancelamento antes de publicar: uma falha de I/O atrasada de uma requisição cancelada não deve reabrir detalhes nem escrever erro no estado novo.
+
+Build Windows debug e consumidores Android concluído; ajuste final protege o foco da busca. Debug f25f5f06abb6c140 entregue no Iniciar após o fechamento da etapa. Sem testes ou interface/player executados; release instalada e versões preservadas.
+
+## Navegação ao vivo e episódios — 02/11/2026
+
+A grade ao vivo também usa ContentGridState compartilhado: recupera canal/chave da família, ID de stream, posição e foco após sair do player; a busca em edição mantém o foco. A restauração consegue localizar o stream dentro de uma família após mudar agrupamento, sem trocar a origem congelada da reprodução.
+
+Nos detalhes de séries, o controlador retém na sessão o último episódio reproduzido (incluindo avanço pelo player) e a temporada. Ao retornar pelo teclado, a lista recupera esse episódio e a temporada visível; setas permitem passar da lista de episódios às temporadas e voltar, seguindo SeriesDetailScreen Android. Os metadados quebram em linhas em vez de disputar largura numa única Row. Isso não é histórico persistente entre sessões nem portabilidade de downloads.
+
+Compilação Windows debug aprovada; builds 23decd15bdb66285 (episódios) e c16c9f4bc4f07c2e (grade ao vivo) entregues no atalho sem interromper processos. Sem execução do app/testes/inspeção visual; release e dados reais preservados.
+
+## Apresentação compartilhada de pôsteres e cabeçalhos — 02/11/2026
+
+PosterCardContent e RatingBadgeContent em uiCommon são o desenho extraído do Android (capa, gradiente, título, foco, nota e progresso quando existente). Android mantém Coil/favoritos e seus tokens responsivos; Windows mantém seu carregador e ações reais. Catálogos e busca Windows usam a mesma apresentação, com a nota dourada Android. Nenhuma ação de favorito ou histórico Windows foi simulada.
+
+PageHeadingText concentra título/subtítulo Android e é usado por AppHeader e cabeçalhos Windows. Arraste e ações ficam nos adaptadores Windows; cabeçalhos com ações passam a duas linhas em pouca largura, para preservar título/busca/ordenação sem alterar o modo da janela. Filtragem e ordenação de Filmes/Séries também usam Dispatchers.Default, descartando projeções canceladas.
+
+Build conjunto Android debug/release e Windows debug aprovado (8 s na extração de pôsteres, 11 s no cabeçalho, fechamento 7 s). Debugs 1f90b77defe81c55, 00efd08c0c14e11a e 1beefb4f97708353 entregues em sequência no Iniciar; o registro local informa o build mais recente. Sem testes ou interface observados em execução, sem publicação ou alteração da release instalada.
+
+## HUD e imagens durante navegação — 02/11/2026
+
+Ao ocultar/minimizar o HUD, o adaptador Windows cancela os estados de clique/arrasto/seek pendente que dependiam de um evento de soltar. A família owner/HUD é reconhecida; uma perda transitória de foco é confirmada no próximo ciclo Swing antes de cancelar. Estado de minimização é observado explicitamente. Mantidos abas, conteúdo dos menus, SwingGraphics, superfície LibVLC e modo da janela. A causa é confirmada por leitura dos handlers, mas a sequência de minimizar/arrastar ainda não foi reproduzida pelo agente. Build debug 95911635cbe9166b entregue.
+
+O Android já usa ImageLoader compartilhado da aplicação; Windows agora mantém carregadores lazily criados por conta durante a navegação, com descarte no logout/troca de conta/fechamento. Catálogo/player reutilizam logos; catálogo/busca reutilizam pôsteres; detalhes têm cache próprio para a resolução maior. Sem armazenamento em disco ou biblioteca nova. Mantidos limites HTTP, cancelamento, tamanho de arquivo e decodificação. Requisições simultâneas da mesma URL compartilham uma trava cancelável e conferem o cache antes de baixar, evitando executar o mesmo download em paralelo; cancelar uma célula não cancela as demais.
+
+Além do máximo de 64 entradas por carregador, o cache limita o custo estimado de pixels (4 MiB logos, 16 MiB pôsteres, 8 MiB detalhes). Isso não mede nem limita o RSS total ou toda a memória nativa. Resultados negativos expiram em 30 s e podem ser tentados na próxima solicitação; falha tardia não substitui imagem válida. Fechamento idempotente impede repovoar cache descartado. Builds debug 50b3f900d8018274 e 72dcd36ef468040e entregues no Iniciar (12 s e 5 s), sem executar o app ou medir rede/memória. Sem testes, publicação ou alteração da release instalada.
+
+## Organização de categorias ao vivo — 02/11/2026
+
+O painel existente passou a Organizar categorias ao vivo: posição, subir/descer/mover ao topo, ocultação, mostrar todas e restauração confirmada do padrão da conta. A lista é virtualizada e acompanha foco/rolagem depois de mover; nomes longos não empurram o controle de visibilidade. Erros de gravação aparecem no próprio painel e a UI só acompanha a nova ordem após persistência confirmada.
+
+CategoryCustomization em shared contém as regras originais Android de aplicar ordem/ocultação e mover IDs preservando categorias temporariamente ausentes. CatalogRepository, ContentCustomizationScreen e SettingsRepository Android delegam a esse mesmo código; conta/tipo, DataStore e dados Android continuam nos adaptadores. Windows salva liveCategoryOrderByAccount com escopo da conta existente e inclui o campo no backup de preferências. Preferências antigas usam ordem padrão, sem migração destrutiva; formatos/limites de gravação continuam validados. A organização de Filmes/Séries Windows continua pendente e não usa IDs ao vivo.
+
+Seleção inicial ao vivo agora aguarda preferências/ordem/ocultação prontas antes de buscar uma categoria. Todas ocultas exibe Mostrar todas, sem reconectar a conta. Categoria vazia carregada é distinta de leitura pendente; clicar novamente não reconsulta. Atualizar categorias faz só a consulta necessária; invalida canais para recarga na próxima entrada quando estiver nas Configurações, preservando seleção válida. Erro tardio de job cancelado de canais/login/categorias não é publicado no novo estado.
+
+Compilação conjunta de shared/Android debug/release e Windows debug aprovada (18 s na extração; fechamento 9 s; últimas correções Windows 8/7 s). Atalho debug mais recente: 0c8d2aa446b908f9, com builds anteriores preservados. git diff --check sem erros. Sem testes adicionados/executados, app/janela/rede observados ou release instalada alterada. Sem publicação, push/tag ou nova versão.
+
+
+## Fechamento da rodada — Windows 1.22.2
+
+Organizar categorias permite alternar Ao vivo, Filmes e Séries. Ordem e ocultação de Filmes/Séries usam escopos separados de conta+tipo, com defaults vazios para preferências existentes. Sobem/descem/movem ao topo, mostram todas ou restauram a ordem do provedor, usando CategoryCustomization compartilhado com Android. O backup Windows inclui esses mapas, conservando validação e gravação atômica. O painel carrega somente as categorias do tipo escolhido, sem consultar títulos ou preparar metadados globalmente. Ao entrar no catálogo, a seleção aguarda preferências e escolhe a primeira categoria visível na ordem salva; vazio válido e leitura interrompida continuam distintos.
+
+Verificações desta etapa: createDistributable debug e compileDebugKotlin/compileReleaseKotlin Android concluídos; debug a69d66c7bd34670b no Iniciar antes da mudança de versão. git diff --check sem erros. Nenhum teste local acrescentado/executado; interface, provedor, player e upgrade não foram exercitados pelo agente nesta rodada. A publicação não deve ser apresentada como comprovação desses fluxos.
+
+### Adiado para versões futuras
+
+Esta rodada encerra a expansão funcional. Favoritos/Downloads/Multi-view, histórico e retomada persistentes, perfis, categorias por gênero/preparação e compatibilidade de backup/sincronização Android continuam fora desta atualização. A próxima prioridade é revisar o fluxo já existente de reprodução e retorno a partir do feedback da nova versão, antes de portar outro módulo. Não existe paridade completa Android/Windows.

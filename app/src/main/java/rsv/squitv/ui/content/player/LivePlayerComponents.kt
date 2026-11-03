@@ -38,6 +38,9 @@ import rsv.squitv.core.ui.theme.*
 import rsv.squitv.data.model.EpgProgramme
 import rsv.squitv.data.model.XtreamStream
 import rsv.squitv.util.rememberWindowInfo
+import rsv.squitv.core.ui.components.player.LivePlayerCard
+import rsv.squitv.core.ui.components.player.PlayerRoundButton
+import rsv.squitv.core.ui.components.player.PlayerChannelRow
 
 @Composable
 fun ReconnectingBadge() {
@@ -100,95 +103,31 @@ fun BoxScope.LiveBottomOverlay(
         exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
         modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(if (isExpanded) 20.dp else 12.dp)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.Transparent, tokens.colors.backgroundSecondary.copy(alpha = 0.95f))
-                    ),
-                    tokens.shapes.large
-                )
-                .border(1.dp, Color.White.copy(alpha = 0.1f), tokens.shapes.large)
-                .padding(tokens.spacing.large)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Channel Logo
-                Surface(
-                    modifier = Modifier.size(if (isExpanded) 80.dp else 60.dp),
-                    shape = tokens.shapes.medium,
-                    color = tokens.colors.surface.copy(alpha = 0.2f),
-                    border = BorderStroke(1.dp, tokens.colors.border.copy(alpha = 0.2f))
-                ) {
-                    AsyncImage(
-                        model = streamIcon,
-                        contentDescription = null,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.padding(tokens.spacing.small)
-                    )
+        LivePlayerCard(streamName, currentProgram?.title ?: stringResource(R.string.no_epg_available),
+            isExpanded, tokens.colors.backgroundSecondary, tokens.colors.primary, tokens.colors.textPrimary,
+            tokens.colors.textSecondary, tokens.typography.title, tokens.typography.body, tokens.typography.caption,
+            badge = {
+                LiveBadge()
+                if (isReconnecting) { Spacer(Modifier.width(8.dp)); ReconnectingBadge() }
+            }, logo = {
+                Surface(Modifier.size(if (isExpanded) 80.dp else 60.dp), shape = tokens.shapes.medium,
+                    color = tokens.colors.surface.copy(alpha = .2f),
+                    border = BorderStroke(1.dp, tokens.colors.border.copy(alpha = .2f))) {
+                    AsyncImage(model = streamIcon, contentDescription = null, contentScale = ContentScale.Fit,
+                        modifier = Modifier.padding(8.dp))
                 }
-
-                Spacer(modifier = Modifier.width(tokens.spacing.large))
-
-                // Info
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        LiveBadge()
-                        if (isReconnecting) {
-                            Spacer(modifier = Modifier.width(tokens.spacing.small))
-                            ReconnectingBadge()
-                        }
-                        Spacer(modifier = Modifier.width(tokens.spacing.small))
-                        Text(
-                            text = streamName.uppercase(),
-                            color = tokens.colors.textPrimary,
-                            style = tokens.typography.title,
-                            fontWeight = FontWeight.Black,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Text(
-                        text = currentProgram?.title ?: stringResource(R.string.no_epg_available),
-                        color = tokens.colors.primary,
-                        style = tokens.typography.body,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
-                }
-
-                // Controls
-                Row(horizontalArrangement = Arrangement.spacedBy(tokens.spacing.medium)) {
-                    ControlIconButton(
-                        icon = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                        onClick = onToggleFavorite,
-                        contentDescription = stringResource(if (isFavorite) R.string.quick_favorite_remove else R.string.quick_favorite_add),
-                        tint = if (isFavorite) tokens.colors.error else Color.White,
-                        modifier = Modifier.focusRequester(firstBtnFocusRequester)
-                    )
-                    if (onEnterPip != null) {
-                        ControlIconButton(icon = Icons.Rounded.PictureInPictureAlt,
-                            onClick = onEnterPip, contentDescription = stringResource(R.string.pip_label))
-                    }
-                    ControlIconButton(
-                        icon = Icons.Rounded.Settings,
-                        onClick = onShowSettings,
-                        contentDescription = "Configurações"
-                    )
-                }
-            }
-            
-            if (currentProgram != null) {
-                Spacer(modifier = Modifier.height(tokens.spacing.large))
-                EpgMiniProgress(currentProgram, isExpanded)
-            }
-            nextPrograms.take(2).forEach { program ->
-                Text(stringResource(R.string.upcoming_program, formatProgramTime(program.start), program.title.orEmpty()),
-                    style = tokens.typography.caption, color = tokens.colors.textSecondary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
+            }, actions = {
+                ControlIconButton(if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    onToggleFavorite, stringResource(if (isFavorite) R.string.quick_favorite_remove else R.string.quick_favorite_add),
+                    tint = if (isFavorite) tokens.colors.error else Color.White,
+                    modifier = Modifier.focusRequester(firstBtnFocusRequester))
+                if (onEnterPip != null) ControlIconButton(Icons.Rounded.PictureInPictureAlt, onEnterPip,
+                    stringResource(R.string.pip_label))
+                ControlIconButton(Icons.Rounded.Settings, onShowSettings, "Configurações")
+            }, progress = if (currentProgram != null) { { EpgMiniProgress(currentProgram, isExpanded) } } else null,
+            upcoming = nextPrograms.take(2).map {
+                stringResource(R.string.upcoming_program, formatProgramTime(it.start), it.title.orEmpty())
+            })
     }
 }
 
@@ -212,31 +151,10 @@ fun ControlIconButton(
         label = "btnIcon"
     )
 
-    Surface(
-        onClick = onClick,
-        color = bgColor,
-        shape = CircleShape,
-        border = BorderStroke(
-            if (isFocused) 2.5.dp else 1.dp,
-            if (isFocused) FocusGlowCyan else Color.White.copy(alpha = 0.15f)
-        ),
-        modifier = modifier
-            .size(52.dp)
-            .adaptiveFocus(
-                shape = CircleShape,
-                focusedScale = 1.12f,
-                onFocus = { isFocused = it }
-            )
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = iconColor,
-                modifier = Modifier.size(26.dp)
-            )
-        }
-    }
+    PlayerRoundButton(icon, contentDescription, onClick, bgColor, iconColor,
+        if (isFocused) FocusGlowCyan else Color.White.copy(alpha = .15f),
+        if (isFocused) 2.5.dp else 1.dp,
+        modifier.adaptiveFocus(shape = CircleShape, focusedScale = 1.12f, onFocus = { isFocused = it }))
 }
 
 @Composable
@@ -383,35 +301,10 @@ fun ChannelListItem(name: String, isSelected: Boolean, onClick: () -> Unit) {
         else Color.Transparent
     )
     
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .adaptiveFocus(
-                shape = RoundedCornerShape(0.dp),
-                onFocus = { isFocused = it }
-            )
-            .clickable { onClick() }
-            .background(bgColor)
-            .padding(vertical = tokens.spacing.large, horizontal = tokens.spacing.extraLarge)
-    ) {
-        Text(
-            text = name.uppercase(),
-            color = textColor,
-            style = tokens.typography.title,
-            fontWeight = if (isSelected || isFocused) FontWeight.Black else FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        if (isSelected && !isFocused) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .width(4.dp)
-                    .height(24.dp)
-                    .background(tokens.colors.primary)
-            )
-        }
-    }
+    PlayerChannelRow(name, isSelected, isFocused, tokens.colors.primary, textColor, bgColor,
+        tokens.typography.title, Modifier
+            .adaptiveFocus(shape = RoundedCornerShape(0.dp), onFocus = { isFocused = it })
+            .clickable { onClick() })
 }
 
 @Composable

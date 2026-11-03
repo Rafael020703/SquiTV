@@ -1,5 +1,7 @@
 ﻿package rsv.squitv.core.ui.components.content
 
+import rsv.squitv.core.ui.components.player.PlayerEpisodeDescription
+import rsv.squitv.core.ui.components.player.PlayerEpisodeNumber
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -157,20 +159,9 @@ fun EpisodeCard(
                     )
                     
                     // Episode Number Tag
-                    Surface(
-                        color = tokens.colors.primary,
-                        shape = RoundedCornerShape(bottomEnd = 8.dp),
-                        modifier = Modifier.align(Alignment.TopStart)
-                    ) {
-                        Text(
-                            text = "E$episodeNum",
-                            modifier = Modifier.padding(horizontal = tokens.spacing.small, vertical = tokens.spacing.micro),
-                            style = tokens.typography.caption,
-                            fontWeight = FontWeight.Black,
-                            color = Color.Black
-                        )
-                    }
-                    
+                    PlayerEpisodeNumber("E$episodeNum", tokens.colors.primary, tokens.typography.caption,
+                        Modifier.align(Alignment.TopStart))
+
                     if (isWatched) {
                         Surface(
                             color = tokens.colors.secondary,
@@ -205,22 +196,8 @@ fun EpisodeCard(
                 Spacer(modifier = Modifier.width(tokens.spacing.medium))
                 
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title.uppercase(),
-                        style = tokens.typography.title,
-                        color = if (isWatched) tokens.colors.textSecondary.copy(alpha = 0.5f) else tokens.colors.textPrimary,
-                        fontWeight = FontWeight.Black,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = plot ?: stringResource(R.string.no_description),
-                        style = tokens.typography.body,
-                        color = tokens.colors.textSecondary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = 18.sp
-                    )
+                    PlayerEpisodeDescription(title, plot ?: stringResource(R.string.no_description), isWatched,
+                        tokens.colors.textPrimary, tokens.colors.textSecondary, tokens.typography.title, tokens.typography.body)
                     if (progress != null && progress > 0.0f) {
                         LinearProgressIndicator(
                             progress = { progress.coerceIn(0f, 1f) },

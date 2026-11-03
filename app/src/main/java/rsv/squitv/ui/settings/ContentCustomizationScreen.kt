@@ -308,12 +308,7 @@ fun CategoryCustomizerTab(
     val hiddenSet = appSettings.hiddenCategoriesMap[typeKey] ?: emptySet()
 
     val sortedCategories = remember(rawCategories, customOrder) {
-        if (!customOrder.isNullOrEmpty()) {
-            val orderMap = customOrder.withIndex().associate { it.value to it.index }
-            rawCategories.sortedWith(compareBy { orderMap[it.id] ?: Int.MAX_VALUE })
-        } else {
-            rawCategories
-        }
+        rsv.squitv.shared.catalog.CategoryCustomization.apply(rawCategories, customOrder) { it.id }
     }
 
     val totalCount = rawCategories.size
