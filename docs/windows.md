@@ -2,7 +2,7 @@
 
 ## Estado e plataformas
 
-A versão conjunta **v1.23** reúne Android **1.23/code 24** e Windows **1.23.0 x64**. Notas: [Android](releases/v1.23-android.md) e [Windows](releases/v1.23-windows.md). A publicação anterior Windows 1.22.2 continua no histórico; versões e assets antigos não devem ser substituídos.
+A versão conjunta [**v1.23**, publicada em 03/11/2026](https://github.com/Rafael020703/SquiTV/releases/tag/v1.23), reúne Android **1.23/code 24** e Windows **1.23.0 x64**. Notas: [Android](releases/v1.23-android.md) e [Windows](releases/v1.23-windows.md). É a versão Latest para os clientes Android legados também. Publicações anteriores continuam no histórico; versões e assets antigos não foram substituídos.
 
 O Windows aproxima funções e apresentação do Android, mas ainda não tem paridade completa. `:desktopApp` consome Kotlin puro em `:shared` e fontes Compose em `uiCommon`; nunca depende de `:app`. Motores, armazenamento e integrações de sistema permanecem específicos de cada plataforma.
 
@@ -86,7 +86,9 @@ O `.gitignore` conserva planos, auditorias, registros de manutenção, dados pri
 
 ## Evidências e limites
 
-A preparação da v1.23 registra compilações, empacotamento, lint, assinatura Android e conferência dos arquivos/manifesto. Compilar APK de teste instrumentado não significa executá-lo. Não foram executados testes locais nesta rodada nem observados interface/reprodução/Multi-view ou upgrade da release instalada. CI possui suas próprias verificações; seu resultado deve ser informado separadamente.
+A preparação da v1.23 concluiu compilações, empacotamento, lint (zero erros, com avisos), assinatura Android compatível e conferência dos arquivos/manifesto. O [CI da revisão distribuída](https://github.com/Rafael020703/SquiTV/actions/runs/41642997574) passou nos jobs Android e Windows. Os cinco assets públicos foram baixados e tiveram tamanho/SHA-256 conferidos; APK de 7.283.921 bytes e instalador Windows de 71.510.528 bytes (68,20 MiB). As referências estáveis das duas plataformas apontam o mesmo manifesto da v1.23, com notas separadas.
+
+Compilar APK de teste instrumentado não significa executá-lo. Não foram executados testes locais nesta rodada nem observados interface/reprodução/Multi-view ou upgrade da release instalada. Testes executados pelo CI remoto são evidência separada das verificações locais.
 
 Execução, inspeção e verificações de instalação neste PC usam somente debug. A release instalada, seus processos e dados não podem ser abertos, encerrados, reinstalados ou alterados pelo agente. Sem ganhos de FPS/memória/abertura anunciados sem medição.
 

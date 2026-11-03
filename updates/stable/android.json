@@ -3,7 +3,7 @@
   "productId": "squi-tv",
   "channel": "stable",
   "platform": "android",
-  "versionName": "1.22",
-  "releaseTag": "v1.22",
-  "manifestSha256": "f303c071ad56c3bab53f429b2891ca2b6f80c8645999b292438a467f667cc3e1"
+  "versionName": "1.23",
+  "releaseTag": "v1.23",
+  "manifestSha256": "49bdb0726ada7c6079c3539a978692883ca2e49f5641c143ad0fd3bef0dc9bb4"
 }
