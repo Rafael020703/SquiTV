@@ -139,7 +139,7 @@ O `.gitignore` exclui builds, caches, arquivos locais, material privado de assin
 
 As variantes Windows release e debug têm nomes, identidades e armazenamento separados. A release usa instalador `.exe`; para desenvolver, a debug pode ser portátil com atalho no menu Iniciar (`tools/deploy-windows-debug.ps1`). A debug portátil inclui Java e LibVLC; a release inclui Java e seu instalador prepara as bibliotecas de reprodução quando necessário. A conta é salva opcionalmente com DPAPI do usuário do Windows, sem senha em texto no disco.
 
-Consulte [Windows: build, instalação e limites](docs/windows.md). O instalador inicial é gerado localmente; não foi anexado à release Android v1.21.
+Consulte [Windows: build, instalação e limites](docs/windows.md). As atualizações Windows têm notas e artefatos próprios, sem alterar a release Android.
 
 ## Tecnologia
 

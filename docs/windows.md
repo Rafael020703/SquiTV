@@ -2,7 +2,7 @@
 
 ## Escopo atual
 
-**Candidata desta rodada:** Windows 1.22.2, exclusiva Windows, com publicação autorizada pelo usuário. Android permanece na v1.22. Até a conferência da nova publicação, a referência estável permanece na Windows 1.22.1. Não executar nem atualizar a release instalada no PC durante este processo.
+**Publicada:** [Windows 1.22.2](https://github.com/Rafael020703/SquiTV/releases/tag/v1.22.2.1), exclusiva Windows. EXE online x64 de 70.990.336 bytes (67,70 MiB). Android permanece na v1.22 e continua Latest. A referência estável Windows aponta o manifesto da 1.22.2. A release instalada no PC não foi executada nem alterada pelo agente.
 
 Windows x64: login Xtream, conta ativa/validade, dashboard, categorias/busca de canais, filmes e séries, detalhes de filmes, temporadas/episódios, reprodução integrada com LibVLC e configurações iniciais. Catálogos e preferências Windows ainda não têm paridade completa com o Android.
 
@@ -16,7 +16,7 @@ A apresentação dos cartões e o fundo usam `CinematicCardContent`/`PortalBackd
 
 Ao vivo, Filmes, Séries, Configurações e Buscar têm destinos reais. Favoritos, Downloads e Multi-view ainda exigem portabilidade funcional; os cartões dessas áreas continuam visuais. O botão de Notificações também não tem ação implementada no Android atual. Não confundir aparência compartilhada com paridade funcional concluída.
 
-A prioridade atual é completar funções da dashboard após as implementações iniciais do player VOD e do atualizador. A debug permanece separada das atualizações de produção. Por pedido expresso de 02/11/2026, desenvolvimento, execução e inspeções usam somente a **debug**; a release instalada no PC e seus dados não devem ser abertos, encerrados, reinstalados ou alterados pelo agente.
+A rodada 1.22.2 foi encerrada por orientação do usuário; as demais portabilidades ficam para versões futuras, começando por revisar os fluxos existentes conforme feedback antes de ampliar funções da dashboard. A debug permanece separada das atualizações de produção. Por pedido expresso de 02/11/2026, desenvolvimento, execução e inspeções usam somente a **debug**; a release instalada no PC e seus dados não devem ser abertos, encerrados, reinstalados ou alterados pelo agente.
 
 ### Busca da dashboard
 
@@ -341,3 +341,11 @@ Verificações desta etapa: createDistributable debug e compileDebugKotlin/compi
 ### Adiado para versões futuras
 
 Esta rodada encerra a expansão funcional. Favoritos/Downloads/Multi-view, histórico e retomada persistentes, perfis, categorias por gênero/preparação e compatibilidade de backup/sincronização Android continuam fora desta atualização. A próxima prioridade é revisar o fluxo já existente de reprodução e retorno a partir do feedback da nova versão, antes de portar outro módulo. Não existe paridade completa Android/Windows.
+
+
+### Publicação e conferência Windows 1.22.2
+
+- Código/tag: ea413eee81fc06665cfe57d40623b409b97c6281 / v1.22.2.1. [CI aprovada](https://github.com/Rafael020703/SquiTV/actions/runs/41558260240): Windows variants e Build and Test (Android/shared/gerador/lint), sem executar instalador release. Os testes foram executados automaticamente no GitHub; não foram executados nem acrescentados testes locais nesta rodada.
+- Release estável pública, sem assumir Latest. API pública consultada sem autenticação; exatamente EXE, checksum e manifesto com nomes/URLs/tamanhos/digests esperados. Os três arquivos foram baixados de volta após a publicação e comparados aos bytes do staging. EXE SHA-256: `9792d017a2023dd372bcd8f42c30ed54165781afea2b6a3eb9ff30bd56e43e80`; manifesto: `bf6c40c23515a3a658de2eded993aceab29dab73cee0bfc10dafaa4b9e5f03a5`.
+- Referência Windows avançada somente depois da conferência pública; referência Android preservada. Changelog do manifesto contém somente Windows, sem alterar a distribuição Android 1.22/code23.
+- Debug 1.22.2 portátil 0f12a95def82e336 entregue no Iniciar com ícone. Nenhum processo do app iniciado/encerrado. Nenhuma instalação, upgrade, visual/player/provedor exercitado nesta rodada; compilação/CI/integridade não comprovam esses fluxos. A instalação release G:/SquiTV e seus dados permanecem intactos.
