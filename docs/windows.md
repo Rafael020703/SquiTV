@@ -2,7 +2,7 @@
 
 ## Estado e plataformas
 
-A versão conjunta [**v1.24**, publicada em 03/11/2026](https://github.com/Rafael020703/SquiTV/releases/tag/v1.24), reúne Android **1.24/code 25** e Windows **1.24.0 x64**. Notas: [Android](releases/v1.24-android.md) e [Windows](releases/v1.24-windows.md). O Android recebeu depois o patch exclusivo [v1.24.1](releases/v1.24.1-android.md), que assumiu Latest; Windows permanece 1.24.0 e sua referência estável continua apontando para v1.24. Publicações anteriores permanecem no histórico, sem substituir tags ou assets.
+A versão conjunta [**v1.24**, publicada em 03/11/2026](https://github.com/Rafael020703/SquiTV/releases/tag/v1.24), reúne Android **1.24/code 25** e Windows **1.24.0 x64**. Notas: [Android](releases/v1.24-android.md) e [Windows](releases/v1.24-windows.md). O Android recebeu depois o patch exclusivo [v1.24.1](releases/v1.24.1-android.md) e a publicação [v1.24.2/code 27](releases/v1.24.2-android.md), atualmente Latest, com o mesmo código funcional da v1.24.1 para conferir o fluxo de atualização. Windows permanece 1.24.0 e sua referência estável continua apontando para v1.24. Publicações anteriores permanecem no histórico, sem substituir tags ou assets.
 
 O Windows aproxima funções e apresentação do Android, mas ainda não tem paridade completa. `:desktopApp` consome Kotlin puro em `:shared` e fontes Compose em `uiCommon`; nunca depende de `:app`. Motores, armazenamento e integrações de sistema permanecem específicos de cada plataforma.
 
