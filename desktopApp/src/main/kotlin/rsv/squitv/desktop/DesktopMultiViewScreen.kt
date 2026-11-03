@@ -51,7 +51,7 @@ internal fun DesktopMultiViewScreen(controller: DesktopController, store: Deskto
     LaunchedEffect(credentials) { controller.multiView.open(credentials); withFrameNanos { }; focuses[0].requestFocus() }
     val input: (KeyEvent) -> Boolean = { event ->
         if (event.key == Key.F11) {
-            if (event.type == KeyEventType.KeyDown) toggleFullscreen()
+            if (event.type == KeyEventType.KeyUp) toggleFullscreen()
             true
         } else if (event.key == Key.Escape || event.key == Key.Back) {
             if (event.type == KeyEventType.KeyUp) {

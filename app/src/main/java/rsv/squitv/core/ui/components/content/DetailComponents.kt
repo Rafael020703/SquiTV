@@ -121,7 +121,8 @@ fun EpisodeCard(
     onClick: () -> Unit,
     onDownload: () -> Unit,
     modifier: Modifier = Modifier,
-    isExpanded: Boolean = false
+    isExpanded: Boolean = false,
+    imageFallback: String? = null
 ) {
     val tokens = AppDesignSystem
     var isFocused by remember { mutableStateOf(false) }
@@ -152,7 +153,7 @@ fun EpisodeCard(
                         .background(tokens.colors.surfaceVariant.copy(alpha = 0.1f))
                 ) {
                     AsyncImage(
-                        model = image,
+                        model = ContentImageSource(listOf(image, imageFallback)),
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop

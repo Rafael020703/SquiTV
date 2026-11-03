@@ -60,6 +60,12 @@ internal class DesktopWatchHistory(directory: Path, scope: CoroutineScope) {
         val key = "$account/${if (session.series) "SERIES" else "MOVIES"}/${session.id}"
         val monotonic = System.nanoTime() / 1_000_000
         if (!force && !complete && monotonic - (lastSaved[key] ?: Long.MIN_VALUE / 2) < 10_000) return@withLock true
+        ready()
+        val previous = state.value.entries.firstOrNull { it.key == key }
+        // Paused/ended player snapshots can repeat. Avoid revalidating the entire history
+        // on each tick when no progress has changed, including forced pause/close saves.
+        if (complete && previous == null || !complete && previous?.positionMs == status.timeMs &&
+            previous.durationMs == status.durationMs) return@withLock true
         val entry = DesktopWatchEntry(account, session.id, session.catalogId, session.series,
             session.catalogTitle, session.title, session.catalogCover, session.extension,
             status.timeMs, status.durationMs, observedAt, session.episodes.getOrNull(session.episodeIndex)?.season)

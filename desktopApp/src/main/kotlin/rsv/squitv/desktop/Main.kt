@@ -51,11 +51,14 @@ private fun runApplication() {
             Path.of(System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), DesktopBuildInfo.DATA_FOLDER)
         }
         val history = remember { DesktopWatchHistory(directory, scope) }
+        val downloads = remember { DesktopDownloads(directory, scope) }
         val controller = remember { DesktopController(XtreamClient(),
             WindowsCredentialStore(directory, useDebugDefaults = DesktopBuildInfo.DEBUG,
                 debugDefaultsFile = if (DesktopBuildInfo.DEBUG)
                     System.getProperty("squitv.debug.defaultsFile")?.let(Path::of) ?: directory.resolve("debug-login.dpapi")
-                else directory.resolve("debug-login.dpapi")), scope).also { it.watchHistory = history; it.catalog.attachMetadata(directory) } }
+                else directory.resolve("debug-login.dpapi")), scope).also {
+                    it.watchHistory = history; it.downloads = downloads; it.catalog.attachMetadata(directory)
+                } }
         val preferences = remember { DesktopPreferencesStore(directory, scope) }
         val updates = remember { DesktopUpdateController(directory.resolve("updates"), preferences, scope) }
         val updateState by updates.state.collectAsState()
@@ -66,17 +69,28 @@ private fun runApplication() {
             if (preferencesLoaded) controller.configureLiveChannels(settings.groupLiveChannels,
                 rsv.squitv.domain.model.ChannelQuality.fromPreference(settings.preferredChannelQuality))
         }
-        val windowState = rememberWindowState(placement = WindowPlacement.Fullscreen, width = 1120.dp, height = 630.dp)
+        // Initialize the peer before entering fullscreen; restore from a native show event.
+        val windowState = rememberWindowState(placement = WindowPlacement.Floating, width = 1120.dp, height = 630.dp)
+        var requestedFullscreen by remember { mutableStateOf<Boolean?>(null) }
+        var windowShowing by remember { mutableStateOf(false) }
         var windowModeRestored by remember { mutableStateOf(false) }
         var closing by remember { mutableStateOf(false) }
         LaunchedEffect(preferencesLoaded) {
-            if (preferencesLoaded && !windowModeRestored) {
-                windowState.placement = if (settings.fullscreen) WindowPlacement.Fullscreen else WindowPlacement.Floating
+            if (preferencesLoaded && requestedFullscreen == null) requestedFullscreen = settings.fullscreen
+        }
+        LaunchedEffect(windowShowing, requestedFullscreen) {
+            val fullscreen = requestedFullscreen
+            if (windowShowing && fullscreen != null && !windowModeRestored) {
+                withFrameNanos { }
+                if (windowModeRestored || closing) return@LaunchedEffect
+                windowState.placement = if (fullscreen) WindowPlacement.Fullscreen else WindowPlacement.Floating
                 windowModeRestored = true
             }
         }
         val toggleFullscreen: () -> Unit = {
-            val fullscreen = windowState.placement != WindowPlacement.Fullscreen
+            windowModeRestored = true // Explicit input wins over pending startup restoration.
+            val fullscreen = !(requestedFullscreen ?: settings.fullscreen)
+            requestedFullscreen = fullscreen
             windowState.placement = if (fullscreen) WindowPlacement.Fullscreen else WindowPlacement.Floating
             preferences.update { it.copy(fullscreen = fullscreen) }
         }
@@ -88,17 +102,21 @@ private fun runApplication() {
                 scope.launch {
                     try {
                         controller.catalog.preparation?.stopAndFlush()
+                        downloads.stopAndFlush()
                         controller.flushWatchProgress(activePlayer?.state?.value)
-                        preferences.updateAndAwait { it.copy(fullscreen = windowState.placement == WindowPlacement.Fullscreen) }
+                        preferences.flushCatalogPosition()
+                        preferences.updateAndAwait { it.copy(fullscreen =
+                            requestedFullscreen ?: it.fullscreen) }
                     }
                     finally { exitApplication() }
                 }
             }
         }
         var livePlayerInput by remember { mutableStateOf<((KeyEvent) -> Boolean)?>(null) }
+        var navigationInput by remember { mutableStateOf<((KeyEvent) -> Boolean)?>(null) }
         DisposableEffect(controller) { onDispose { controller.close() } }
         Window(onCloseRequest = closeApplication, title = DesktopBuildInfo.APP_NAME,
-            visible = windowModeRestored,
+            visible = preferencesLoaded && requestedFullscreen != null,
             icon = brandPainter(), state = windowState, undecorated = true,
             resizable = windowState.placement != WindowPlacement.Fullscreen,
             onPreviewKeyEvent = { event ->
@@ -106,7 +124,10 @@ private fun runApplication() {
                 val catalog = controller.catalog.state.value
                 val playing = current.playback != null || catalog.playback != null
                 val back = event.key == Key.Escape || event.key == Key.Back
-                if (event.type == KeyEventType.KeyDown && event.key == Key.F11) { toggleFullscreen(); true }
+                if (event.key == Key.F11) {
+                    if (event.type == KeyEventType.KeyUp) toggleFullscreen()
+                    true
+                }
                 else if (showExitDialog && back) {
                     if (event.type == KeyEventType.KeyUp) showExitDialog = false
                     true
@@ -123,6 +144,7 @@ private fun runApplication() {
                         current.playback != null -> controller.stopPlayback()
                         catalog.playback != null -> controller.catalog.stopPlayback()
                         catalog.detail != null -> controller.catalog.closeDetail()
+                        current.page == DesktopPage.DOWNLOADS && current.account == null -> controller.home()
                         current.account != null && current.page == DesktopPage.UPDATES -> controller.openSettings()
                         current.account != null && current.page != DesktopPage.DASHBOARD -> controller.home()
                         else -> showExitDialog = true
@@ -139,8 +161,18 @@ private fun runApplication() {
                     }
                     else -> false
                 }
-            }) {
+            }, onKeyEvent = { navigationInput?.invoke(it) ?: false }) {
             MaintainWindowAspectRatio(window, windowState)
+            MouseBackNavigation(window)
+            DisposableEffect(window) {
+                val listener = object : java.awt.event.ComponentAdapter() {
+                    override fun componentShown(event: java.awt.event.ComponentEvent) { windowShowing = window.isShowing }
+                    override fun componentHidden(event: java.awt.event.ComponentEvent) { windowShowing = false }
+                }
+                window.addComponentListener(listener)
+                windowShowing = window.isShowing // Covers a show event before registration.
+                onDispose { window.removeComponentListener(listener) }
+            }
             DisposableEffect(window) {
                 val focus = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager()
                 val listener = java.beans.PropertyChangeListener {
@@ -152,6 +184,8 @@ private fun runApplication() {
                 onDispose { focus.removePropertyChangeListener("activeWindow", listener) }
             }
             MaterialTheme(colorScheme = palette, typography = desktopTypography) {
+                val navigation = rememberDirectionalNavigation()
+                SideEffect { navigationInput = navigation }
                 Surface(Modifier.fillMaxSize(), color = palette.background) {
                     val state by controller.state.collectAsState()
                     val contentState by controller.catalog.state.collectAsState()
@@ -196,7 +230,7 @@ internal fun DesktopScreen(state: DesktopState, controller: DesktopController, p
     fullscreen: Boolean = false, toggleFullscreen: () -> Unit = {},
     registerPlayer: (WindowsLivePlayer?) -> Unit = {},
     registerLiveInput: (((KeyEvent) -> Boolean)?) -> Unit = {}, installUpdate: () -> Unit = {}) {
-    val images = remember(state.credentials) { DesktopImages() }
+    val images = remember(state.credentials) { DesktopImages(state.credentials?.baseUrl) }
     DisposableEffect(images) { onDispose { images.close() } }
     CompositionLocalProvider(LocalDesktopImages provides images) {
         DesktopScreenContent(state, controller, preferences, fullscreen, toggleFullscreen,
@@ -220,15 +254,20 @@ private fun DesktopScreenContent(state: DesktopState, controller: DesktopControl
         }
     }
     LaunchedEffect(state.account == null) { if (state.account == null) {
-        listOf("dashboard", "live", "MOVIES", "SERIES", "settings", "search", "favorites").forEach(screens::removeState)
+        listOf("dashboard", "live", "MOVIES", "SERIES", "settings", "search", "favorites", "downloads").forEach(screens::removeState)
     } }
     if (state.playback != null) {
         LivePlayerScreen(state, controller, preferences, fullscreen, toggleFullscreen, registerPlayer, registerLiveInput)
         return
     }
     val vod = catalog.playback
-    if (vod != null && state.credentials != null) {
-        VodPlayerScreen(vod, state.credentials, controller, preferences, fullscreen, toggleFullscreen, registerPlayer, registerLiveInput)
+    val vodAccount = state.credentials ?: state.savedCredentials?.takeIf { vod?.localMediaUri != null }
+    if (vod != null && vodAccount != null) {
+        VodPlayerScreen(vod, vodAccount, controller, preferences, fullscreen, toggleFullscreen, registerPlayer, registerLiveInput)
+        return
+    }
+    if (state.page == DesktopPage.DOWNLOADS && !state.restoring) {
+        screens.SaveableStateProvider("downloads") { DesktopDownloadsScreen(controller) }
         return
     }
     Column(Modifier.fillMaxSize()) {

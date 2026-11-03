@@ -82,6 +82,7 @@ fun SeriesScreen(
     val gridFocusRequester = remember { FocusRequester() }
 
     val selectedCategoryId by categoryViewModel.activeCategoryId.collectAsStateWithLifecycle()
+    val browsePosition by categoryViewModel.browsePosition.collectAsStateWithLifecycle()
     val gridState = rememberContentGridState("${settings.credentials?.baseUrl}#${settings.credentials?.username}/series/$selectedCategoryId/$sortOrder")
 
     val handleCategorySelect: (String) -> Unit = { catId ->
@@ -154,7 +155,13 @@ fun SeriesScreen(
                             onToggleFavorite = libraryViewModel::toggleFavorite,
                             favorites = favorites,
                             watchProgress = watchProgress,
-                            onItemClick = { item -> onSeriesClick(item.id.toInt(), item.name, item.icon) }
+                            targetItemId = selectedCategoryId?.let { browsePosition?.itemsByCategory?.get(it) }
+                                ?: browsePosition?.takeIf { it.categoryId == selectedCategoryId }?.itemId,
+                            onItemFocused = { categoryViewModel.rememberItem(it.id) },
+                            onItemClick = { item ->
+                                categoryViewModel.rememberItem(item.id, immediate = true)
+                                onSeriesClick(item.id.toInt(), item.name, item.icon)
+                            }
                         )
                     }
                 }

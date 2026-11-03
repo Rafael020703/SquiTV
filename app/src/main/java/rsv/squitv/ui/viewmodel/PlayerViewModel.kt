@@ -852,8 +852,11 @@ class PlayerViewModel @Inject constructor(
         nextEpisodeName = null
 
         if (type == ContentType.LIVE && streamId > 0) {
+            val originScope = sourceScope
             viewModelScope.launch {
                 settingsRepository.updateLastChannel("live", categoryId ?: "", streamId.toString(), displayName ?: "")
+                if (!categoryId.isNullOrBlank()) settingsRepository.rememberCatalogPosition(
+                    originScope, "live", categoryId, streamId.toString())
             }
         }
         refreshChannelVersions()
@@ -1203,19 +1206,11 @@ class PlayerViewModel @Inject constructor(
                     } else {
                         val currentPos = p.currentPosition
                         val duration = p.duration
-                        if (currentType != ContentType.LIVE && currentStreamId != null && duration > 0) {
-                            val savedPos = savedProgressPosition
-                            if (savedPos == null || currentPos >= 1000L || p.playbackState == Player.STATE_READY) {
-                                syncWatchProgressUseCase(
-                                    streamId = currentStreamId!!,
-                                    type = currentType.toString(),
-                                    position = currentPos,
-                                    duration = duration,
-                                    seriesId = currentSeriesId
-                                )
-                            }
-                        }
-                        
+                        val streamId = currentStreamId
+                        val type = currentType
+                        val seriesId = currentSeriesId
+                        val sessionId = _zappingSessionId.value
+
                         val bandwidth = bandwidthMeter.bitrateEstimate / 1_000_000.0
                         val bufferedPos = p.bufferedPosition
                         val delay = if (p.isCurrentMediaItemLive) (p.duration - currentPos) / 1000 else (bufferedPos - currentPos) / 1000
@@ -1244,6 +1239,12 @@ class PlayerViewModel @Inject constructor(
                             audioCodec = audioFormat?.sampleMimeType,
                             signalHealth = health
                         )
+                        // Persist after publishing the snapshot: Room can suspend while track,
+                        // pause or channel events update UI state. Never overwrite them afterwards.
+                        if (type != ContentType.LIVE && streamId != null && duration > 0 &&
+                            sessionId == _zappingSessionId.value && p.currentMediaItem?.mediaId == streamId.toString()) {
+                            syncWatchProgressUseCase(streamId, type.toString(), currentPos, duration, seriesId)
+                        }
                     }
                 }
                 delay(2000)
@@ -1261,6 +1262,15 @@ class PlayerViewModel @Inject constructor(
 
     fun seekTo(position: Long) {
         playbackManager.seekTo(position)
+    }
+
+    fun adjustAppVolume(direction: Int): Int? {
+        val player = playbackManager.player ?: return null
+        if (!player.isCommandAvailable(Player.COMMAND_SET_VOLUME) || !player.isCommandAvailable(Player.COMMAND_GET_VOLUME)) return null
+        val percent = rsv.squitv.shared.player.PlayerVolume.adjust(
+            kotlin.math.round(player.volume * 100).toInt(), direction)
+        player.volume = percent / 100f
+        return percent
     }
 
     fun seekForward() {
@@ -1458,16 +1468,18 @@ class PlayerViewModel @Inject constructor(
         val currentPos = p.currentPosition
         val duration = p.duration
         val streamId = currentStreamId
+        val type = currentType.toString()
+        val seriesId = currentSeriesId
         if (currentType != ContentType.LIVE && streamId != null && duration > 0) {
             val nonCancellableScope = CoroutineScope(Dispatchers.IO + NonCancellable)
             nonCancellableScope.launch {
                 try {
                     syncWatchProgressUseCase(
                         streamId = streamId,
-                        type = currentType.toString(),
+                        type = type,
                         position = currentPos,
                         duration = duration,
-                        seriesId = currentSeriesId,
+                        seriesId = seriesId,
                         forceSync = true
                     )
                 } catch (e: Exception) {

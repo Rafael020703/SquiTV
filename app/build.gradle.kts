@@ -22,8 +22,8 @@ android {
         applicationId = "rsv.squitv"
         minSdk = 24
         targetSdk = 35
-        versionCode = 24
-        versionName = "1.23"
+        versionCode = 25
+        versionName = "1.24"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -173,7 +173,7 @@ dependencies {
 }
 
 
-/** Generates real legacy launcher bitmaps for Android 7/Fire OS; API 26+ uses adaptive XML. */
+/** Original launcher icons and an opaque banner for TV launchers that use android:banner. */
 abstract class GenerateLauncherIcons : DefaultTask() {
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
@@ -189,6 +189,8 @@ abstract class GenerateLauncherIcons : DefaultTask() {
                 ImageIO.write(image, "png", folder.resolve(name))
             }
         }
+        val tvDrawables = outputDirectory.dir("drawable-television-nodpi").get().asFile.apply { mkdirs() }
+        ImageIO.write(rsv.squitv.build.TvLauncherArtwork.banner(), "png", tvDrawables.resolve("banner_tv.png"))
     }
 }
 

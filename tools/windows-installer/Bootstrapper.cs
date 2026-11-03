@@ -35,6 +35,7 @@ namespace SquiTV.Setup {
     internal sealed class InstalledApplication { internal string Directory; internal bool Machine; }
 
     internal static class Program {
+        internal const int LaunchAfterInstall = 20;
         [STAThread] private static int Main(string[] args) {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
@@ -48,13 +49,19 @@ namespace SquiTV.Setup {
                 Validate(definition, runtime);
                 bool acquired;
                 string sid = WindowsIdentity.GetCurrent().User.Value;
-                bool forcedMachine = args.Length == 1 && args[0] == "--machine";
+                bool forcedMachine = args.Length == 1 && (args[0] == "--machine" || args[0] == "--machine-no-launch");
                 if (args.Length > 0 && !forcedMachine) throw new InvalidDataException();
                 if (forcedMachine && !IsAdministrator()) throw new InvalidOperationException();
                 string mutexName = forcedMachine ? "Global\\" + definition.name + ".Setup.Machine" : "Local\\" + definition.name + ".Setup." + sid;
                 using (Mutex gate = new Mutex(true, mutexName, out acquired)) {
                     if (!acquired) { MessageBox.Show("Já existe uma instalação desta versão em andamento.", "Squi TV"); return 1; }
-                    try { Application.Run(new SetupForm(definition, runtime, forcedMachine)); }
+                    try {
+                        using (SetupForm setup = new SetupForm(definition, runtime, forcedMachine,
+                                !forcedMachine || args[0] != "--machine-no-launch")) {
+                            Application.Run(setup);
+                            if (forcedMachine && setup.LaunchRequested) return LaunchAfterInstall;
+                        }
+                    }
                     finally { gate.ReleaseMutex(); }
                 }
                 return 0;
@@ -213,6 +220,20 @@ namespace SquiTV.Setup {
         internal static bool IsAdministrator() {
             return new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
         }
+
+        internal static void StartInstalledApplication(InstallerDefinition app) {
+            // The original, unelevated setup process launches the app after its UAC child exits.
+            // Never carry the installer's administrator token into the media application.
+            if (IsAdministrator()) throw new InvalidOperationException("Abra o Squi TV pelo menu Iniciar.");
+            InstalledApplication installed = FindInstallation(app, false);
+            if (installed == null) throw new IOException("A instalação não foi localizada no Windows.");
+            string executable = Path.Combine(installed.Directory, app.name + ".exe");
+            NoLink(installed.Directory); NoLink(executable);
+            if (!File.Exists(executable)) throw new IOException("O executável instalado não foi localizado.");
+            Process.Start(new ProcessStartInfo {
+                FileName = executable, WorkingDirectory = installed.Directory, UseShellExecute = false
+            });
+        }
     }
 
     internal sealed class SetupForm : Form {
@@ -222,16 +243,19 @@ namespace SquiTV.Setup {
         private readonly ProgressBar progress = new ProgressBar();
         private readonly Button install = new Button();
         private readonly Button cancel = new Button();
+        private readonly CheckBox launchAfterInstall = new CheckBox();
+        internal bool LaunchRequested { get; private set; }
         private CancellationTokenSource cancellation;
         private bool busy, installing, finished;
         private readonly bool forcedMachine;
 
-        internal SetupForm(InstallerDefinition app, RuntimeDefinition runtime, bool forcedMachine = false) {
+        internal SetupForm(InstallerDefinition app, RuntimeDefinition runtime, bool forcedMachine = false,
+                bool canRequestLaunch = true) {
             this.app = app; this.runtime = runtime;
             this.forcedMachine = forcedMachine;
             Text = app.debug ? "Squi TV Debug — Instalação" : "Squi TV — Instalação";
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-            ClientSize = new Size(560,240); FormBorderStyle = FormBorderStyle.FixedDialog;
+            ClientSize = new Size(560,278); FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false; StartPosition = FormStartPosition.CenterScreen;
             BackColor = Color.FromArgb(12,18,29); ForeColor = Color.White; Font = new Font("Segoe UI",10);
             Label title = new Label { Text = app.debug ? "SQUI TV DEBUG" : "SQUI TV", AutoSize = true,
@@ -239,11 +263,30 @@ namespace SquiTV.Setup {
             message.SetBounds(24,72,512,64);
             message.Text = "O instalador prepara automaticamente os componentes necessários. Bibliotecas já verificadas serão reutilizadas.";
             progress.SetBounds(24,145,512,16);
-            install.Text = "Instalar / atualizar"; install.SetBounds(324,187,212,32);
-            cancel.Text = "Cancelar"; cancel.SetBounds(200,187,112,32);
-            install.Click += async delegate { if (finished) Close(); else await InstallAsync(); };
+            launchAfterInstall.Text = "Abrir o Squi TV ao concluir";
+            launchAfterInstall.SetBounds(24,181,512,28);
+            launchAfterInstall.Visible = false;
+            launchAfterInstall.Enabled = canRequestLaunch && (forcedMachine || !Program.IsAdministrator());
+            launchAfterInstall.Checked = launchAfterInstall.Enabled;
+            install.Text = "Instalar / atualizar"; install.SetBounds(324,225,212,32);
+            cancel.Text = "Cancelar"; cancel.SetBounds(200,225,112,32);
+            install.Click += async delegate {
+                if (!finished) { await InstallAsync(); return; }
+                if (launchAfterInstall.Visible && launchAfterInstall.Checked) {
+                    if (forcedMachine) LaunchRequested = true;
+                    else {
+                        try { Program.StartInstalledApplication(app); }
+                        catch (Exception) {
+                            launchAfterInstall.Checked = false;
+                            Status("Instalação concluída. Não foi possível abrir automaticamente; use o menu Iniciar.",100);
+                            return;
+                        }
+                    }
+                }
+                Close();
+            };
             cancel.Click += delegate { if (busy) cancellation.Cancel(); else Close(); };
-            Controls.AddRange(new Control[] { title,message,progress,install,cancel });
+            Controls.AddRange(new Control[] { title,message,progress,launchAfterInstall,install,cancel });
             AcceptButton = install; CancelButton = cancel;
             if (forcedMachine) Shown += async delegate { await InstallAsync(); };
             FormClosing += delegate(object sender, FormClosingEventArgs e) {
@@ -271,8 +314,17 @@ namespace SquiTV.Setup {
                     // Let Windows request elevation once. No credentials or arbitrary commands
                     // cross the boundary; the child only accepts this fixed, validated mode.
                     try {
-                        Process.Start(new ProcessStartInfo { FileName = Application.ExecutablePath,
-                            Arguments = "--machine", UseShellExecute = true, Verb = "runas" });
+                        using (Process child = Process.Start(new ProcessStartInfo { FileName = Application.ExecutablePath,
+                            Arguments = Program.IsAdministrator() ? "--machine-no-launch" : "--machine",
+                            UseShellExecute = true, Verb = "runas" })) {
+                            if (child == null) throw new IOException("Não foi possível iniciar a instalação.");
+                            Hide();
+                            await Task.Run(delegate { child.WaitForExit(); });
+                            if (child.ExitCode == Program.LaunchAfterInstall) {
+                                try { Program.StartInstalledApplication(app); }
+                                catch (Exception) { MessageBox.Show("Instalação concluída. Abra o Squi TV pelo menu Iniciar.", "Squi TV"); }
+                            }
+                        }
                         busy = false; Close(); return;
                     } catch (System.ComponentModel.Win32Exception error) {
                         if (error.NativeErrorCode == 1223) throw new OperationCanceledException();
@@ -301,9 +353,16 @@ namespace SquiTV.Setup {
                 if (result == 1602) throw new OperationCanceledException();
                 if (result != 0 && result != 3010) throw new IOException("O Windows Installer não concluiu a instalação (" + result + "). Tente novamente.");
                 finished = true; install.Text = "Concluir"; cancel.Visible = false;
+                launchAfterInstall.Visible = result == 0 && launchAfterInstall.Enabled;
                 Status(result == 3010 ? "Instalação concluída. Reinicie o Windows quando for conveniente." : "Instalação concluída. O Squi TV está disponível no menu Iniciar.",100);
-            } catch (OperationCanceledException) { Status("Instalação cancelada. Você pode tentar novamente.",0); }
-            catch (Exception error) { Status("Não foi possível concluir. " + error.Message,0); }
+            } catch (OperationCanceledException) {
+                if (!Visible && !IsDisposed) Show();
+                Status("Instalação cancelada. Você pode tentar novamente.",0);
+            }
+            catch (Exception error) {
+                if (!Visible && !IsDisposed) Show();
+                Status("Não foi possível concluir. " + error.Message,0);
+            }
             finally { busy = false; installing = false; install.Enabled = true; cancel.Enabled = true; cancellation.Dispose(); }
         }
 

@@ -35,6 +35,7 @@ import rsv.squitv.shared.brand.AppBrand
 import rsv.squitv.ui.content.components.rememberContentGridState
 import rsv.squitv.core.ui.components.common.PageHeadingText
 import rsv.squitv.shared.catalog.CategoryCustomization
+import rsv.squitv.shared.catalog.RecentlyAddedCatalog
 import java.text.Collator
 import java.util.Locale
 
@@ -50,6 +51,14 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
     val accountScope = remember(account) { liveCategoryScope(account).orEmpty() }
     val mode = preferences.catalogMode(accountScope, kind)
     var selectedNav by rememberSaveable(accountScope, kind, mode) { mutableStateOf<String?>(null) }
+    var selectionRestored by rememberSaveable(accountScope, kind, mode) { mutableStateOf(false) }
+    val savedPosition = preferences.browseMemory.position(accountScope, kind.name)
+    LaunchedEffect(preferencesLoaded, accountScope, kind, mode) {
+        if (preferencesLoaded && !selectionRestored) {
+            selectedNav = savedPosition?.categoryId
+            selectionRestored = true
+        }
+    }
     val favoriteRequested = selectedNav == "FAVORITES"
     val favoriteType = if (kind == CatalogKind.SERIES) DesktopSearchType.SERIES else DesktopSearchType.MOVIES
     val favoriteIds = preferences.favoriteCatalogItemsByScope["$accountScope/${kind.name}"].orEmpty()
@@ -85,13 +94,13 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
     var navigation by remember(accountScope, kind, mode) {
         mutableStateOf<List<rsv.squitv.shared.catalog.CatalogCategoryEntry<CatalogItem>>?>(null)
     }
-    LaunchedEffect(categories, browse.allItems, browse.allItemsLoaded, mode, hidden, continuing, favoriteResults, favoriteIds.isNotEmpty()) {
+    LaunchedEffect(accountScope, kind, categories, browse.allItems, browse.allItemsLoaded, mode, hidden, continuing, favoriteResults, favoriteIds.isNotEmpty()) {
         navigation = withContext(Dispatchers.Default) {
+            val visible = browse.allItems.filter { it.categoryId !in hidden }
             val base = if (!browse.allItemsLoaded && mode == rsv.squitv.domain.model.CategoryMode.PROVIDER) categories.map {
                 rsv.squitv.shared.catalog.CatalogCategoryEntry<CatalogItem>(it.id, it.name, emptyList())
             } else if (!browse.allItemsLoaded) listOf(
                 rsv.squitv.shared.catalog.CatalogCategoryEntry<CatalogItem>("ALL", "Todos", emptyList())) else {
-                val visible = browse.allItems.filter { it.categoryId !in hidden }
                 rsv.squitv.shared.catalog.CatalogCategoryGrouping.catalog(visible, categories.map { it.id to it.name },
                     "Todos", "Sem classificação", "FILTROS POR GÊNERO", "CATEGORIAS DO SERVIDOR", mode,
                     Locale.forLanguageTag("pt-BR"), { it.categoryId }, { it.genre })
@@ -99,18 +108,23 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
             val special = buildList {
                 if (continuing.isNotEmpty()) add(rsv.squitv.shared.catalog.CatalogCategoryEntry("CONTINUE_WATCHING", "Continuar assistindo", continuing.map { it.item() }))
                 if (favoriteIds.isNotEmpty()) add(rsv.squitv.shared.catalog.CatalogCategoryEntry("FAVORITES", "Favoritos", favoriteResults.mapNotNull { it.catalogItem }))
+                if (kind == CatalogKind.MOVIES && browse.allItemsLoaded) {
+                    val recent = RecentlyAddedCatalog.select(visible, 100, added = { it.added }, id = { it.id })
+                    if (recent.isNotEmpty()) add(rsv.squitv.shared.catalog.CatalogCategoryEntry("RECENTS", "Adicionados recentemente", recent))
+                }
             }
             if (base.firstOrNull()?.id == "ALL") base.take(1) + special + base.drop(1) else special + base
         }
     }
     val entries = navigation.orEmpty()
-    val selected = if (selectedNav == null && !browse.allItemsLoaded && browse.allError == null) null
-        else entries.firstOrNull { !it.isHeader && it.id == (selectedNav ?: browse.category?.id) }
-            ?: entries.firstOrNull { !it.isHeader && it.id !in setOf("CONTINUE_WATCHING", "FAVORITES") }
-            ?: entries.firstOrNull { !it.isHeader }
+    val requestedCategory = selectedNav ?: browse.category?.id
+    val visibleCategoryIds = entries.filterNot { it.isHeader }.map { it.id }
+    val resolvedCategory = rsv.squitv.shared.catalog.CatalogBrowseMemory.selectCategory(visibleCategoryIds, requestedCategory)
+    val canResolveCategory = browse.allItemsLoaded || browse.allError != null || requestedCategory in visibleCategoryIds
+    val selected = if (!selectionRestored || !canResolveCategory) null else entries.firstOrNull { it.id == resolvedCategory }
     val continueSelected = selected?.id == "CONTINUE_WATCHING"
     val favoriteSelected = selected?.id == "FAVORITES"
-    val specialSelected = continueSelected || favoriteSelected
+    val specialSelected = continueSelected || favoriteSelected || selected?.id == "RECENTS"
     LaunchedEffect(favoriteSelected, account, preferencesLoaded, preferences) {
         if (favoriteSelected && preferencesLoaded && account != null)
             controller.favorites.open(account, preferences, onlyType = favoriteType)
@@ -119,9 +133,11 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
     val allHidden = browse.categories.isNotEmpty() && categories.isEmpty() && !specialSelected &&
         (mode == rsv.squitv.domain.model.CategoryMode.PROVIDER || navigation != null && entries.none { !it.isHeader })
     LaunchedEffect(entries, selected?.id, browse.category?.id, browse.categoriesLoaded, browse.loadingCategories,
-        browse.itemsLoaded, browse.loading, browse.error, preferencesLoaded, mode) {
-        if (preferencesLoaded && browse.categoriesLoaded && !browse.loadingCategories && navigation != null) {
+        browse.itemsLoaded, browse.loading, browse.error, preferencesLoaded, mode, selectionRestored) {
+        if (preferencesLoaded && selectionRestored && browse.categoriesLoaded && !browse.loadingCategories && navigation != null &&
+            (browse.allItemsLoaded || browse.allError != null || favoriteRequested && favoriteSelected)) {
             selectedNav = selected?.id
+            store.rememberCatalogPosition(accountScope, kind.name, selected?.id, immediate = true)
             if (mode == rsv.squitv.domain.model.CategoryMode.PROVIDER && !browse.allItemsLoaded && browse.allError != null && !specialSelected && browse.error == null) {
                 val provider = categories.firstOrNull { it.id == selected?.id }
                 if (provider != null && (browse.category?.id != provider.id || !browse.itemsLoaded && !browse.loading)) controller.catalog.selectCategory(provider)
@@ -157,7 +173,12 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
     val selectedCategoryFocus = remember { FocusRequester() }
     val useFocus = LocalInputModeManager.current.inputMode == InputMode.Keyboard
     val savedIndex = remember(items, gridMemory.focusedItem) { items.indexOfFirst { it.id.toString() == gridMemory.focusedItem } }
-    val focusIndex = if (savedIndex >= 0) savedIndex else {
+    val persistentIndex = remember(items, savedPosition, selected?.id) {
+        val item = selected?.id?.let { savedPosition?.itemsByCategory?.get(it) }
+            ?: savedPosition?.takeIf { it.categoryId == selected?.id }?.itemId
+        items.indexOfFirst { it.id.toString() == item }
+    }
+    val focusIndex = if (savedIndex >= 0) savedIndex else if (!gridMemory.hasInteracted && persistentIndex >= 0) persistentIndex else {
         (if (gridMemory.hasInteracted) gridMemory.focusedIndex else grid.firstVisibleItemIndex)
             .coerceIn(0, items.lastIndex.coerceAtLeast(0))
     }
@@ -165,9 +186,10 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
     LaunchedEffect(gridMemory) {
         snapshotFlow { grid.isScrollInProgress }.collect { if (it) gridMemory.hasInteracted = true }
     }
-    LaunchedEffect(gridMemory, items.isNotEmpty()) {
-        if (!entered && items.isNotEmpty()) {
+    LaunchedEffect(gridMemory, items.isNotEmpty(), selectionRestored) {
+        if (!entered && items.isNotEmpty() && selectionRestored && (browse.allItemsLoaded || browse.allError != null || specialSelected)) {
             entered = true
+            if (!gridMemory.hasInteracted && persistentIndex >= 0) grid.scrollToItem(persistentIndex)
             if (useFocus && !editingSearch) {
                 withFrameNanos { }
                 if (grid.layoutInfo.visibleItemsInfo.none { it.index == focusIndex }) grid.scrollToItem(focusIndex)
@@ -231,7 +253,7 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
                                         else if (browse.allItemsLoaded || entry.id == "CONTINUE_WATCHING") entry.items.size else null,
                                     onClick = {
                                         selectedNav = entry.id
-                                        if (mode == rsv.squitv.domain.model.CategoryMode.PROVIDER && !browse.allItemsLoaded && entry.id !in setOf("CONTINUE_WATCHING", "FAVORITES"))
+                                        if (mode == rsv.squitv.domain.model.CategoryMode.PROVIDER && !browse.allItemsLoaded && entry.id !in setOf("CONTINUE_WATCHING", "FAVORITES", "RECENTS"))
                                             categories.firstOrNull { it.id == entry.id }?.let(controller.catalog::selectCategory)
                                     })
                             }
@@ -269,6 +291,7 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
                                 val modifier = (if (index == focusIndex) Modifier.focusRequester(gridFocus) else Modifier)
                                     .onFocusChanged { focus -> if (focus.hasFocus) {
                                         gridMemory.focusedItem = item.id.toString()
+                                        store.rememberCatalogPosition(accountScope, kind.name, selected?.id, item.id.toString())
                                         gridMemory.focusedIndex = index
                                         gridMemory.hasInteracted = true
                                     } }
@@ -279,6 +302,7 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
                                     gridMemory.focusedItem = item.id.toString()
                                     gridMemory.focusedIndex = index
                                     gridMemory.hasInteracted = true
+                                    store.rememberCatalogPosition(accountScope, kind.name, selected?.id, item.id.toString(), immediate = true)
                                     if (continueSelected) progressByCatalog[item.id]?.let(controller::openContinueEntry)
                                     else if (favoriteSelected) favoriteResults.firstOrNull { it.id == item.id }?.let {
                                         controller.openFavoriteResult(it, favoriteResults)
@@ -379,8 +403,8 @@ private fun DesktopCatalogFavoriteButton(name: String, isFavorite: Boolean, enab
 }
 
 @Composable
-internal fun CatalogImage(url: String?, images: ChannelLogos, modifier: Modifier) {
-    val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, url, images) { value = images.load(url) }
+internal fun CatalogImage(url: String?, images: ChannelLogos, modifier: Modifier, fallbacks: List<String?> = emptyList()) {
+    val bitmap by rememberRemoteBitmap(listOf(url) + fallbacks, images)
     Box(modifier, contentAlignment = Alignment.Center) {
         bitmap?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
             ?: Icon(Icons.Rounded.Movie, null, Modifier.size(48.dp), tint = palette.onSurfaceVariant.copy(alpha = .35f))
@@ -415,6 +439,18 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
         }
     }
     val images = rememberDesktopImages(DesktopImageKind.DETAILS)
+    val downloads = controller.downloads
+    val downloadEntries = downloads?.state?.collectAsState()?.value?.entries.orEmpty()
+    val downloaded = downloadEntries.firstOrNull {
+        it.account == accountScope && it.kind == DesktopDownloadKind.MOVIE && it.streamId == detail.item.id
+    }
+    val episodeDownloads = remember(downloadEntries, accountScope, detail.item.id) {
+        downloadEntries.filter { it.account == accountScope && it.kind == DesktopDownloadKind.EPISODE && it.seriesId == detail.item.id }
+            .associateBy { it.streamId }
+    }
+    val downloadProgress = downloads?.progress?.collectAsState()?.value
+    val downloadNotice = downloads?.notice?.collectAsState()?.value
+    val downloadError = downloads?.error?.collectAsState()?.value
     val info = detail.series
     val seasons = remember(info) { info?.let(OnDemandPlayback::seasons).orEmpty() }
     var season by rememberSaveable(detail.kind, detail.item.id) { mutableStateOf<Int?>(null) }
@@ -464,6 +500,10 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
                 TextButton(controller.catalog::retryDetail) { Text("Tentar novamente") }
             }
         }
+        if (detail.kind == CatalogKind.SERIES) {
+            downloadError?.let { StatusNotice(it, error = true) }
+            downloadNotice?.let { Text(it, color = palette.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
+        }
         if (detail.loading && detail.kind == CatalogKind.SERIES) {
             Text("Carregando temporadas e episódios…", color = palette.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall)
@@ -505,8 +545,9 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
                     item(key = "metadata") {
                     Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                         Surface(shape = RoundedCornerShape(18.dp), color = palette.surfaceVariant) {
-                            CatalogImage(movie?.movieImage ?: metadata?.cover ?: detail.item.cover, images,
-                                Modifier.width(if (detail.kind == CatalogKind.SERIES) 112.dp else 180.dp).aspectRatio(2f / 3f))
+                            CatalogImage(movie?.movieImage, images,
+                                Modifier.width(if (detail.kind == CatalogKind.SERIES) 112.dp else 180.dp).aspectRatio(2f / 3f),
+                                fallbacks = listOf(metadata?.cover, detail.item.cover))
                         }
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                             Text(detail.item.name, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
@@ -537,6 +578,19 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
                             if (detail.kind == CatalogKind.MOVIES && saved == null) Button(controller.catalog::playMovie) {
                                 Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("ASSISTIR")
                             }
+                            if (detail.kind == CatalogKind.MOVIES && downloads != null) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    OutlinedButton(controller::downloadMovie,
+                                        enabled = !detail.loading && downloadProgress == null && downloaded?.status != DesktopDownloadStatus.COMPLETED) {
+                                        Icon(Icons.Rounded.Download, null); Spacer(Modifier.width(8.dp))
+                                        Text(if (downloadProgress?.key == downloaded?.key && downloadProgress != null) "BAIXANDO…"
+                                            else if (downloaded?.status == DesktopDownloadStatus.COMPLETED) "BAIXADO" else "BAIXAR")
+                                    }
+                                    TextButton(controller::openDownloads) { Text("Ver downloads") }
+                                }
+                                downloadError?.let { StatusNotice(it, error = true) }
+                                downloadNotice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant) }
+                            }
                         }
                     }
                     }
@@ -546,8 +600,21 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
                         }
                         else {
                             item(key = "episodes-heading") {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    val allSavedOrQueued = episodes.isNotEmpty() && episodes.all { episode ->
+                                        episodeDownloads[episode.id?.toIntOrNull()]?.status in setOf(DesktopDownloadStatus.COMPLETED,
+                                            DesktopDownloadStatus.QUEUED, DesktopDownloadStatus.DOWNLOADING)
+                                    }
+                                    OutlinedButton({ selectedSeason?.let { controller.downloadEpisodes(it) } },
+                                        enabled = downloads != null && selectedSeason != null && !allSavedOrQueued && episodes.isNotEmpty()) {
+                                        Icon(Icons.Rounded.Download, null); Spacer(Modifier.width(8.dp)); Text("Baixar temporada")
+                                    }
+                                    TextButton(controller::openDownloads) { Text("Ver downloads") }
+                                }
                                 Text("${seasons.firstOrNull { it.first == selectedSeason }?.second.orEmpty()} · ${episodes.size} ${if (episodes.size == 1) "episódio" else "episódios"}",
                                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = palette.primary)
+                                }
                             }
                             if (episodes.isEmpty()) item(key = "no-episodes") {
                                 Text("Nenhum episódio disponível nesta temporada.", color = palette.onSurfaceVariant)
@@ -587,6 +654,19 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
                                             bodyStyle = MaterialTheme.typography.bodySmall,
                                             modifier = Modifier.weight(1f)
                                         )
+                                        val savedEpisode = episodeDownloads[episode.id?.toIntOrNull()]
+                                        val savedOrQueued = savedEpisode?.status in setOf(DesktopDownloadStatus.COMPLETED,
+                                            DesktopDownloadStatus.QUEUED, DesktopDownloadStatus.DOWNLOADING)
+                                        IconButton({ selectedSeason?.let { controller.downloadEpisodes(it, episode.id) } },
+                                            enabled = downloads != null && !savedOrQueued) {
+                                            Icon(if (savedEpisode?.status == DesktopDownloadStatus.COMPLETED) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
+                                                when (savedEpisode?.status) {
+                                                    DesktopDownloadStatus.COMPLETED -> "Episódio baixado"
+                                                    DesktopDownloadStatus.DOWNLOADING -> "Baixando episódio"
+                                                    DesktopDownloadStatus.QUEUED -> "Episódio na fila"
+                                                    else -> "Baixar episódio"
+                                                }, tint = if (savedOrQueued) palette.onSurfaceVariant else palette.primary)
+                                        }
                                         IconButton(onClick = play) {
                                             Icon(Icons.Rounded.PlayArrow, "Assistir episódio", tint = palette.primary)
                                         }

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,8 +46,11 @@ fun PosterCard(
             .clickable(onClick = onClick),
         progress = progress ?: item.progress,
         image = { imageModifier ->
-            AsyncImage(model = item.icon, contentDescription = item.name, modifier = imageModifier,
-                contentScale = ContentScale.Crop)
+            Box(imageModifier, contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Movie, null, Modifier.size(44.dp), tint = tokens.colors.textSecondary.copy(alpha = .3f))
+                AsyncImage(model = rsv.squitv.core.ui.components.content.ContentImageSource(listOf(item.icon, item.backdropUrl)), contentDescription = item.name, modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop)
+            }
         },
         badges = {
             if (onToggleFavorite != null) {

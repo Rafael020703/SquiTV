@@ -120,7 +120,7 @@ fun NavGraphBuilder.appNavGraph(
 
         val catalogRevision by mainViewModel.catalogRevision.collectAsStateWithLifecycle()
         LaunchedEffect(route.categoryId, catalogRevision, settings.credentials, settings.activeProfileId) {
-            val catToLoad = route.categoryId ?: settings.lastLiveCategory ?: "RECENTS"
+            val catToLoad = route.categoryId ?: settings.catalogPosition("live")?.categoryId ?: "RECENTS"
             catViewModel.ensureContent("live", catToLoad, catalogRevision)
         }
         LiveChannelsScreen(
@@ -130,7 +130,7 @@ fun NavGraphBuilder.appNavGraph(
             onBack = { appController.goBack() },
             onNavigateToSearch = { appController.navigate(Route.Search()) },
             onPlay = { streamId, name, type, epgId, sourceId, icon, categoryId ->
-                appController.navigate(Route.Player(streamId, name, type, epgId = epgId, sourceId = sourceId, categoryId = categoryId ?: route.categoryId ?: settings.lastLiveCategory ?: "RECENTS", streamIcon = icon))
+                appController.navigate(Route.Player(streamId, name, type, epgId = epgId, sourceId = sourceId, categoryId = categoryId ?: route.categoryId ?: settings.catalogPosition("live")?.categoryId ?: "RECENTS", streamIcon = icon))
             },
             onCategoryClick = { type, catId ->
                 if (catId != null) mainViewModel.saveLastCategory(type, catId)
@@ -154,7 +154,7 @@ fun NavGraphBuilder.appNavGraph(
         }
 
         LaunchedEffect(initialCategoryId, contentType, catalogRevision, settings.credentials?.baseUrl, settings.credentials?.username, settings.activeProfileId) {
-            val catToLoad = initialCategoryId ?: settings.lastMovieCategory ?: "ALL"
+            val catToLoad = initialCategoryId ?: settings.catalogPosition("movie")?.categoryId ?: "ALL"
             catViewModel.ensureContent(contentType, catToLoad, catalogRevision)
         }
         MoviesScreen(
@@ -190,7 +190,7 @@ fun NavGraphBuilder.appNavGraph(
         }
 
         LaunchedEffect(initialCategoryId, contentType, catalogRevision, settings.credentials?.baseUrl, settings.credentials?.username, settings.activeProfileId) {
-            val catToLoad = initialCategoryId ?: settings.lastSeriesCategory ?: "ALL"
+            val catToLoad = initialCategoryId ?: settings.catalogPosition("series")?.categoryId ?: "ALL"
             catViewModel.ensureContent(contentType, catToLoad, catalogRevision)
         }
         SeriesScreen(

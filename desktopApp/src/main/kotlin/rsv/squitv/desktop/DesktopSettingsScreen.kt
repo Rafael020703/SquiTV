@@ -23,6 +23,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import rsv.squitv.core.ui.components.settings.CommonSettingsGridCard
@@ -144,6 +145,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
     }
     selected?.let { category ->
         AlertDialog(onDismissRequest = { selected = null; confirmCategoryReset = false },
+            modifier = Modifier.directionalNavigation(),
             title = { Text(category.label) }, confirmButton = { TextButton({ selected = null; confirmCategoryReset = false }) { Text("Concluir") } },
             text = {
                 val contentModifier = Modifier.widthIn(min = 320.dp).heightIn(max = 420.dp)
@@ -153,6 +155,23 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                     when (category) {
                         DesktopSetting.ACCOUNT -> {
                             state.account?.let { account ->
+                                val savedName = preferences.displayNamesByAccount[accountScope].orEmpty()
+                                val shownName = rsv.squitv.shared.account.AccountPresentation.displayName(savedName, account.username)
+                                var nameInput by remember(accountScope, savedName) { mutableStateOf(savedName) }
+                                var savingName by remember { mutableStateOf(false) }
+                                var nameNotice by remember(accountScope) { mutableStateOf<String?>(null) }
+                                fun saveName(name: String) {
+                                    val target = accountScope ?: return
+                                    if (savingName) return
+                                    savingName = true
+                                    scope.launch {
+                                        try {
+                                            val saved = store.updateAndAwait { it.withDisplayName(target, name) }
+                                            if (saved) nameInput = name.trim()
+                                            nameNotice = if (saved) "Nome de exibição salvo." else "Não foi possível salvar o nome."
+                                        } finally { savingName = false }
+                                    }
+                                }
                                 Surface(
                                     modifier = Modifier.fillMaxWidth(),
                                     color = palette.primary.copy(alpha = 0.1f),
@@ -172,10 +191,11 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                                         Spacer(Modifier.width(12.dp))
                                         Column(Modifier.weight(1f)) {
                                             Text(
-                                                account.username.uppercase(Locale.ROOT),
+                                                shownName.uppercase(Locale.ROOT),
                                                 style = MaterialTheme.typography.titleMedium,
                                                 fontWeight = FontWeight.Bold,
-                                                color = palette.onSurface
+                                                color = palette.onSurface,
+                                                maxLines = 1, overflow = TextOverflow.Ellipsis
                                             )
                                             Text(
                                                 "STATUS: ${account.status.uppercase(Locale.ROOT)}",
@@ -185,6 +205,22 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                                         }
                                     }
                                 }
+                                OutlinedTextField(nameInput, { nameInput = it; nameNotice = null },
+                                    label = { Text("Nome de exibição") }, singleLine = true,
+                                    placeholder = { Text(account.username) },
+                                    supportingText = { Text("Deixe vazio para usar o usuário do servidor. Até 256 caracteres.") },
+                                    isError = nameInput.trim().length > 256,
+                                    enabled = loaded && accountScope != null && !savingName,
+                                    modifier = Modifier.fillMaxWidth())
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Button(onClick = { saveName(nameInput) },
+                                        enabled = loaded && accountScope != null && !savingName && nameInput.trim().length <= 256) {
+                                        Text(if (savingName) "Salvando…" else "Salvar nome")
+                                    }
+                                    TextButton({ saveName("") }, enabled = loaded && accountScope != null && !savingName,
+                                        modifier = Modifier.weight(1f)) { Text("Usar usuário do servidor") }
+                                }
+                                nameNotice?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                                 AccountLine("Usuário", account.username)
                                 AccountLine("Validade", account.expiresAt?.let {
                                     Instant.ofEpochSecond(it).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))

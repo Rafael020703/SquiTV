@@ -61,6 +61,7 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
             .components {
+                add(rsv.squitv.core.ui.components.content.ContentImageInterceptor(settingsRepository))
                 add(SvgDecoder.Factory())
             }
             .memoryCache {

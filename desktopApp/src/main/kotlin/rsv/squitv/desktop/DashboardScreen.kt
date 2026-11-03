@@ -44,6 +44,8 @@ private data class DashboardTile(val title: String, val description: String, val
 internal fun Dashboard(state: DesktopState, controller: DesktopController, store: DesktopPreferencesStore, modifier: Modifier) {
     val preferences by store.state.collectAsState()
     val account = state.account ?: return
+    val displayName = rsv.squitv.shared.account.AccountPresentation.displayName(
+        preferences.displayNamesByAccount[liveCategoryScope(state.credentials)], account.username)
     val windowDragArea = LocalWindowDragArea.current
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     // Match Android's HH:mm clock without a second date row.
@@ -109,7 +111,7 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
                         }
                         Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("OLÁ, ${account.username.uppercase(Locale.ROOT)}",
+                            Text("OLÁ, ${displayName.uppercase(Locale.ROOT)}",
                                 style = MaterialTheme.typography.displayLarge.copy(fontSize =
                                     maxOf(MaterialTheme.typography.displayLarge.fontSize.value * textScale, 10f).sp),
                                 fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -186,6 +188,7 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
                                 ), viewport, textScale, when (tile.type) {
                                     HomeCardType.MULTI_VIEW -> controller::openMultiView
                                     HomeCardType.FAVORITES -> controller::openFavorites
+                                    HomeCardType.DOWNLOADS -> controller::openDownloads
                                     else -> null
                                 })
                         }

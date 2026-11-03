@@ -61,6 +61,7 @@ fun LiveChannelsScreen(
 
 
     val selectedCategoryId by categoryViewModel.activeCategoryId.collectAsStateWithLifecycle()
+    val browsePosition by categoryViewModel.browsePosition.collectAsStateWithLifecycle()
     val gridState = rememberContentGridState("${settings.credentials?.baseUrl}#${settings.credentials?.username}/live/$selectedCategoryId")
 
 
@@ -73,7 +74,8 @@ fun LiveChannelsScreen(
             delay(200)
             try {
                 val items = contentRows.flatMap { it.items }
-                val hasSavedChannel = settings.lastLiveChannelId != null && items.any { it.containsStream(settings.lastLiveChannelId) }
+                val savedId = browsePosition?.itemId
+                val hasSavedChannel = savedId != null && items.any { it.containsStream(savedId) }
                 if (hasSavedChannel) {
                     gridFocusRequester.requestFocus()
                 } else {
@@ -142,26 +144,8 @@ fun LiveChannelsScreen(
                     } else {
                         val allItems = remember(contentRows) { contentRows.flatMap { it.items } }
                         val activeCatId = selectedCategoryId ?: activeCat?.id ?: settings.lastLiveCategory ?: categories.firstOrNull()?.id ?: "RECENTS"
-                        val targetChannelId = remember(allItems, activeCatId, settings.lastLiveChannelId, settings.lastLiveCategory, settings.lastLiveCategoryChannels) {
-                            val globalId = settings.lastLiveChannelId
-                            val globalCat = settings.lastLiveCategory
-                            if (globalId != null && globalCat == activeCatId && allItems.any { it.containsStream(globalId) }) {
-                                Timber.i("GLOBAL_CHANNEL_PRIORITY_APPLIED: categoryId=$activeCatId, channelId=$globalId")
-                                globalId
-                            } else {
-                                val catSpecificId = settings.lastLiveCategoryChannels[activeCatId]
-                                if (catSpecificId != null && allItems.any { it.containsStream(catSpecificId) }) {
-                                    Timber.i("CATEGORY_CHANNEL_MEMORY_HIT: categoryId=$activeCatId, channelId=$catSpecificId")
-                                    catSpecificId
-                                } else {
-                                    val fallback = allItems.firstOrNull()?.id
-                                    if (fallback != null) {
-                                        Timber.i("CHANNEL_FALLBACK_APPLIED: categoryId=$activeCatId, channelId=$fallback")
-                                    }
-                                    fallback
-                                }
-                            }
-                        }
+                        val targetChannelId = browsePosition?.itemsByCategory?.get(activeCatId)
+                            ?: browsePosition?.takeIf { it.categoryId == activeCatId }?.itemId
 
                         ContentGrid(
                             items = allItems,
@@ -171,7 +155,9 @@ fun LiveChannelsScreen(
                             onToggleFavorite = libraryViewModel::toggleFavorite,
                             favorites = favorites,
                             targetItemId = targetChannelId,
+                            onItemFocused = { categoryViewModel.rememberItem(it.id) },
                             onItemClick = { item ->
+                                categoryViewModel.rememberItem(item.id, immediate = true)
                                 Timber.i("PLAYBACK_REQUESTED_BY_USER: channelId=${item.id}, name=${item.name}")
                                 viewModel.saveLastChannel("live", activeCatId, item.id, item.name)
                                 onPlay(item.id.toInt(), item.name, item.type.toString(), item.epgId, categoryViewModel.capturePlaybackSource(), item.icon, activeCatId)

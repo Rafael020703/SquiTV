@@ -82,6 +82,7 @@ fun MoviesScreen(
     val gridFocusRequester = remember { FocusRequester() }
 
     val selectedCategoryId by categoryViewModel.activeCategoryId.collectAsStateWithLifecycle()
+    val browsePosition by categoryViewModel.browsePosition.collectAsStateWithLifecycle()
     val gridState = rememberContentGridState("${settings.credentials?.baseUrl}#${settings.credentials?.username}/movie/$selectedCategoryId/$sortOrder")
 
     val handleCategorySelect: (String) -> Unit = { catId ->
@@ -154,7 +155,13 @@ fun MoviesScreen(
                             onToggleFavorite = libraryViewModel::toggleFavorite,
                             favorites = favorites,
                             watchProgress = watchProgress,
-                            onItemClick = { item -> onVodClick(item.id.toInt(), item.name, item.icon) }
+                            targetItemId = selectedCategoryId?.let { browsePosition?.itemsByCategory?.get(it) }
+                                ?: browsePosition?.takeIf { it.categoryId == selectedCategoryId }?.itemId,
+                            onItemFocused = { categoryViewModel.rememberItem(it.id) },
+                            onItemClick = { item ->
+                                categoryViewModel.rememberItem(item.id, immediate = true)
+                                onVodClick(item.id.toInt(), item.name, item.icon)
+                            }
                         )
                     }
                 }

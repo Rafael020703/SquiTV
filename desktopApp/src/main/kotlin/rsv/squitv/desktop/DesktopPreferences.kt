@@ -25,7 +25,9 @@ internal data class DesktopPreferences(val schema: Int = 1, val autoPlayEpisodes
     val hiddenCatalogCategoriesByScope: Map<String, Set<String>> = emptyMap(),
     val favoriteLiveChannelsByAccount: Map<String, Set<Int>> = emptyMap(),
     val catalogModesByScope: Map<String, String> = emptyMap(),
-    val favoriteCatalogItemsByScope: Map<String, Set<Int>> = emptyMap())
+    val favoriteCatalogItemsByScope: Map<String, Set<Int>> = emptyMap(),
+    val displayNamesByAccount: Map<String, String> = emptyMap(),
+    val browseMemory: rsv.squitv.shared.catalog.CatalogBrowseMemory = rsv.squitv.shared.catalog.CatalogBrowseMemory())
 
 /** Variant-local preferences only. Credentials remain exclusively in the existing DPAPI store. */
 internal class DesktopPreferencesStore(private val directory: Path, private val scope: CoroutineScope) {
@@ -39,6 +41,27 @@ internal class DesktopPreferencesStore(private val directory: Path, private val 
     val loaded = ready.asStateFlow()
     private var writable = true
     private val file = directory.resolve("preferences.json")
+    private var positionJob: Job? = null
+    private var pendingPositionKey: String? = null
+
+    suspend fun flushCatalogPosition() { positionJob?.join() }
+
+    fun rememberCatalogPosition(account: String?, type: String, categoryId: String?, itemId: String? = null,
+        immediate: Boolean = false) {
+        if (account.isNullOrBlank() || categoryId.isNullOrBlank()) return
+        val key = "$account/$type/$categoryId"
+        if (itemId == null && key == pendingPositionKey && positionJob?.isActive == true) return
+        positionJob?.cancel()
+        pendingPositionKey = key
+        positionJob = scope.launch {
+            if (!immediate) delay(400)
+            ensureActive()
+            // Debounce may cancel the wait, never an atomic write already in progress.
+            withContext(NonCancellable) {
+                updateAndAwait { it.copy(browseMemory = it.browseMemory.record(account, type, categoryId, itemId)) }
+            }
+        }
+    }
     init {
         scope.launch {
             mutex.withLock {
@@ -95,6 +118,7 @@ internal class DesktopPreferencesStore(private val directory: Path, private val 
 }
 
 internal fun validateDesktopPreferences(value: DesktopPreferences) {
+    value.browseMemory.validate()
     require(value.schema == 1 && value.interfaceScale in .8f..1.25f && value.volume in 0..100)
     require(value.hiddenSections.size <= 6 && value.hiddenSections.all { it in setOf("LIVE_TV", "MOVIES", "SERIES", "MULTI_VIEW", "DOWNLOADS", "FAVORITES") })
     require(value.hiddenCategoryIds.size <= 10000 && value.hiddenCategoryIds.all { it.length in 1..256 })
@@ -125,6 +149,17 @@ internal fun validateDesktopPreferences(value: DesktopPreferences) {
     require(value.favoriteCatalogItemsByScope.size <= 128 && value.favoriteCatalogItemsByScope.all { (key, ids) ->
         key.matches(Regex("[a-f0-9]{64}/(MOVIES|SERIES)")) && ids.size <= 10000 && ids.all { it > 0 }
     })
+    require(value.displayNamesByAccount.size <= 64 && value.displayNamesByAccount.all { (key, name) ->
+        key.matches(Regex("[a-f0-9]{64}")) && name.isNotBlank() && name.length <= 256
+    })
+}
+
+internal fun DesktopPreferences.withDisplayName(account: String, name: String): DesktopPreferences {
+    require(account.matches(Regex("[a-f0-9]{64}")))
+    val trimmed = name.trim()
+    require(trimmed.length <= 256)
+    return copy(displayNamesByAccount = if (trimmed.isEmpty()) displayNamesByAccount - account
+        else displayNamesByAccount + (account to trimmed))
 }
 
 internal fun DesktopPreferences.isCatalogFavorite(account: String?, kind: CatalogKind, catalogId: Int): Boolean =

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.update
 import java.awt.Canvas
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import rsv.squitv.shared.player.VideoScaleMode
@@ -40,7 +41,8 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
     private var viewportWidth = 0
     private var viewportHeight = 0
     private var appliedGeometry: VlcVideoGeometry? = null
-    private var pendingAddress: String? = null
+    private data class PendingMedia(val address: String, val generation: Long)
+    private var pendingMedia: PendingMedia? = null
     private var active = false
     private var activeGeneration = 0L
 
@@ -50,6 +52,10 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
             if (!active || activeGeneration != generation.get()) return@guarded
             val polledGeneration = activeGeneration
             val code = api!!.libvlc_media_player_get_state(p)
+            // Native calls must stay outside StateFlow's retryable update lambda.
+            val time = if (onDemand) api!!.libvlc_media_player_get_time(p).coerceAtLeast(0) else 0
+            val duration = if (onDemand) api!!.libvlc_media_player_get_length(p).coerceAtLeast(0) else 0
+            val seekable = onDemand && api!!.libvlc_media_player_is_seekable(p) != 0
             mutable.update { if (polledGeneration != generation.get()) it else it.copy(phase = when (code) {
                 3 -> if (onDemand) "Reproduzindo" else "Ao vivo"; 4 -> "Pausado"
                 6 -> if (onDemand) "Concluído" else "Transmissão encerrada"; 7 -> "Não foi possível reproduzir"
@@ -59,10 +65,10 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
                 7 -> if (onDemand) "O conteúdo não respondeu ou o formato está indisponível. Tente novamente."
                     else "O canal não respondeu ou o formato está indisponível. Tente reconectar."
                 else -> null
-            }, timeMs = if (onDemand) api!!.libvlc_media_player_get_time(p).coerceAtLeast(0) else 0,
-                durationMs = if (onDemand) api!!.libvlc_media_player_get_length(p).coerceAtLeast(0) else 0,
-                seekable = onDemand && api!!.libvlc_media_player_is_seekable(p) != 0,
+            }, timeMs = time, durationMs = duration, seekable = seekable,
                 ended = onDemand && code == 6) }
+            // Terminal states stay published until an explicit retry/new item; stop JNI polling.
+            if (code == 6 || code == 7) active = false
         } }, 500, 500, TimeUnit.MILLISECONDS)
     }
 
@@ -84,12 +90,12 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
             audioTracks = emptyList(), subtitleTracks = emptyList(), speed = 1f, optionError = null) }
         submit {
             if (token != generation.get()) return@submit
-            pendingAddress = address
+            pendingMedia = PendingMedia(address, token)
             startPending()
         }
     }
 
-    fun togglePause() = submit {
+    fun togglePause() = submit(mediaScoped = true) {
         player?.let {
             val paused = !mutable.value.paused
             api!!.libvlc_media_player_set_pause(it, if (paused) 1 else 0)
@@ -99,6 +105,7 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
 
     fun setVolume(volume: Int) = submit {
         val value = volume.coerceIn(0, 100)
+        if (mutable.value.volume == value) return@submit
         player?.let { api!!.libvlc_audio_set_volume(it, value) }
         mutable.update { it.copy(volume = value) }
     }
@@ -109,7 +116,7 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
         mutable.update { it.copy(muted = muted) }
     }
 
-    fun seekTo(timeMs: Long) = submit {
+    fun seekTo(timeMs: Long) = submit(mediaScoped = true) {
         val status = mutable.value
         if (onDemand && status.seekable && status.durationMs > 0) player?.let {
             val target = timeMs.coerceIn(0, status.durationMs)
@@ -119,7 +126,7 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
         }
     }
 
-    fun refreshTracks() = submit {
+    fun refreshTracks() = submit(mediaScoped = true) {
         val p = player ?: return@submit
         val vlc = api ?: return@submit
         fun descriptions(head: Pointer?): List<MediaTrack> {
@@ -138,11 +145,13 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
         }
         val audio = descriptions(vlc.libvlc_audio_get_track_description(p))
         val subtitles = descriptions(vlc.libvlc_video_get_spu_description(p))
+        val audioTrack = vlc.libvlc_audio_get_track(p)
+        val subtitleTrack = vlc.libvlc_video_get_spu(p)
         mutable.update { it.copy(audioTracks = audio, subtitleTracks = subtitles,
-            audioTrack = vlc.libvlc_audio_get_track(p), subtitleTrack = vlc.libvlc_video_get_spu(p)) }
+            audioTrack = audioTrack, subtitleTrack = subtitleTrack) }
     }
 
-    fun selectTrack(id: Int, subtitles: Boolean) = submit {
+    fun selectTrack(id: Int, subtitles: Boolean) = submit(mediaScoped = true) {
         val p = player ?: return@submit
         val tracks = if (subtitles) mutable.value.subtitleTracks else mutable.value.audioTracks
         if (id != -1 && tracks.none { it.id == id }) return@submit
@@ -151,7 +160,7 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
             else if (subtitles) it.copy(subtitleTrack = id, optionError = null) else it.copy(audioTrack = id, optionError = null) }
     }
 
-    fun setSpeed(speed: Float) = submit {
+    fun setSpeed(speed: Float) = submit(mediaScoped = true) {
         if (speed !in listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f)) return@submit
         val p = player ?: return@submit
         val result = api!!.libvlc_media_player_set_rate(p, speed)
@@ -187,13 +196,16 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
 
     private fun startPending() {
         if (surface == null) return
-        val address = pendingAddress ?: return
+        val request = pendingMedia ?: return
+        if (request.generation != generation.get()) { pendingMedia = null; return }
         initialize()
         val vlc = api!!
         val p = player!!
         active = false
         vlc.libvlc_media_player_stop(p)
-        val media = vlc.libvlc_media_new_location(instance!!, address)
+        // Initialization/stop may block; a newer request must never adopt the old media.
+        if (closed.get() || request.generation != generation.get()) { pendingMedia = null; return }
+        val media = vlc.libvlc_media_new_location(instance!!, request.address)
             ?: error("Native media unavailable")
         try {
             vlc.libvlc_media_add_option(media, ":network-caching=1200")
@@ -207,8 +219,8 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
         applyGeometry(mutable.value.scaleMode)
         if (vlc.libvlc_media_player_play(p) != 0) error("Native play failed")
         vlc.libvlc_media_player_set_rate(p, 1f)
-        pendingAddress = null
-        activeGeneration = generation.get()
+        pendingMedia = null
+        activeGeneration = request.generation
         active = true
     }
 
@@ -234,19 +246,28 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
         vlc.libvlc_video_set_mouse_input(player!!, 0)
     }
 
-    private fun submit(action: () -> Unit) {
-        if (!closed.get()) worker.execute { guarded(action) }
+    private fun submit(mediaScoped: Boolean = false, action: () -> Unit) {
+        val token = generation.get()
+        if (closed.get()) return
+        try {
+            worker.execute {
+                if (!closed.get() && (!mediaScoped || token == generation.get())) guarded(action)
+            }
+        } catch (_: RejectedExecutionException) {
+            // close() can race with a final AWT/Compose event; it owns native cleanup.
+        }
     }
 
     private fun guarded(action: () -> Unit) {
+        val token = generation.get()
         try { action() }
-        catch (_: Exception) { failed() }
-        catch (_: LinkageError) { failed() }
+        catch (_: Exception) { failed(token) }
+        catch (_: LinkageError) { failed(token) }
     }
 
-    private fun failed() {
+    private fun failed(token: Long) {
         active = false
-        mutable.update { it.copy(phase = "Reprodução indisponível", error =
+        mutable.update { if (closed.get() || token != generation.get()) it else it.copy(phase = "Reprodução indisponível", error =
             "Não foi possível iniciar o vídeo. Confira a conexão ou execute novamente o instalador para verificar as bibliotecas.") }
     }
 
@@ -254,7 +275,7 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
         if (!closed.compareAndSet(false, true)) return
         generation.incrementAndGet()
         worker.execute {
-            pendingAddress = null
+            pendingMedia = null
             active = false
             try {
                 player?.let { api?.libvlc_media_player_stop(it); api?.libvlc_media_player_release(it) }

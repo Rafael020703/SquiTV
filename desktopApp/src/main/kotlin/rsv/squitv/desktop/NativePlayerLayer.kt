@@ -110,7 +110,7 @@ internal fun NativePlayerLayer(visible: Boolean, placement: PlayerLayerPlacement
             setContent {
                 CompositionLocalProvider(LocalDensity provides currentDensity.value) {
                     MaterialTheme(colorScheme = palette, typography = desktopTypography) {
-                        Box(Modifier.fillMaxSize().onPreviewKeyEvent { currentKey.value(it) }) {
+                        Box(Modifier.fillMaxSize().onPreviewKeyEvent { currentKey.value(it) }.directionalNavigation()) {
                             // Do not keep hidden controls/pulsing badges composing during playback.
                             if (requestedVisible.value) currentContent.value()
                         }

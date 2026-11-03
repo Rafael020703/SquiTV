@@ -222,7 +222,8 @@ fun DashboardContent(
                     }
                     Spacer(Modifier.width(responsive.dp(tokens.spacing.large)))
                     Column {
-                        val nameToDisplay = customDisplayName?.takeIf { it.isNotBlank() } ?: accountInfo?.username ?: credentials?.username ?: activeProfile?.name ?: "USUÁRIO"
+                        val nameToDisplay = rsv.squitv.shared.account.AccountPresentation.displayName(
+                            customDisplayName, accountInfo?.username ?: credentials?.username ?: activeProfile?.name ?: "USUÁRIO")
                         Text(
                             text = "OLÁ, ${nameToDisplay.uppercase()}",
                             style = tokens.typography.display.copy(fontSize = titleSize),

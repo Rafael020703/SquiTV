@@ -52,7 +52,15 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
     val preferences by settings.state.collectAsState()
     val preferencesLoaded by settings.loaded.collectAsState()
     val preferencesError by settings.error.collectAsState()
+    var volumeNotice by remember { mutableStateOf<Int?>(null) }
+    var volumeRevision by remember { mutableIntStateOf(0) }
+    LaunchedEffect(volumeRevision) { delay(1500); volumeNotice = null }
     val accountScope = remember(credentials) { liveCategoryScope(credentials) }
+    LaunchedEffect(session.channel.id, session.sourceCategoryId, preferencesLoaded) {
+        if (preferencesLoaded) settings.rememberCatalogPosition(accountScope, "live", session.sourceCategoryId,
+            session.channel.id.toString(), immediate = true)
+    }
+    LaunchedEffect(controls, menu) { if (controls || menu != null) volumeNotice = null }
     val versionIds = remember(session.channels, session.channel.id) { session.versions.map { it.id } }
     val isFavorite = rsv.squitv.domain.model.LiveChannelFavorites.isFavorite(
         preferences.favoriteLiveChannelsByAccount[accountScope].orEmpty(), session.channel.id, versionIds)
@@ -73,7 +81,7 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
     val input: (KeyEvent) -> Boolean = { event ->
         when {
             event.key == Key.F11 || event.key == Key.F -> {
-                if (event.type == KeyEventType.KeyDown) toggleFullscreen()
+                if (event.type == KeyEventType.KeyUp) toggleFullscreen()
                 true
             }
             event.key == Key.Escape || event.key == Key.Back -> {
@@ -84,6 +92,18 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
                 true
             }
             menu != null -> false
+            !controls && event.key in listOf(Key.DirectionLeft, Key.DirectionRight) -> {
+                if (event.type == KeyEventType.KeyUp && preferencesLoaded) {
+                    val next = rsv.squitv.shared.player.PlayerVolume.adjust(
+                        volumeNotice ?: engine.state.value.let { if (it.muted) 0 else it.volume },
+                        if (event.key == Key.DirectionRight) 1 else -1)
+                    engine.setVolume(next)
+                    if (engine.state.value.muted) engine.toggleMute()
+                    settings.update { it.copy(volume = next, muted = false) }
+                    volumeNotice = next; volumeRevision++
+                }
+                true
+            }
             event.key == Key.PageUp || event.key == Key.PageDown ||
                 (!controls && event.key in listOf(Key.DirectionUp, Key.DirectionDown)) -> {
                 if (event.type == KeyEventType.KeyUp) controller.stepChannel(
@@ -141,6 +161,10 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
             controlsVisible = controls, pointerRevealEnabled = menu == null,
             onPointerMove = { if (menu == null) showControls() },
             onClick = { if (menu != null) closeMenu() else if (controls) hideControls() else showControls() })
+    }
+    NativePlayerLayer(volumeNotice != null && !controls && menu == null, PlayerLayerPlacement.CENTER,
+        heightDp = 76, widthDp = 168, interactive = false) {
+        volumeNotice?.let { PlayerVolumeNotice(it) }
     }
     NativePlayerLayer(banner && !controls && menu == null, PlayerLayerPlacement.TOP_START,
         heightDp = if (programme != null) 84 else 68, widthDp = 360, interactive = false) {

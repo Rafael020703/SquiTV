@@ -57,6 +57,8 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
     var editingSearch by remember { mutableStateOf(false) }
     val accountScope = remember(state.credentials) { liveCategoryScope(state.credentials) }
     var favoriteCategory by rememberSaveable(accountScope) { mutableStateOf(false) }
+    var selectionRestored by rememberSaveable(accountScope) { mutableStateOf(false) }
+    val savedPosition = preferences.browseMemory.position(accountScope.orEmpty(), "live")
     val selectedId = if (favoriteCategory) "FAVORITES" else state.selectedCategory?.id
     val selectedName = if (favoriteCategory) "Favoritos" else state.selectedCategory?.name
     var search by rememberSaveable(accountScope, selectedId) { mutableStateOf("") }
@@ -102,7 +104,19 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
     }
     DisposableEffect(favoriteCategory) { onDispose { if (favoriteCategory) controller.favorites.leave() } }
     LaunchedEffect(categories, state.selectedCategory?.id, preferencesLoaded, state.busy,
-        state.channelsLoaded, state.loadingChannels, state.channelError, favoriteCategory, index.loaded, index.error, countedView) {
+        state.channelsLoaded, state.loadingChannels, state.channelError, favoriteCategory, index.loaded, index.error, countedView, selectionRestored) {
+        if (!preferencesLoaded || state.busy) return@LaunchedEffect
+        if (!selectionRestored) {
+            if (!index.loaded && index.error == null || index.loaded && countedView == null) return@LaunchedEffect
+            favoriteCategory = savedPosition?.categoryId == "FAVORITES" && favoriteIds.isNotEmpty()
+            if (!favoriteCategory) {
+                val restored = categories.firstOrNull { it.id == savedPosition?.categoryId }
+                    ?: categories.firstOrNull { it.id == state.selectedCategory?.id } ?: categories.firstOrNull()
+                restored?.let(controller::loadChannels)
+            }
+            selectionRestored = true
+            return@LaunchedEffect
+        }
         if (favoriteCategory) return@LaunchedEffect
         if (!index.loaded && index.error == null) return@LaunchedEffect
         if (index.loaded && countedView == null) return@LaunchedEffect
@@ -113,6 +127,9 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
         } else if (preferencesLoaded && !state.busy && !state.channelsLoaded && !state.loadingChannels && state.channelError == null) {
             categories.firstOrNull { it.id == state.selectedCategory?.id }?.let(controller::loadChannels)
         }
+    }
+    LaunchedEffect(selectionRestored, selectedId) {
+        if (selectionRestored) store.rememberCatalogPosition(accountScope, "live", selectedId, immediate = true)
     }
     val allHidden = state.categories.isNotEmpty() && providerCategories.isEmpty() && categories.isEmpty()
     val showAll: () -> Unit = { store.update {
@@ -152,7 +169,12 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
                 channels.indexOfFirst { it.containsStream(id) }
             } ?: -1
     }
-    val focusIndex = if (savedIndex >= 0) savedIndex else {
+    val persistentIndex = remember(channels, savedPosition, selectedId) {
+        val item = selectedId?.let { savedPosition?.itemsByCategory?.get(it) }
+            ?: savedPosition?.takeIf { it.categoryId == selectedId }?.itemId
+        channels.indexOfFirst { it.containsStream(item?.toIntOrNull() ?: -1) }
+    }
+    val focusIndex = if (savedIndex >= 0) savedIndex else if (!gridMemory.hasInteracted && persistentIndex >= 0) persistentIndex else {
         (if (gridMemory.hasInteracted) gridMemory.focusedIndex else gridState.firstVisibleItemIndex)
             .coerceIn(0, channels.lastIndex.coerceAtLeast(0))
     }
@@ -160,12 +182,19 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
     LaunchedEffect(gridMemory) {
         snapshotFlow { gridState.isScrollInProgress }.collect { if (it) gridMemory.hasInteracted = true }
     }
-    LaunchedEffect(gridMemory, channels.isNotEmpty()) {
-        if (!entered && channels.isNotEmpty()) {
+    LaunchedEffect(gridMemory, channels.isNotEmpty(), selectionRestored) {
+        if (!entered && channels.isNotEmpty() && selectionRestored) {
             entered = true
+            val entryIndex = if (persistentIndex >= 0) persistentIndex else focusIndex
+            if (persistentIndex >= 0 && (!gridMemory.hasInteracted || persistentIndex != savedIndex)) {
+                gridMemory.focusedItem = channels[persistentIndex].stableKey
+                gridMemory.focusedStreamKey = "LIVE:${channels[persistentIndex].id}"
+                gridMemory.focusedIndex = persistentIndex
+                gridState.scrollToItem(persistentIndex)
+            }
             if (useFocus && !editingSearch) {
                 withFrameNanos { }
-                if (gridState.layoutInfo.visibleItemsInfo.none { it.index == focusIndex }) gridState.scrollToItem(focusIndex)
+                if (gridState.layoutInfo.visibleItemsInfo.none { it.index == entryIndex }) gridState.scrollToItem(entryIndex)
                 withFrameNanos { }
                 runCatching { gridFocus.requestFocus() }
             }
@@ -297,6 +326,7 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
                                     .onFocusChanged { focus -> if (focus.hasFocus) {
                                         gridMemory.focusedItem = channel.stableKey
                                         gridMemory.focusedStreamKey = "LIVE:${channel.id}"
+                                        store.rememberCatalogPosition(accountScope, "live", selectedId, channel.id.toString())
                                         gridMemory.focusedIndex = index
                                         gridMemory.hasInteracted = true
                                     } }
@@ -309,6 +339,7 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
                                     gridMemory.focusedStreamKey = "LIVE:${channel.id}"
                                     gridMemory.focusedIndex = index
                                     gridMemory.hasInteracted = true
+                                    store.rememberCatalogPosition(accountScope, "live", selectedId, channel.id.toString(), immediate = true)
                                     if (favoriteCategory) favoriteResults.firstOrNull { it.channel == channel }?.let { item ->
                                         val byKey = favoriteResults.associateBy { it.channel?.stableKey }
                                         val visible = channels.mapNotNull { byKey[it.stableKey] }

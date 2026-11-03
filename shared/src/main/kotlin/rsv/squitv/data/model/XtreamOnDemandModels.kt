@@ -11,6 +11,7 @@ import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.*
 import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.builtins.nullable
 
 // Portable Xtream DTOs and tolerant serializers originally implemented in Android.
 @Serializable
@@ -19,7 +20,7 @@ data class XtreamVod(
     val name: String? = null,
     @SerialName("stream_type") val streamType: String? = null,
     @SerialName("stream_id") @Serializable(with = IntOrAnySerializer::class) val streamId: Int? = null,
-    @SerialName("stream_icon") val streamIcon: String? = null,
+    @SerialName("stream_icon") @Serializable(with = ImageTextSerializer::class) val streamIcon: String? = null,
     val added: String? = null,
     @SerialName("category_id") @Serializable(with = StringOrAnySerializer::class) val categoryId: String? = null,
     val container_extension: String? = null,
@@ -52,7 +53,7 @@ data class XtreamSeries(
     @Serializable(with = IntOrAnySerializer::class) val num: Int? = null,
     val name: String? = null,
     @SerialName("series_id") @Serializable(with = IntOrAnySerializer::class) val seriesId: Int? = null,
-    val cover: String? = null,
+    @Serializable(with = ImageTextSerializer::class) val cover: String? = null,
     @SerialName("plot") val plot: String? = null,
     @SerialName("cast") val cast: String? = null,
     val director: String? = null,
@@ -64,7 +65,7 @@ data class XtreamSeries(
     @SerialName("category_id") @Serializable(with = StringOrAnySerializer::class) val categoryId: String? = null,
     @SerialName("youtube_trailer") val youtubeTrailer: String? = null,
     @SerialName("episode_run_time") val episodeRunTime: String? = null,
-    @SerialName("backdrop_path") val backdropPath: List<String>? = null,
+    @SerialName("backdrop_path") @Serializable(with = ImageListSerializer::class) val backdropPath: List<String>? = null,
     @SerialName("age") val age: String? = null,
     @SerialName("mpaa_rating") val mpaaRating: String? = null
 )
@@ -77,8 +78,8 @@ data class XtreamSeason(
     val name: String? = null,
     val overview: String? = null,
     @SerialName("season_number") @Serializable(with = IntOrAnySerializer::class) val seasonNumber: Int? = null,
-    @SerialName("cover") val cover: String? = null,
-    @SerialName("cover_big") val coverBig: String? = null
+    @SerialName("cover") @Serializable(with = ImageTextSerializer::class) val cover: String? = null,
+    @SerialName("cover_big") @Serializable(with = ImageTextSerializer::class) val coverBig: String? = null
 )
 
 @Serializable
@@ -228,9 +229,9 @@ data class VodDetails(
     @SerialName("last_modified") val lastModified: String? = null,
     @Serializable(with = StringOrAnySerializer::class) val rating: String? = null,
     @SerialName("rating_5based") val rating5Based: Double? = null,
-    @SerialName("backdrop_path") val backdropPath: List<String>? = null,
+    @SerialName("backdrop_path") @Serializable(with = ImageListSerializer::class) val backdropPath: List<String>? = null,
     @SerialName("youtube_trailer") val youtubeTrailer: String? = null,
-    @SerialName("movie_image") val movieImage: String? = null,
+    @SerialName("movie_image") @Serializable(with = ImageTextSerializer::class) val movieImage: String? = null,
     val duration: String? = null,
     @SerialName("age") val age: String? = null,
     @SerialName("mpaa_rating") val mpaaRating: String? = null
@@ -251,5 +252,35 @@ data class EpisodeInfo(
     val duration: String? = null,
     @SerialName("release_date") val releaseDate: String? = null,
     @Serializable(with = StringOrAnySerializer::class) val rating: String? = null,
-    @SerialName("movie_image") val movieImage: String? = null
+    @SerialName("movie_image") @Serializable(with = ImageTextSerializer::class) val movieImage: String? = null
 )
+
+
+/** Optional artwork cannot discard the surrounding details/episodes for a provider's JSON shape. */
+object ImageListSerializer : KSerializer<List<String>?> {
+    private val delegate = kotlinx.serialization.builtins.ListSerializer(String.serializer()).nullable
+    override val descriptor = delegate.descriptor
+    override fun deserialize(decoder: Decoder): List<String>? {
+        val input = decoder as? JsonDecoder ?: return decoder.decodeSerializableValue(delegate)
+        return imageStrings(input.decodeJsonElement()).take(32).takeIf { it.isNotEmpty() }
+    }
+    override fun serialize(encoder: Encoder, value: List<String>?) = encoder.encodeSerializableValue(delegate, value)
+}
+
+object ImageTextSerializer : KSerializer<String?> {
+    private val delegate = String.serializer().nullable
+    override val descriptor = delegate.descriptor
+    override fun deserialize(decoder: Decoder): String? {
+        val input = decoder as? JsonDecoder ?: return decoder.decodeSerializableValue(delegate)
+        return imageStrings(input.decodeJsonElement()).firstOrNull()
+    }
+    override fun serialize(encoder: Encoder, value: String?) = encoder.encodeSerializableValue(delegate, value)
+}
+
+private fun imageStrings(value: JsonElement): List<String> = when (value) {
+    is JsonPrimitive -> value.takeIf { it.isString }?.contentOrNull
+        ?.let(rsv.squitv.shared.catalog.ContentImages::clean)?.let(::listOf).orEmpty()
+    is JsonArray -> value.take(32).mapNotNull { (it as? JsonPrimitive)?.takeIf { token -> token.isString }?.contentOrNull }
+        .mapNotNull(rsv.squitv.shared.catalog.ContentImages::clean).distinct()
+    else -> emptyList()
+}

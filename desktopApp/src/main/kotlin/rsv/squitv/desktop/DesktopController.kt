@@ -9,9 +9,9 @@ import rsv.squitv.desktop.data.*
 import rsv.squitv.shared.xtream.*
 import rsv.squitv.domain.model.ChannelQuality
 
-enum class DesktopPage { DASHBOARD, LIVE, MOVIES, SERIES, SETTINGS, UPDATES, SEARCH, FAVORITES, MULTIVIEW }
+enum class DesktopPage { DASHBOARD, LIVE, MOVIES, SERIES, SETTINGS, UPDATES, SEARCH, FAVORITES, MULTIVIEW, DOWNLOADS }
 data class LiveSession(val sourceName: String, val channels: List<LiveChannel>, val index: Int,
-    val sourceScope: String = "", val selectedStreamId: Int? = null) {
+    val sourceScope: String = "", val selectedStreamId: Int? = null, val sourceCategoryId: String? = null) {
     val channel: LiveChannel get() = LiveChannelGroups.select(channels[index], selectedStreamId) ?: channels[index]
     val versions: List<LiveChannel> get() = LiveChannelGroups.visible(channels, sourceScope, true)
         .firstOrNull { it.containsStream(channel.id) }?.versions.orEmpty()
@@ -42,6 +42,7 @@ class DesktopController(
     private val mutable = MutableStateFlow(DesktopState())
     val state = mutable.asStateFlow()
     internal var watchHistory: DesktopWatchHistory? = null
+    internal var downloads: DesktopDownloads? = null
     internal val catalog = OnDemandController(client, scope) { watchHistory }
     internal val search = DesktopSearchController(client, scope)
     internal val favorites = DesktopFavoritesController(client, scope)
@@ -165,6 +166,7 @@ class DesktopController(
                     savedCredentials = if (remember) credentials else null, notice = notice, busy = true,
                     connectingServer = null, error = null, categories = emptyList(), channels = emptyList(),
                     selectedCategory = null, channelsLoaded = false, channelError = null, automaticLogin = false)
+                downloads?.bind(credentials)
                 try {
                     val categories = withContext(Dispatchers.IO) { client.categories(credentials) }
                     mutable.value = mutable.value.copy(categories = categories, busy = false)
@@ -249,7 +251,7 @@ class DesktopController(
         val index = source.indexOfFirst { it.id == channel.id }
         if (index < 0) return
         val sourceName = if (favoriteSource) "Favoritos · ${category.name}" else category.name
-        mutable.value = current.copy(playback = LiveSession(sourceName, source, index, sourceScope))
+        mutable.value = current.copy(playback = LiveSession(sourceName, source, index, sourceScope, sourceCategoryId = category.id))
         refreshEpg()
     }
 
@@ -326,6 +328,7 @@ class DesktopController(
     }
 
     fun disconnect() {
+        downloads?.bind(null)
         favorites.reset(); multiView.reset(); liveIndex.reset()
         ++catalogSyncRevision
         catalogSyncJob?.cancel()
@@ -423,11 +426,57 @@ class DesktopController(
     }
 
     override fun close() {
+        downloads?.close()
         favorites.reset(); multiView.reset(); liveIndex.reset()
         search.reset()
         catalog.reset()
         connectionJob?.cancel(); channelsJob?.cancel(); dnsJob?.cancel(); epgJob?.cancel(); catalogSyncJob?.cancel()
         dnsProbe.close(); client.close()
+    }
+
+    fun openDownloads() {
+        val account = mutable.value.credentials ?: mutable.value.savedCredentials ?: return
+        search.leave(); favorites.leave(); multiView.leave(); catalog.leave(); stopPlayback()
+        downloads?.bind(account)
+        mutable.value = mutable.value.copy(page = DesktopPage.DOWNLOADS)
+    }
+
+    internal fun downloadMovie() {
+        val account = mutable.value.credentials ?: return
+        val detail = catalog.state.value.detail?.takeIf { it.kind == CatalogKind.MOVIES && !it.loading } ?: return
+        downloads?.start(account, detail.item.copy(extension = detail.movie?.movieData?.container_extension ?: detail.item.extension))
+    }
+
+    internal fun downloadEpisodes(season: Int, episodeId: String? = null) {
+        val account = mutable.value.credentials ?: return
+        val detail = catalog.state.value.detail?.takeIf { it.kind == CatalogKind.SERIES && !it.loading && it.error == null } ?: return
+        val info = detail.series ?: return
+        val episodes = OnDemandPlayback.episodes(info, season).filter { episodeId == null || it.id == episodeId }
+        downloads?.startEpisodes(account, detail.item, season, episodes)
+    }
+
+    internal fun retryDownload(key: String) {
+        val account = mutable.value.credentials ?: mutable.value.savedCredentials ?: return
+        val entry = downloads?.state?.value?.entries?.firstOrNull { it.key == key && it.account == liveCategoryScope(account) } ?: return
+        downloads?.retry(account, entry)
+    }
+
+    internal fun playDownload(key: String) {
+        val account = mutable.value.credentials ?: mutable.value.savedCredentials ?: return
+        val accountKey = liveCategoryScope(account) ?: return
+        scope.launch {
+            val (entry, file) = downloads?.localFile(key, accountKey) ?: return@launch
+            val current = mutable.value
+            if (current.page != DesktopPage.DOWNLOADS || liveCategoryScope(current.credentials ?: current.savedCredentials) != accountKey) return@launch
+            if (entry.kind == DesktopDownloadKind.EPISODE) {
+                val available = downloads?.state?.value?.entries.orEmpty().filter { it.account == accountKey &&
+                    it.kind == DesktopDownloadKind.EPISODE && it.seriesId == entry.seriesId && it.status == DesktopDownloadStatus.COMPLETED }
+                val local = available.mapNotNull { downloads?.localFile(it.key, accountKey) }
+                if (mutable.value.page != DesktopPage.DOWNLOADS || liveCategoryScope(mutable.value.credentials ?: mutable.value.savedCredentials) != accountKey) return@launch
+                catalog.playDownloadedEpisodes(account, entry, local)
+            } else catalog.playDownloadedMovie(account, CatalogItem(entry.streamId, entry.title, null, null,
+                extension = entry.extension), file.toUri().toString())
+        }
     }
 
     internal fun openCatalog(kind: CatalogKind) {
@@ -493,7 +542,7 @@ class DesktopController(
             val source = visible.mapNotNull { it.channel }.toList()
             val index = source.indexOfFirst { it.containsStream(item.id) }
             if (index < 0) return
-            mutable.value = current.copy(playback = LiveSession("Favoritos", source, index, liveCategoryScope(credentials).orEmpty()))
+            mutable.value = current.copy(playback = LiveSession("Favoritos", source, index, liveCategoryScope(credentials).orEmpty(), sourceCategoryId = "FAVORITES"))
             refreshEpg()
         } else {
             val catalogItem = item.catalogItem ?: return

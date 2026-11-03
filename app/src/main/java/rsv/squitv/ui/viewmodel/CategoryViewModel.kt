@@ -38,6 +38,8 @@ class CategoryViewModel @Inject constructor(
     private val playbackSources: rsv.squitv.core.data.repository.PlaybackSourceRepository,
     private val savedStateHandle: SavedStateHandle = SavedStateHandle()
 ) : ViewModel() {
+    // Decode/decrypt DataStore once for the catalogue projections, not once per collector.
+    private val observedSettings = settingsRepository.settingsFlow.shareIn(viewModelScope, SharingStarted.Eagerly, replay = 1)
 
     private val _rawRows = MutableStateFlow<List<DashboardRow>>(emptyList())
     
@@ -47,7 +49,7 @@ class CategoryViewModel @Inject constructor(
     private val _sortOrder = savedStateHandle.getStateFlow("sortOrder", "NAME") // NAME, RECENT, RATING
     val sortOrder: StateFlow<String> = _sortOrder
 
-    private val channelOptions = settingsRepository.settingsFlow.map {
+    private val channelOptions = observedSettings.map {
         Triple(it.groupLiveChannels, rsv.squitv.domain.model.ChannelQuality.fromPreference(it.preferredChannelQuality),
             rsv.squitv.core.data.repository.PlaybackSourceRepository.scope(it))
     }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, Triple(true, rsv.squitv.domain.model.ChannelQuality.AUTO, ""))
@@ -81,6 +83,22 @@ class CategoryViewModel @Inject constructor(
     private var browseType: String? = null
     private var browseReady = false
     private var browseJob: Job? = null
+    private var positionJob: Job? = null
+    // Keep this tiny projection current while the player covers this back-stack entry.
+    // The Settings screen's WhileSubscribed state can otherwise retain an older channel.
+    val browsePosition = combine(observedSettings, savedStateHandle.getStateFlow("contentType", "")) { settings, type ->
+        settings.catalogPosition(type)
+    }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    fun rememberItem(itemId: String, immediate: Boolean = false) {
+        val request = currentRequest ?: return
+        val categoryId = request.categoryId ?: return
+        positionJob?.cancel()
+        positionJob = viewModelScope.launch {
+            if (!immediate) delay(400)
+            settingsRepository.rememberCatalogPosition(request.account, request.type, categoryId, itemId)
+        }
+    }
 
     private data class BrowseOptions(
         val scope: String, val hidden: Set<String>, val order: List<String>,
@@ -99,7 +117,7 @@ class CategoryViewModel @Inject constructor(
         browseReady = false
         _navigationCategories.value = emptyList()
         val contentType = ContentType.fromString(type)
-        val options = settingsRepository.settingsFlow.map { settings ->
+        val options = observedSettings.map { settings ->
             val normType = if (type == "movie") "vod" else type
             val accountKey = settings.credentials?.let { SettingsBackupCodec.accountKey(it) } ?: ""
             val key = "${accountKey}_$normType"
@@ -166,6 +184,9 @@ class CategoryViewModel @Inject constructor(
         val selected = ContentCategories.selected(_navigationCategories.value, activeCategoryId.value)
         val previous = activeCategoryId.value
         savedStateHandle["activeCategoryId"] = selected?.id
+        if (selected != null) viewModelScope.launch {
+            settingsRepository.rememberCatalogPosition(scope, type, selected.id)
+        }
         if (selected != null && previous != selected.id) {
             viewModelScope.launch { settingsRepository.updateLastCategory(type, selected.id) }
         }
@@ -205,7 +226,7 @@ class CategoryViewModel @Inject constructor(
 
     /** A back-stack return reuses the current category, genre and loaded rows. */
     fun ensureContent(type: String, initialCategoryId: String?, revision: Long) {
-        val sameType = savedStateHandle.get<String>("contentType") == type
+        val sameType = savedStateHandle.get<String>("contentType") == type && currentRequest?.account == channelOptions.value.third
         catalogueRevision = revision
         loadContent(type, if (sameType) activeCategoryId.value ?: initialCategoryId else initialCategoryId,
             genre = if (sameType) savedStateHandle.get<String>("selectedGenre") else null, reuseLoaded = true)
@@ -253,6 +274,7 @@ class CategoryViewModel @Inject constructor(
         reuseLoaded: Boolean = false
     ) {
         if (type in listOf("live", "movie", "series")) {
+            if (currentRequest?.let { it.type != type || it.categoryId != categoryId } != false) positionJob?.cancel()
             loadJob?.cancel()
             savedStateHandle["contentType"] = type
             savedStateHandle["activeCategoryId"] = categoryId

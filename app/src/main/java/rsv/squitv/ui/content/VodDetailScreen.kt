@@ -185,7 +185,8 @@ fun VodDetailContent(
 ) {
     val tokens = AppDesignSystem
     val isTv = windowInfo.isTv
-    val backdropUrl = vodInfo?.info?.backdropPath?.firstOrNull() ?: icon
+    val backdropUrl = rsv.squitv.core.ui.components.content.ContentImageSource(
+        vodInfo?.info?.backdropPath.orEmpty() + listOf(vodInfo?.info?.movieImage, icon))
     val density = LocalDensity.current
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -252,7 +253,7 @@ fun VodDetailContent(
                             )
                     ) {
                         AsyncImage(
-                            model = icon,
+                            model = rsv.squitv.core.ui.components.content.ContentImageSource(listOf(vodInfo?.info?.movieImage, icon)),
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()

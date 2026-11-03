@@ -136,7 +136,7 @@ fun AccountContent(
     }
 
     val displayName = remember(customDisplayName, username) {
-        customDisplayName?.takeIf { it.isNotBlank() } ?: username
+        rsv.squitv.shared.account.AccountPresentation.displayName(customDisplayName, username)
     }
 
     val scrollState = rememberScrollState()

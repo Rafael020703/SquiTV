@@ -155,15 +155,16 @@ fun SeriesDetailContent(
     isTv: Boolean
 ) {
     val tokens = AppDesignSystem
-    var seriesMetadata by remember { mutableStateOf<XtreamSeries?>(null) }
+    var seriesMetadata by remember(seriesId, credentials) { mutableStateOf<XtreamSeries?>(null) }
     
     if (credentials != null && seasons.isNotEmpty()) {
-        LaunchedEffect(seasons.first().seriesId) {
+        LaunchedEffect(seriesId, credentials, seasons.first().seriesId) {
             seriesMetadata = getSeriesMetadata(credentials, seasons.first().seriesId)
         }
     }
 
-    val backdropUrl = seriesMetadata?.backdropPath?.firstOrNull() ?: cover
+    val backdropUrl = rsv.squitv.core.ui.components.content.ContentImageSource(
+        seriesMetadata?.backdropPath.orEmpty() + listOf(seriesMetadata?.cover, cover))
 
     Box(modifier = Modifier.fillMaxSize()) {
         AsyncImage(
@@ -334,13 +335,14 @@ fun SeriesDetailContent(
                                 EpisodeCard(
                                     title = episode.title, 
                                     episodeNum = episode.episodeNum, 
-                                    image = episode.image ?: cover, 
+                                    image = episode.image,
+                                    imageFallback = rsv.squitv.shared.catalog.ContentImages.first(seriesMetadata?.cover, cover),
                                     plot = episode.plot, 
                                     progress = progress, 
                                     isWatched = isWatched,
                                     isExpanded = isExpanded, 
                                     onClick = { onPlayEpisode(episode.streamId, episode.title, episode.containerExtension ?: "ts") }, 
-                                    onDownload = { onDownloadEpisode(IptvItem(id = episode.streamId.toString(), name = episode.title, icon = episode.image ?: cover, type = ContentType.SERIES, containerExtension = episode.containerExtension ?: "ts"), episode.seriesId, selectedSeason) }
+                                    onDownload = { onDownloadEpisode(IptvItem(id = episode.streamId.toString(), name = episode.title, icon = rsv.squitv.shared.catalog.ContentImages.first(episode.image, seriesMetadata?.cover, cover), type = ContentType.SERIES, containerExtension = episode.containerExtension ?: "ts"), episode.seriesId, selectedSeason) }
                                 )
                             }
                         }

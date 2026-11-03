@@ -54,10 +54,7 @@ object ContentCategories {
     /** Restored provider categories/empty lists fall back to actual content, without a second filter. */
     fun selected(entries: List<ContentCategory>, requested: String?): ContentCategory? =
         entries.filter { !it.isHeader }.let { valid ->
-            valid.firstOrNull { it.id == requested }
-                ?: valid.firstOrNull { requested != null && it.id == "FALLBACK:$requested" }
-                ?: valid.firstOrNull { requested != null && requested.startsWith("FALLBACK:") && it.id == requested.removePrefix("FALLBACK:") }
-                ?: valid.firstOrNull { it.id == ALL }
-                ?: valid.firstOrNull()
+            val id = rsv.squitv.shared.catalog.CatalogBrowseMemory.selectCategory(valid.map { it.id }, requested)
+            valid.firstOrNull { it.id == id }
         }
 }

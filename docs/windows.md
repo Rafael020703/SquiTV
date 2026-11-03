@@ -8,16 +8,21 @@ O Windows aproxima funções e apresentação do Android, mas ainda não tem par
 
 O aplicativo não fornece conteúdo ou credenciais. É necessário um servidor compatível com Xtream Codes. Disponibilidade de metadados, EPG, qualidades e transmissões simultâneas depende do provedor e do aparelho.
 
+## Candidata v1.24 — preparação de 03/11/2026
+
+Android 1.24/code 25 e Windows 1.24.0. Inclui os ajustes de reprodução/histórico, downloads de episódios/temporadas, capas, volume e navegação descritos nas notas [Android](releases/v1.24-android.md) e [Windows](releases/v1.24-windows.md). A publicação será registrada após verificar os assets públicos.
+
 ## Funções implementadas
 
 | Área | Comportamento atual | Limites |
 | --- | --- | --- |
 | Login/DNS | Seleção/teste de DNS, conta lembrada opcional e reconexão única | Senhas locais protegidas por DPAPI; logout exige nova entrada manual |
-| Dashboard | Ao vivo, Filmes, Séries, Buscar, Favoritos, Multi-view e Configurações | Downloads continua visual; Notificações também não possui ação no Android de referência |
+| Dashboard | Ao vivo, Filmes, Séries, Buscar, Favoritos, Multi-view e Configurações | Notificações não possui ação no Android de referência |
 | Ao vivo | Categorias, pesquisa local, agrupamento de versões e qualidade preferida | Troca circular exclusivamente no snapshot da lista de origem, inclusive favoritos/busca |
 | Filmes/Séries | Detalhes, temporadas, episódios, favoritos e reprodução | Dados dependem do servidor; episódios não fazem loop ao terminar a série |
+| Downloads | Filmes e episódios: baixar, fila de temporada, cancelar, reiniciar, excluir e reproduzir arquivo salvo | Uma transferência por vez; sem HLS/DASH, Smart Downloads ou retomada parcial |
 | Histórico | Progresso e retomada de filme/episódio por conta | Continuar assistindo fica nos catálogos/detalhes, nunca na dashboard |
-| Categorias | Ordem/ocultação por conta/tipo, contagens e remoção das vazias confirmadas | Falha de índice mantém contagens desconhecidas; Recentes e algumas ordenações Android ainda faltam |
+| Categorias | Ordem/ocultação por conta/tipo, contagens e remoção das vazias confirmadas | Falha de índice mantém contagens desconhecidas; Recentes em Séries/Ao vivo e algumas ordenações Android ainda faltam |
 | Modos VOD | Servidor ou Filtros; gêneros A–Z primeiro, fallback servidor A–Z depois | Preparação de metadados não é instantânea nem baixa vídeo |
 | Favoritos | Marcação nos cartões/player, sidebars e biblioteca com busca/filtros por tipo | Metadados ainda dependem do servidor quando não estão em memória |
 | Multi-view | Grade 2×2, categorias antes dos canais, busca, agrupamento, áudio de uma tela e reconexão individual | Quatro decodificadores/streams simultâneos não foram observados nesta etapa |
@@ -28,10 +33,47 @@ A busca global consulta somente listagens dos tipos escolhidos, com cancelamento
 
 Ao vivo/Multi-view carregam um índice de sessão ao entrar explicitamente. Filmes/Séries usam seu índice completo para contar/projetar categorias nos dois modos. Não há varredura global no login/dashboard nem uma requisição por categoria para calcular contagens. A consulta por categoria permanece como recuperação quando o índice falha. Catálogos grandes continuam sujeitos à latência e aos limites do transporte.
 
+**Alteração local após v1.23, ainda não publicada:** Filmes inclui **Adicionados recentemente** nos dois modos de categorias. Reutiliza a regra Android extraída para `:shared`: até 100 títulos dos últimos 14 dias, tolerância de cinco minutos para diferença de relógio, data decrescente e ID decrescente no desempate. Usa o campo `added` da listagem já carregada e respeita categorias ocultas; não consulta detalhes nem coloca histórico na dashboard. A seção desaparece quando não há itens elegíveis. Sem data válida fornecida pelo servidor, não há classificação como recente. Séries e Ao vivo permanecem para etapas posteriores.
+
 A preparação VOD mantém cache por conta/tipo, uma consulta de metadados por vez, lotes, pausas, cache negativo e tentativas limitadas. Pausa fora do catálogo ativo, em reprodução/segundo plano ou por solicitação. Velocidade/pausa do coordenador são de sessão. Não confundir preparação com sincronização das listas.
+
+### Ajustes locais após feedback Windows — ainda não publicados
+
+- **Nome de exibição:** Configurações → Conta permite salvar ou restaurar o nome mostrado na dashboard/conta. A regra de apresentação é compartilhada com o Android em `AccountPresentation`; o login IPTV continua igual. Nomes ficam por conta nas preferências Windows, com limite de 256 caracteres, escrita atômica e confirmação após salvar. Entram no backup Windows existente. Não há migração nem cópia automática dos dados Android.
+- **Inicialização/fullscreen:** restaurada pelo evento nativo de exibição da janela e um frame subsequente. O desenho com `isShowing` da tentativa anterior podia deixar a restauração sem disparar; foi retirado. A escolha inicial vem das preferências (padrão `true`), e a última escolha explícita janela/fullscreen é persistida sem usar estados transitórios do peer. F11 atua uma vez ao soltar, inclusive nos HUDs. Valores existentes são preservados; a janela temporária da inicialização não vira preferência. A restauração e a antiga tela preta ainda não foram observadas em execução pelo agente.
+- **Mouse:** botão lateral Voltar (botão 4 entregue ao Java) encaminha Esc aos mesmos handlers da janela, diálogo ou HUD focado. Atua uma vez ao soltar; não monitora outros aplicativos. Avançar permanece sem ação por escolha do usuário. Mapeamentos próprios de drivers e a superfície nativa ainda não foram exercitados com mouse físico.
+- **Instalador:** após sucesso sem reinicialização pendente, a opção marcada “Abrir o Squi TV ao concluir” permite iniciar no clique Concluir. Em instalação por máquina, o processo original aguarda o filho UAC e abre o executável registrado da mesma variante sem elevação. Se o instalador já foi aberto como administrador, a abertura automática fica desabilitada. Cancelamento/falha não dispara o app; falha ao abrir não desfaz a instalação. Apenas o instalador debug foi empacotado, sem executar MSI/EXE.
+
+Debug portátil atual no Iniciar: `dbb50605cf016116`, na pasta fixa `SquiTVDebugPortable/current`. Inclui os ajustes locais anteriores, correções de capas/logos e download de episódios/temporadas. Compilações Windows/Android e deploy concluídos; atalho/ícone conferidos por leitura. Nenhum app/instalador, download real, decodificador nativo ou inspeção visual foi executado pelo agente. Release instalada e publicação v1.23 preservadas.
+
+## Downloads de filmes e episódios — etapa local após v1.23
+
+O cartão Downloads abre uma biblioteca por conta. **Baixar** fica nos detalhes do filme; Séries tem **Baixar episódio** e **Baixar temporada**, usando as temporadas/episódios reais já carregados e as regras compartilhadas de `OnDemandPlayback`. A apresentação da linha e a formatação de tamanhos continuam compartilhadas com Android.
+
+- Uma transferência por vez; temporadas entram numa fila explícita do usuário. Itens concluídos ainda presentes e itens já na fila não são duplicados. Erro de transferência interrompe os pendentes, evitando insistência automática no servidor. Limite de 1.000 registros por variante.
+- Fechar o app, sair/trocar de conta ou cancelar a fila interrompe os pendentes. Ao reabrir, não há retomada automática: **Reiniciar começa do zero**. Pedir a mesma temporada novamente pula os arquivos concluídos reconhecidos. Sem serviço em segundo plano ou HTTP Range.
+- Conta + tipo + ID identificam o conteúdo; filme e episódio com o mesmo ID usam registros/arquivos distintos. Registros antigos deste backend eram comprovadamente filmes e continuam como tal por campo opcional com valor padrão. Episódios incluem série/temporada/número, sem URL ou credenciais no índice.
+- Biblioteca permite excluir e reproduzir arquivo concluído cujo tamanho confere. Uma série local monta a sequência apenas com episódios salvos e verificados da mesma conta/série; anterior/próximo e transição automática usam esse snapshot, sem buscar episódios ausentes por streaming. Arquivo removido após o snapshot gera erro local, sem fallback de rede.
+- Arquivos/índice continuam em `%LOCALAPPDATA%/<variante>/downloads`, com UUIDs e gravação atômica. O backup de preferências não transporta os vídeos ou o índice. Quem lembrou a conta pode usar Downloads salvos no login sem nova autenticação; logout explícito não reativa reconexão.
+- Transporte separado de IPTV/atualização: até cinco redirecionamentos, sem downgrade HTTPS ou user-info, HTTP 200 e checagem de tamanho quando informado. HTML/JSON/playlists reconhecidas são rejeitadas. HLS/DASH e Smart Downloads não estão implementados.
+
+A implementação foi revisada e compilada; nenhum download, reprodução local ou fila real foi exercitado pelo agente.
+
+## Capas, logos e imagens dos conteúdos — alteração local
+
+- `ContentImages` compartilhado trata espaços, entidades HTML, valores vazios e URLs relativas ao servidor conhecido, sem inventar uma origem para a imagem. DTOs aceitam arte opcional em texto/lista e ignoram formatos inválidos desse campo sem descartar os demais metadados.
+- Windows aceita até três redirecionamentos de imagem, mantendo HTTPS, cancelamento, limite de bytes e prazo total de rede de 12 s por candidato. Reutiliza Skia já incluído no Compose para WebP/SVG que ImageIO não reconhece; nenhum componente novo é baixado.
+- Quatro carregamentos simultâneos, cache de até 64 entradas por carregador e orçamento de memória por área. Imagem codificada: até 2 MiB para logos, 4 MiB para cartões, 6 MiB para detalhes; SVG até 512 KiB; raster até 16 milhões de pixels, reduzido antes de entrar no cache. Não há ganho de memória ou tempo medido.
+- Célula reutilizada limpa imediatamente a arte anterior. Falha transitória visível pode retentar uma vez após o cache negativo expirar. Detalhes usam alternativas reais de capa; a arte recebida ao abrir um detalhe também é aplicada à lista em memória.
+- Android mantém Coil/SVG e caches existentes, com normalização/fallback de arte usando a mesma regra; filmes/séries podem usar a capa conhecida se o backdrop falhar. Metadados de uma série não são reaproveitados visualmente para outra. Grades mostram placeholder quando nenhuma imagem é fornecida/carregada.
+
+Servidor sem arte, arquivo inacessível, TLS inválido ou imagem acima dos limites continua sem uma imagem real. Nenhuma requisição a conteúdo de usuário ou execução de decodificação foi feita nesta etapa; compilação não prova que todo recurso de um provedor carregou.
 
 ## Player e janela
 
+- **Alteração local, ainda não publicada:** com os controles ocultos, esquerda/direita diminuem/aumentam o volume do app em passos de 5%, entre 0 e 100, com indicador por 1,5 s. Uma ação ao soltar a tecla evita repetições acidentais. Com controles ou menus abertos, as setas navegam e continuam atuando no seek quando a barra está focada. Regra de volume e indicador são compartilhados com Android; o Windows conserva o valor nas preferências existentes. O volume Android atua no player Media3 da sessão, sem configurar o áudio da TV.
+- **Teclado Windows:** setas movem o foco entre componentes; Enter aciona o componente e Esc volta/fecha o menu pelo fluxo existente. A navegação adicional trata somente eventos que editores, sliders, menus e player não consumiram. Inclui diálogos de configurações/downloads e HUDs nativos, sem alterar F11 ou as regras de fullscreen. Diálogos do sistema continuam usando a navegação do Windows. Compilação não comprova alcance de todos os controles ou geometria do foco em execução.
+- **Memória dos catálogos, local após v1.23:** ao reabrir Ao vivo/Filmes/Séries, restaura categoria e cartão selecionado, sem reproduzir automaticamente. Mantém itens por até 16 categorias em cada escopo, com até 64 escopos/tipos e orçamento de 16 KiB para a memória compartilhada. Usa somente IDs, por conta/tipo; no Android também por perfil. Reutiliza dados carregados e valida a categoria visível antes de restaurar; conteúdo removido/oculto não é reaberto à força. Salva foco estabilizado após 400 ms e clique imediatamente, elimina gravações idênticas e aguarda a gravação pendente no fechamento normal do Windows. Não é histórico de progresso ou sincronização entre aparelhos.
 - LibVLC usa superfície nativa; os HUDs mantêm SwingGraphics. No Multi-view Windows o cabeçalho do slot ocupa faixa acima do Canvas para não ficar sob o HWND; ainda difere do overlay Android.
 - Ajustar conserva a imagem inteira e a proporção; Preencher pode esticar; Zoom preenche cortando bordas sem esticar. O adaptador limpa operações anteriores e recalcula conforme o viewport. Barras codificadas dentro do vídeo não são detectadas automaticamente.
 - VOD compartilha controlador de seek Android: coalescimento de 300 ms, confirmação nativa e proteção por sourceId/generation contra eventos antigos. Pausa fica centralizada. Retomada depende de duração/seekability válidas.
@@ -64,7 +106,11 @@ UUIDs de upgrade e diretórios de dados são distintos e devem ser preservados. 
 
 ### Debug portátil
 
-O deploy copia a imagem completa para `%LOCALAPPDATA%/SquiTVDebugPortable/builds/<hash>` e atualiza o atalho **Squi TV Debug**. Mantém builds anteriores, ícone em caminho físico, conta e processos abertos. Não inicia/encerra o app. Uma janela já aberta continua usando seu build anterior.
+O deploy mantém uma única imagem em `%LOCALAPPDATA%/SquiTVDebugPortable/current` e atualiza o atalho **Squi TV Debug**, preservando o ícone em caminho físico. O hash identifica o conteúdo, sem gerar outra pasta por compilação. Se o host redirecionou AppData, o script reutiliza o caminho físico do atalho existente, inclusive ao executar o próximo deploy fora desse host. Dados de conta, preferências e downloads continuam fora da imagem, em `%LOCALAPPDATA%/SquiTVDebug`.
+
+Para substituir uma debug já implantada em `current`, feche o aplicativo e execute o deploy novamente. O script não encerra processos nem atualiza arquivos em uso. Copia primeiro para `pending`, promove a imagem pronta e remove `previous` após atualizar o atalho; essas pastas são temporárias, não um histórico de versões. Um lock impede dois deploys simultâneos, e a reserva de instância debug impede uma nova abertura durante a substituição.
+
+Na migração, cópias completas reconhecidas em `builds/<hash>` e backups de atalhos gerados pelo deploy são removidos. Uma cópia antiga ainda em execução é preservada e removida no próximo deploy após seu fechamento. Pastas desconhecidas/incompletas e links não são apagados automaticamente. A release instalada não participa desse processo.
 
 A imagem debug contém Java e VLC; mova a pasta inteira, não apenas o EXE. Dados continuam vinculados ao usuário Windows. Preenchimento de login debug é local, protegido e externo à distribuição; não embutir credenciais em código, JAR ou instalador. A release ignora os defaults e propriedades específicos da debug.
 
@@ -93,3 +139,9 @@ Compilar APK de teste instrumentado não significa executá-lo. Não foram execu
 Execução, inspeção e verificações de instalação neste PC usam somente debug. A release instalada, seus processos e dados não podem ser abertos, encerrados, reinstalados ou alterados pelo agente. Sem ganhos de FPS/memória/abertura anunciados sem medição.
 
 Histórico técnico detalhado e hashes de debug ficam nos registros locais ignorados; notas públicas de cada distribuição ficam em [releases](releases/).
+
+## Reprodução e consumo de recursos — v1.24
+
+O worker LibVLC mantém a geração exata do pedido durante inicialização/stop potencialmente bloqueantes; não atribui um estado antigo à mídia nova. Comandos de mídia ainda na fila são descartados quando a geração muda. Erros antigos não substituem o estado atual. Ao terminar/falhar, suspende o polling até nova reprodução explícita; getters nativos ficam fora do bloco de atualização repetível do StateFlow. Volume idêntico não gera chamada nativa redundante. O fechamento tolera eventos tardios de AWT/Compose sem reenfileirar ações no executor encerrado.
+
+O histórico Windows evita revalidar todas as entradas para uma posição/duração idêntica ou um término já removido. Android serializa escritas de progresso, ignora repetições não forçadas, preserva CancellationException e contabiliza o intervalo pelo relógio monotônico somente após sucesso. O ticker publica sua amostra antes de aguardar Room e a gravação final captura tipo/série da sessão. Não houve mudança nos buffers, codecs, aceleração, superfície de vídeo ou endpoints. Não há medição de ganho de FPS, RAM ou latência.

@@ -177,6 +177,8 @@ internal fun LoginForm(state: DesktopState, controller: DesktopController, modif
                     }
                     if (state.busy) TextButton(onClick = controller::cancelConnection,
                         modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Cancelar") }
+                    if (!state.busy && state.savedCredentials != null) TextButton(onClick = controller::openDownloads,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Downloads salvos") }
                     Text("SQUI TV • ${DesktopBuildInfo.VERSION}${if (DesktopBuildInfo.DEBUG) " DEBUG" else ""}",
                         style = MaterialTheme.typography.labelSmall, color = palette.onSurfaceVariant,
                         modifier = Modifier.align(Alignment.CenterHorizontally))

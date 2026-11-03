@@ -33,6 +33,7 @@ fun ContentGrid(
     targetItemId: String? = null,
     state: ContentGridState = rememberContentGridState("default"),
     onToggleFavorite: ((IptvItem, Boolean) -> Unit)? = null,
+    onItemFocused: (IptvItem) -> Unit = {},
     onItemClick: (IptvItem) -> Unit
 ) {
     val tokens = AppDesignSystem
@@ -67,17 +68,23 @@ fun ContentGrid(
         }
     }
 
-    // Returning from details restores the saved offset. Only a first live-channel selection scrolls explicitly.
+    // A newly selected/zapped item wins on entry; otherwise retain the exact saved offset.
     var entered by remember(state) { mutableStateOf(false) }
     LaunchedEffect(state, items.isNotEmpty()) {
         if (items.isEmpty() || entered) return@LaunchedEffect
         entered = true
-        if (!state.hasInteracted && explicitIndex >= 0) state.scroll.scrollToItem(explicitIndex)
+        if (explicitIndex >= 0 && (!state.hasInteracted || explicitIndex != savedIndex)) {
+            state.focusedItem = items[explicitIndex].gridKey
+            state.focusedStreamKey = "${items[explicitIndex].type.name}:${items[explicitIndex].id}"
+            state.focusedIndex = explicitIndex
+            state.scroll.scrollToItem(explicitIndex)
+        }
+        val entryIndex = if (explicitIndex >= 0) explicitIndex else focusIndex
         if (useFocus) {
-            if (state.hasInteracted && state.scroll.layoutInfo.visibleItemsInfo.none { it.index == focusIndex }) {
+            if (state.hasInteracted && state.scroll.layoutInfo.visibleItemsInfo.none { it.index == entryIndex }) {
                 withFrameNanos { }
-                if (state.scroll.layoutInfo.visibleItemsInfo.none { it.index == focusIndex }) {
-                    state.scroll.scrollToItem(focusIndex)
+                if (state.scroll.layoutInfo.visibleItemsInfo.none { it.index == entryIndex }) {
+                    state.scroll.scrollToItem(entryIndex)
                 }
             }
             withFrameNanos { }
@@ -119,6 +126,7 @@ fun ContentGrid(
                         state.focusedStreamKey = "${item.type.name}:${item.id}"
                         state.focusedIndex = index
                         state.hasInteracted = true
+                        onItemFocused(item)
                     }
                 }
             val onOpen = {

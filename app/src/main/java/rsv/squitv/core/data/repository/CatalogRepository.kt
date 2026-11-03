@@ -12,6 +12,7 @@ import rsv.squitv.data.model.*
 import rsv.squitv.data.model.XtreamCredentials
 import rsv.squitv.domain.model.ContentType
 import rsv.squitv.domain.model.IptvItem
+import rsv.squitv.shared.catalog.RecentlyAddedCatalog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -366,48 +367,18 @@ class CatalogRepository @Inject constructor(
     }
 
     companion object {
-        const val FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000L
+        const val FOURTEEN_DAYS_MS = RecentlyAddedCatalog.FOURTEEN_DAYS_MS
     }
 
-    fun parseAddedTimestamp(added: String?): Long {
-        if (added.isNullOrBlank()) return 0L
-        added.trim().toLongOrNull()?.let {
-            return if (it < 10000000000L) it * 1000L else it
-        }
-        try {
-            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
-            sdf.parse(added)?.time?.let { return it }
-        } catch (_: Exception) {}
-        try {
-            val sdfDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-            sdfDate.parse(added)?.time?.let { return it }
-        } catch (_: Exception) {}
-        return 0L
-    }
+    fun parseAddedTimestamp(added: String?): Long = RecentlyAddedCatalog.parseAddedTimestamp(added)
 
     fun sortAndFilterRecentStreams(
         streams: List<IptvStreamEntity>,
         limit: Int,
         currentTimeMillis: Long = System.currentTimeMillis()
     ): List<IptvItem> {
-        val minTimestamp = currentTimeMillis - FOURTEEN_DAYS_MS
-        val maxTimestamp = currentTimeMillis + 300_000L // 5 min clock skew tolerance
-
-        return streams
-            .mapNotNull { stream ->
-                val timestamp = parseAddedTimestamp(stream.added)
-                if (timestamp in minTimestamp..maxTimestamp) {
-                    stream to timestamp
-                } else {
-                    null
-                }
-            }
-            .sortedWith(
-                compareByDescending<Pair<IptvStreamEntity, Long>> { it.second }
-                    .thenByDescending { it.first.id }
-            )
-            .take(limit)
-            .map { it.first.toIptvItem() }
+        return RecentlyAddedCatalog.select(streams, limit, currentTimeMillis, { it.added }, { it.id })
+            .map { it.toIptvItem() }
     }
 
     suspend fun getRecentMovies(limit: Int = 100, currentTimeMillis: Long = System.currentTimeMillis()): List<IptvItem> {

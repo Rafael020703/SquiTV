@@ -36,7 +36,6 @@ import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.hilt.navigation.compose.hiltViewModel
 import rsv.squitv.util.rememberWindowInfo
-import java.util.Locale
 
 @OptIn(UnstableApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -185,65 +184,46 @@ fun DownloadItemCard(
         color = if (isFocused) tokens.colors.surfaceElevated else tokens.colors.surface.copy(alpha = 0.15f),
         border = BorderStroke(1.dp, if (isFocused) tokens.colors.primary else Color.White.copy(alpha = 0.05f))
     ) {
-        Row(
-            modifier = Modifier.padding(tokens.spacing.medium),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(modifier = Modifier.width(if (isExpanded) 180.dp else 120.dp).aspectRatio(1.77f).clip(tokens.shapes.small)) {
-                AsyncImage(
-                    model = download.icon,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-                
-                if (download.status == "DOWNLOADING") {
-                    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(
-                            progress = { download.progress / 100f }, 
-                            modifier = Modifier.size(36.dp), 
-                            strokeWidth = 3.dp,
-                            color = tokens.colors.primary
-                        )
-                    }
-                } else {
-                    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(32.dp))
+        rsv.squitv.core.ui.components.downloads.DownloadItemContent(
+            title = download.name.uppercase(),
+            subtitle = "${download.duration ?: "N/D"} • ${formatFileSize(download.downloadedBytes)}".uppercase(),
+            titleStyle = tokens.typography.title, subtitleStyle = tokens.typography.caption,
+            titleColor = if (isFocused) tokens.colors.primary else tokens.colors.textPrimary,
+            subtitleColor = tokens.colors.textSecondary.copy(alpha = .6f),
+            padding = tokens.spacing.medium, gap = tokens.spacing.extraLarge,
+            thumbnail = {
+                Box(modifier = Modifier.width(if (isExpanded) 180.dp else 120.dp).aspectRatio(1.77f).clip(tokens.shapes.small)) {
+                    AsyncImage(
+                        model = download.icon,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+
+                    if (download.status == "DOWNLOADING") {
+                        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                progress = { download.progress / 100f },
+                                modifier = Modifier.size(36.dp),
+                                strokeWidth = 3.dp,
+                                color = tokens.colors.primary
+                            )
+                        }
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(32.dp))
+                        }
                     }
                 }
-            }
-            
-            Spacer(modifier = Modifier.width(tokens.spacing.extraLarge))
-            
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = download.name.uppercase(), 
-                    style = tokens.typography.title, 
-                    color = if (isFocused) tokens.colors.primary else tokens.colors.textPrimary, 
-                    fontWeight = FontWeight.Black, 
-                    maxLines = 1,
-                    letterSpacing = 0.5.sp
+            }, actions = {
+                AppIconButton(
+                    icon = Icons.Rounded.Delete,
+                    onClick = { onDelete(download.streamId) },
+                    tint = tokens.colors.error.copy(alpha = 0.7f)
                 )
-                Text(
-                    text = "${download.duration ?: "N/D"} • ${formatFileSize(download.downloadedBytes)}".uppercase(),
-                    style = tokens.typography.caption,
-                    color = tokens.colors.textSecondary.copy(alpha = 0.6f),
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            
-            AppIconButton(
-                icon = Icons.Rounded.Delete, 
-                onClick = { onDelete(download.streamId) },
-                tint = tokens.colors.error.copy(alpha = 0.7f)
-            )
-        }
+            })
     }
 }
 
-fun formatFileSize(bytes: Long): String {
-    if (bytes <= 0) return "0 B"
-    val units = arrayOf("B", "KB", "MB", "GB", "TB")
-    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
-    return String.format(Locale.getDefault(), "%.1f %s", bytes / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
-}
+fun formatFileSize(bytes: Long): String =
+    rsv.squitv.shared.downloads.DownloadPresentation.fileSize(bytes)

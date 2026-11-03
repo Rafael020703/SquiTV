@@ -110,6 +110,7 @@ class SettingsRepository @Inject constructor(
         val LAST_LIVE_CATEGORY_CHANNEL_NAMES = stringPreferencesKey("last_live_category_channel_names")
         val LAST_MOVIE_CATEGORY = stringPreferencesKey("last_movie_category")
         val LAST_SERIES_CATEGORY = stringPreferencesKey("last_series_category")
+        val CATALOG_BROWSE_MEMORY = stringPreferencesKey("catalog_browse_memory_v1")
         
         // Account Cache
         val ACCOUNT_EXP_DATE = stringPreferencesKey("account_exp_date")
@@ -184,8 +185,11 @@ class SettingsRepository @Inject constructor(
         val seriesCategoryModeMap: Map<String, String> = emptyMap(),
         val moviePromptDismissedMap: Map<String, Boolean> = emptyMap(),
         val seriesPromptDismissedMap: Map<String, Boolean> = emptyMap(),
-        val preparationSpeed: String = "NORMAL"
+        val preparationSpeed: String = "NORMAL",
+        val browseMemory: rsv.squitv.shared.catalog.CatalogBrowseMemory = rsv.squitv.shared.catalog.CatalogBrowseMemory()
     ) {
+        fun catalogPosition(type: String) = browseMemory.position(
+            rsv.squitv.core.data.repository.PlaybackSourceRepository.scope(this), type)
         val currentDisplayName: String?
             get() = credentials?.username?.lowercase()?.let { displayNamesMap[it] }
 
@@ -327,6 +331,9 @@ class SettingsRepository @Inject constructor(
         }
         
         return AppSettings(
+            browseMemory = try { decodeBrowseMemory(preferences) } catch (_: Exception) {
+                rsv.squitv.shared.catalog.CatalogBrowseMemory()
+            },
             credentials = creds,
             accounts = accounts,
             currentAccountIndex = currentIndex,
@@ -642,6 +649,25 @@ class SettingsRepository @Inject constructor(
                 "series" -> preferences[PreferencesKeys.LAST_SERIES_CATEGORY] = categoryId
             }
         }
+    }
+
+    private fun decodeBrowseMemory(preferences: Preferences): rsv.squitv.shared.catalog.CatalogBrowseMemory {
+        val raw = preferences[PreferencesKeys.CATALOG_BROWSE_MEMORY] ?: return rsv.squitv.shared.catalog.CatalogBrowseMemory()
+        require(raw.toByteArray(Charsets.UTF_8).size <= 64 * 1024)
+        return profileJson.decodeFromString<rsv.squitv.shared.catalog.CatalogBrowseMemory>(raw).also { it.validate() }
+    }
+
+    suspend fun rememberCatalogPosition(scope: String, type: String, categoryId: String, itemId: String? = null) {
+        try {
+            context.dataStore.edit { preferences ->
+                // A delayed focus event must never be assigned to the next account/profile.
+                if (rsv.squitv.core.data.repository.PlaybackSourceRepository.scope(readSettings(preferences)) != scope) return@edit
+                val previous = decodeBrowseMemory(preferences)
+                val next = previous.record(scope, type, categoryId, itemId)
+                if (next != previous) preferences[PreferencesKeys.CATALOG_BROWSE_MEMORY] = Json.encodeToString(next)
+            }
+        } catch (error: kotlinx.coroutines.CancellationException) { throw error }
+        catch (error: Exception) { Timber.w(error, "Não foi possível salvar a posição do catálogo") }
     }
 
     suspend fun updateLastChannel(type: String, categoryId: String, channelId: String, channelName: String) {

@@ -45,12 +45,16 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
     val preferences by settings.state.collectAsState()
     val preferencesLoaded by settings.loaded.collectAsState()
     val preferencesError by settings.error.collectAsState()
+    var volumeNotice by remember { mutableStateOf<Int?>(null) }
+    var volumeRevision by remember { mutableIntStateOf(0) }
+    LaunchedEffect(volumeRevision) { delay(1500); volumeNotice = null }
     val accountScope = remember(account) { liveCategoryScope(account) }
     val catalogKind = if (session.series) CatalogKind.SERIES else CatalogKind.MOVIES
     val isFavorite = preferences.isCatalogFavorite(accountScope, catalogKind, session.catalogId)
     val historyError = controller.watchHistory?.error?.collectAsState()?.value
     var controls by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf<VodMenu?>(null) }
+    LaunchedEffect(controls, menu) { if (controls || menu != null) volumeNotice = null }
     var holding by remember { mutableStateOf(false) }
     var keyboardSeeking by remember { mutableStateOf(false) }
     var dragging by remember(session.id) { mutableStateOf<Float?>(null) }
@@ -77,7 +81,7 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
     val input: (KeyEvent) -> Boolean = { event ->
         when {
             event.key == Key.F11 || event.key == Key.F -> {
-                if (event.type == KeyEventType.KeyDown) toggleFullscreen()
+                if (event.type == KeyEventType.KeyUp) toggleFullscreen()
                 true
             }
             event.key == Key.Escape || event.key == Key.Back -> {
@@ -91,11 +95,23 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
                 true
             }
             menu != null -> false
+            !controls && event.key in listOf(Key.DirectionLeft, Key.DirectionRight) -> {
+                if (event.type == KeyEventType.KeyUp && preferencesLoaded) {
+                    val next = rsv.squitv.shared.player.PlayerVolume.adjust(
+                        volumeNotice ?: engine.state.value.let { if (it.muted) 0 else it.volume },
+                        if (event.key == Key.DirectionRight) 1 else -1)
+                    engine.setVolume(next)
+                    if (engine.state.value.muted) engine.toggleMute()
+                    settings.update { it.copy(volume = next, muted = false) }
+                    volumeNotice = next; volumeRevision++
+                }
+                true
+            }
             event.key == Key.Spacebar -> {
                 if (event.type == KeyEventType.KeyUp) { engine.togglePause(); showControls() }
                 true
             }
-            event.key in listOf(Key.DirectionLeft, Key.DirectionRight) && (seekFocused || !controls) -> {
+            event.key in listOf(Key.DirectionLeft, Key.DirectionRight) && seekFocused -> {
                 if (event.type == KeyEventType.KeyDown && status.seekable && status.durationMs > 0) {
                     manualSeek()
                     showControls()
@@ -136,10 +152,10 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
             registerInput(null); registerPlayer(null); overlay.hideOverlayImmediately(); engine.close()
         }
     }
-    LaunchedEffect(session.id, session.series, account, retry) {
+    LaunchedEffect(session.id, session.series, session.localMediaUri, account, retry) {
         val saved = liveCategoryScope(account)?.let { controller.watchHistory?.resume(it, session) }
         menu = null; seek.cancelSeek(); dragging = null; showControls()
-        engine.play(OnDemandPlayback.address(account, session.series, session.id, session.extension), session.id)
+        engine.play(session.localMediaUri ?: OnDemandPlayback.address(account, session.series, session.id, session.extension), session.id)
         expectedGeneration = engine.state.value.playbackGeneration
         resumeTarget = saved?.positionMs
     }
@@ -204,6 +220,10 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
             controlsVisible = controls, pointerRevealEnabled = menu == null,
             onPointerMove = { if (menu == null) showControls() },
             onClick = { if (menu != null) closeMenu() else if (controls) hideControls() else showControls() })
+    }
+    NativePlayerLayer(volumeNotice != null && !controls && menu == null, PlayerLayerPlacement.CENTER,
+        heightDp = 76, widthDp = 168, interactive = false) {
+        volumeNotice?.let { PlayerVolumeNotice(it) }
     }
     NativePlayerLayer(controls && menu == null, PlayerLayerPlacement.TOP, heightDp = 112,
         interactive = false) {

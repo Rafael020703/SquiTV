@@ -181,6 +181,7 @@ fun PlayerScreen(
             onSeek = { viewModel.seekTo(it) },
             onSeekForward = { viewModel.seekForward() },
             onSeekBack = { viewModel.seekBack() },
+            onAdjustVolume = viewModel::adjustAppVolume,
             onNextEpisode = { viewModel.playNextEpisode() },
             onCancelCountdown = { viewModel.cancelCountdown() },
             onToggleFavorite = { viewModel.toggleFavorite() },
@@ -296,17 +297,30 @@ fun PlayerContent(
     isInPip: Boolean = false,
     pipAvailable: Boolean = false,
     onEnterPip: () -> Unit = {},
-    onSeekingStateChanged: (Boolean) -> Unit = {}
+    onSeekingStateChanged: (Boolean) -> Unit = {},
+    onAdjustVolume: (Int) -> Int? = { null }
 ) {
     val context = LocalContext.current
     val tokens = AppDesignSystem
+    var volumeNotice by remember { mutableStateOf<Int?>(null) }
+    var volumeRevision by remember { mutableIntStateOf(0) }
+    LaunchedEffect(volumeRevision) { delay(1500); volumeNotice = null }
 
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(tokens.colors.background)
-            .onPreviewKeyEvent {
+            .onPreviewKeyEvent { event ->
+                if (!isInPip && !isControlsVisible && !showSettings && !showQualityMenu && !showSpeedMenu && !isSplitView &&
+                    player != null && event.key in listOf(Key.DirectionLeft, Key.DirectionRight)) {
+                    if (event.type == KeyEventType.KeyUp) {
+                        onAdjustVolume(if (event.key == Key.DirectionRight) 1 else -1)?.let {
+                            volumeNotice = it; volumeRevision++
+                        }
+                    }
+                    return@onPreviewKeyEvent true
+                }
                 updateInteraction()
                 false
             }
@@ -355,18 +369,6 @@ fun PlayerContent(
 
                         // Controls Overlay Toggle when controls are NOT visible
                         !isControlsVisible && keyEvent.key in listOf(Key.DirectionCenter, Key.Enter, Key.Spacebar) -> {
-                            showOverlayWith5sTimer()
-                            true
-                        }
-
-                        // VOD Seek Controls when controls are NOT visible
-                        !isLive && !isControlsVisible && keyEvent.key == Key.DirectionLeft -> {
-                            onSeekBack()
-                            showOverlayWith5sTimer()
-                            true
-                        }
-                        !isLive && !isControlsVisible && keyEvent.key == Key.DirectionRight -> {
-                            onSeekForward()
                             showOverlayWith5sTimer()
                             true
                         }
@@ -420,6 +422,10 @@ fun PlayerContent(
 
         // Hide all controls, overlays, clocks and dialogs when in Picture-in-Picture mode
         if (!isInPip) {
+            volumeNotice?.let { volume ->
+                rsv.squitv.core.ui.components.player.PlayerVolumeNotice(volume,
+                    Modifier.align(Alignment.CenterEnd).padding(24.dp))
+            }
             // Split View UI
             if (isSplitView) {
                 val state = uiState as? PlayerUiState.Playing
