@@ -248,6 +248,19 @@ class CatalogRepository @Inject constructor(
         awaitAll(liveCats, liveStreams, vodCats, vodStreams, seriesCats, series)
     }
 
+    /** Preparation fetches do not mutate Room until the coordinator rechecks the active account. */
+    suspend fun fetchPreparationMetadata(credentials: XtreamCredentials, id: Int, series: Boolean): CatalogMetadataUpdate {
+        return if (series) {
+            val info = xtreamService.getSeriesEpisodes(credentials.username, credentials.password, seriesId = id).info
+            CatalogMetadataUpdate(id, "SERIES", info?.genre, info?.cast, info?.director, info?.plot,
+                null, info?.backdropPath?.firstOrNull(), info?.youtubeTrailer)
+        } else {
+            val info = xtreamService.getVodInfo(credentials.username, credentials.password, vodId = id).info
+            CatalogMetadataUpdate(id, "VOD", info?.genre, info?.cast, info?.director, info?.plot,
+                info?.duration, info?.backdropPath?.firstOrNull(), info?.youtubeTrailer)
+        }
+    }
+
     suspend fun getVodInfo(credentials: XtreamCredentials, vodId: Int): XtreamVodInfo {
         val info = xtreamService.getVodInfo(credentials.username, credentials.password, vodId = vodId)
         val details = info.info

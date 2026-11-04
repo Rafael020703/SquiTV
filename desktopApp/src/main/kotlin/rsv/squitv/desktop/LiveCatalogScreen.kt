@@ -47,6 +47,9 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import rsv.squitv.shared.catalog.LiveCatalogView
+import rsv.squitv.shared.catalog.RecentlyAddedCatalog
+
+private data class LiveBrowseProjection(val view: LiveCatalogView, val all: List<LiveChannel>, val recent: List<LiveChannel>, val recentCount: Int)
 
 /** Desktop adaptation of Android AppHeader, AppSidebar and ChannelCard; same data/actions. */
 @Composable
@@ -79,18 +82,39 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
         CategoryCustomization.apply(state.categories, categoryOrder, hidden) { it.id }
     }
     val index by controller.liveIndex.state.collectAsState()
-    var countedView by remember(accountScope) { mutableStateOf<LiveCatalogView?>(null) }
+    var projection by remember(accountScope, index, state.categories, hidden, categoryOrder,
+        preferences.groupLiveChannels, preferences.preferredChannelQuality) { mutableStateOf<LiveBrowseProjection?>(null) }
+    val countedView = projection?.view
+    val recentChannels = projection?.recent.orEmpty()
     LaunchedEffect(state.credentials) { state.credentials?.let { controller.liveIndex.load(it) } }
     DisposableEffect(controller) { onDispose { controller.liveIndex.cancel() } }
-    LaunchedEffect(index, state.categories, hidden, categoryOrder, preferences.groupLiveChannels, preferences.preferredChannelQuality) {
-        countedView = withContext(Dispatchers.Default) {
-            if (!index.loaded || index.accountScope != accountScope) null else
-                LiveCatalogView.build(state.categories, index.channels, accountScope.orEmpty(), preferences.groupLiveChannels,
-                    ChannelQuality.fromPreference(preferences.preferredChannelQuality), categoryOrder.orEmpty(), hidden)
+    LaunchedEffect(accountScope, index, state.categories, hidden, categoryOrder, preferences.groupLiveChannels, preferences.preferredChannelQuality) {
+        projection = withContext(Dispatchers.Default) {
+            if (!index.loaded || index.accountScope != accountScope) null else {
+                val quality = ChannelQuality.fromPreference(preferences.preferredChannelQuality)
+                val all = index.channels.filter { it.categoryId !in hidden }
+                val recent = RecentlyAddedCatalog.select(all,
+                    100, added = { it.added }, id = { it.id })
+                val recentCount = LiveChannelGroups.visible(recent, accountScope.orEmpty(), preferences.groupLiveChannels, quality).size
+                LiveBrowseProjection(LiveCatalogView.build(state.categories, index.channels, accountScope.orEmpty(),
+                    preferences.groupLiveChannels, quality, categoryOrder.orEmpty(), hidden), all, recent, recentCount)
+            }
         }
     }
-    val categories = remember(providerCategories, countedView) {
-        countedView?.categories?.map { rsv.squitv.shared.xtream.LiveCategory(it.id, it.name) } ?: providerCategories
+    val categories = remember(providerCategories, projection) {
+        countedView?.categories?.map { rsv.squitv.shared.xtream.LiveCategory(it.id, it.name) }?.let {
+            (if (countedView.channels.isNotEmpty()) listOf(ALL_LIVE_CATEGORY) else emptyList()) +
+                (if (recentChannels.isEmpty()) emptyList() else listOf(RECENT_LIVE_CATEGORY)) + it
+        } ?: providerCategories
+    }
+    val selectCategory: (rsv.squitv.shared.xtream.LiveCategory) -> Unit = { category ->
+        if (category == ALL_LIVE_CATEGORY) controller.loadCatalogSnapshot(category, projection?.all.orEmpty())
+        else if (category == RECENT_LIVE_CATEGORY) controller.loadCatalogSnapshot(category, recentChannels)
+        else controller.loadChannels(category)
+    }
+    LaunchedEffect(projection, state.selectedCategory?.id, favoriteCategory) {
+        if (!favoriteCategory && projection != null && state.selectedCategory?.id in setOf(RECENT_LIVE_CATEGORY.id, ALL_LIVE_CATEGORY.id))
+            state.selectedCategory?.let(selectCategory)
     }
     LaunchedEffect(index.channels, index.loaded, favoriteCategory) {
         if (!favoriteCategory && index.loaded) controller.refreshLiveSelectionFromIndex()
@@ -112,7 +136,7 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
             if (!favoriteCategory) {
                 val restored = categories.firstOrNull { it.id == savedPosition?.categoryId }
                     ?: categories.firstOrNull { it.id == state.selectedCategory?.id } ?: categories.firstOrNull()
-                restored?.let(controller::loadChannels)
+                restored?.let(selectCategory)
             }
             selectionRestored = true
             return@LaunchedEffect
@@ -123,9 +147,9 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
         if (preferencesLoaded && !state.busy && state.selectedCategory?.id !in categories.map { it.id }) {
             if (categories.isEmpty()) {
                 if (state.selectedCategory != null) controller.clearLiveSelection()
-            } else controller.loadChannels(categories.first())
+            } else selectCategory(categories.first())
         } else if (preferencesLoaded && !state.busy && !state.channelsLoaded && !state.loadingChannels && state.channelError == null) {
-            categories.firstOrNull { it.id == state.selectedCategory?.id }?.let(controller::loadChannels)
+            categories.firstOrNull { it.id == state.selectedCategory?.id }?.let(selectCategory)
         }
     }
     LaunchedEffect(selectionRestored, selectedId) {
@@ -137,7 +161,12 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
         it.copy(hiddenLiveCategoriesByAccount = it.hiddenLiveCategoriesByAccount - key)
     } }
     val query = search.trim()
-    val rawChannels = if (favoriteCategory) favoriteChannels else state.channels
+    val rawChannels = when {
+        favoriteCategory -> favoriteChannels
+        state.selectedCategory?.id == RECENT_LIVE_CATEGORY.id -> recentChannels
+        state.selectedCategory?.id == ALL_LIVE_CATEGORY.id -> projection?.all.orEmpty()
+        else -> state.channels
+    }
     var preparedChannels by remember(rawChannels, accountScope, preferences.groupLiveChannels,
         preferences.preferredChannelQuality, query) { mutableStateOf<List<LiveChannel>?>(null) }
     LaunchedEffect(rawChannels, accountScope, preferences.groupLiveChannels, preferences.preferredChannelQuality, query, favoriteCategory) {
@@ -262,20 +291,26 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
                     Box(Modifier.weight(1f)) {
                     LazyColumn(state = categoriesState, modifier = Modifier.fillMaxSize().padding(end = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        if (ALL_LIVE_CATEGORY in categories) item(key = "SPECIAL:ALL") {
+                            DesktopCategoryRow(ALL_LIVE_CATEGORY.name, !favoriteCategory && state.selectedCategory == ALL_LIVE_CATEGORY,
+                                count = countedView?.channels?.size, modifier = Modifier.focusRequester(firstCategoryFocus),
+                                onClick = { favoriteCategory = false; selectCategory(ALL_LIVE_CATEGORY) })
+                        }
                         if (favoriteIds.isNotEmpty()) item(key = "SPECIAL:FAVORITES") {
                             DesktopCategoryRow("Favoritos", favoriteCategory,
                                 count = favoriteSnapshot?.takeIf { !it.loading }?.results?.size,
                                 modifier = Modifier.focusRequester(favoriteRowFocus), onClick = { favoriteCategory = true })
                         }
-                        items(categories, key = { it.id }) { category ->
+                        items(categories.filterNot { it == ALL_LIVE_CATEGORY }, key = { it.id }) { category ->
                             val selected = !favoriteCategory && category.id == state.selectedCategory?.id
                             DesktopCategoryRow(
                                 name = category.name,
                                 selected = selected,
-                                count = countedView?.categories?.firstOrNull { it.id == category.id }?.count,
+                                count = if (category.id == RECENT_LIVE_CATEGORY.id) projection?.recentCount
+                                    else countedView?.categories?.firstOrNull { it.id == category.id }?.count,
 
                                 modifier = if (category.id == categories.firstOrNull()?.id) Modifier.focusRequester(firstCategoryFocus) else Modifier,
-                                onClick = { favoriteCategory = false; controller.loadChannels(category) }
+                                onClick = { favoriteCategory = false; selectCategory(category) }
                             )
                         }
                     }
@@ -309,7 +344,7 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
                         !favoriteCategory && state.loadingChannels || preparedChannels == null -> CatalogMessage("Carregando canais…", loading = true, modifier = Modifier.weight(1f))
                     state.channelError != null && !favoriteCategory -> CatalogMessage(state.channelError, error = true,
                         modifier = Modifier.weight(1f), onRetry = state.selectedCategory?.let { category ->
-                            { controller.loadChannels(category) }
+                            { selectCategory(category) }
                         })
                     state.selectedCategory == null && !favoriteCategory -> CatalogMessage("Selecione uma categoria para assistir", modifier = Modifier.weight(1f))
                     channels.isEmpty() -> CatalogMessage(if (favoritesOnly) "Nenhum favorito nesta categoria corresponde ao filtro"

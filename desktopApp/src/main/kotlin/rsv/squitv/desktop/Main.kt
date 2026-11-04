@@ -323,5 +323,10 @@ private fun selfCheck(report: Path) {
         check(store.load() == null)
         check(rsv.squitv.shared.update.VersionComparator.compareVersions("1.21", "1.21.0") == 0)
         Files.writeString(report, """{"ok":true,"variant":"${if (DesktopBuildInfo.DEBUG) "debug" else "release"}","version":"${DesktopBuildInfo.VERSION}","dataFolder":"${DesktopBuildInfo.DATA_FOLDER}","dpapi":true}""")
-    } finally { Files.deleteIfExists(directory.resolve("account.dpapi")); Files.deleteIfExists(directory) }
+    } finally {
+        Files.deleteIfExists(directory.resolve("account.dpapi"))
+        Files.deleteIfExists(directory.resolve("accounts.dpapi"))
+        Files.deleteIfExists(directory.resolve("login.paused"))
+        Files.deleteIfExists(directory)
+    }
 }

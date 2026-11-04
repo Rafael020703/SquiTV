@@ -3,6 +3,13 @@ package rsv.squitv.data.local.entities
 import androidx.room.Entity
 import androidx.room.Index
 
+data class CatalogMetadataCount(val streamType: String, val status: String, val itemCount: Int)
+data class CatalogMetadataKey(val streamType: String, val streamId: Int)
+data class CatalogMetadataSeed(val id: Int, val streamType: String, val genre: String?)
+data class CatalogMetadataUpdate(val id: Int, val type: String, val genre: String?,
+    val cast: String?, val director: String?, val plot: String?, val duration: String?,
+    val backdrop: String?, val trailer: String?)
+
 /**
  * Cache and queue status table for VOD/Series metadata preparation.
  */

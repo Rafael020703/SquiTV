@@ -305,7 +305,7 @@ fun SeriesDetailContent(
                                         color = tokens.colors.primary, 
                                         letterSpacing = 1.sp
                                     )
-                                    val actors = remember(castText) { castText.split(",").map { it.trim() }.filter { it.isNotEmpty() } }
+                                    val actors = remember(castText) { rsv.squitv.shared.catalog.ContentDiscovery.people(castText) }
                                     LazyRow(
                                         horizontalArrangement = Arrangement.spacedBy(tokens.spacing.large), 
                                         contentPadding = PaddingValues(vertical = tokens.spacing.large)

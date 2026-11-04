@@ -22,8 +22,8 @@ android {
         applicationId = "rsv.squitv"
         minSdk = 24
         targetSdk = 35
-        versionCode = 27
-        versionName = "1.24.2"
+        versionCode = 28
+        versionName = "1.25"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

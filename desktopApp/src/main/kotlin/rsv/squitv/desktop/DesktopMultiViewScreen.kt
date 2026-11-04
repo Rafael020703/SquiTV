@@ -97,6 +97,7 @@ internal fun DesktopMultiViewScreen(controller: DesktopController, store: Deskto
                             }
                             MultiViewVideo(channel, credentials, scaleMode,
                                 if (preferences.muted) 0 else (MultiViewPolicy.audioVolume(index, state.focused) * preferences.volume).toInt(),
+                                preferences.preferredAudioLanguage, preferences.preferredSubtitleLanguage,
                                 { controller.multiView.focus(index); runCatching { focuses[index].requestFocus() } }, Modifier.weight(1f).fillMaxWidth())
                         }
                     }
@@ -112,6 +113,7 @@ internal fun DesktopMultiViewScreen(controller: DesktopController, store: Deskto
 
 @Composable
 private fun MultiViewVideo(channel: LiveChannel, credentials: ServerCredentials, scaleMode: VideoScaleMode, volume: Int,
+    audioLanguage: String?, subtitleLanguage: String?,
     focus: () -> Unit, modifier: Modifier) {
     val engine = remember { WindowsLivePlayer().apply { setVolume(0) } }
     val state by engine.state.collectAsState()
@@ -119,7 +121,8 @@ private fun MultiViewVideo(channel: LiveChannel, credentials: ServerCredentials,
     DisposableEffect(engine) { onDispose { engine.close() } }
     LaunchedEffect(channel.id, credentials, retry) {
         engine.setVolume(volume)
-        engine.play(LiveStreamAddress.build(credentials.baseUrl, credentials.username, credentials.password, channel.id), channel.id)
+        engine.play(LiveStreamAddress.build(credentials.baseUrl, credentials.username, credentials.password, channel.id), channel.id,
+            audioLanguage = audioLanguage, subtitleLanguage = subtitleLanguage)
     }
     LaunchedEffect(volume) { engine.setVolume(volume) }
     LaunchedEffect(scaleMode) { engine.setScaleMode(scaleMode) }

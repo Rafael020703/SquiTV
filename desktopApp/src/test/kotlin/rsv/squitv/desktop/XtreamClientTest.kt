@@ -72,7 +72,7 @@ class XtreamClientTest {
         }
     }
 
-    @Test fun windowsStoreEncryptsRoundTripsAndRemovesOnlyItsOwnFile() {
+    @Test fun windowsStoreEncryptsRoundTripsAndPreservesRememberedAccountsOnClear() {
         org.junit.Assume.assumeTrue(System.getProperty("os.name").startsWith("Windows"))
         val directory = Files.createTempDirectory("squitv-store-test-")
         try {
@@ -82,8 +82,18 @@ class XtreamClientTest {
             store.save(credentials)
             assertEquals(credentials, store.load())
             assertFalse(Files.readAllBytes(directory.resolve("account.dpapi")).toString(Charsets.ISO_8859_1).contains("fixture-secret"))
+            assertFalse(Files.readAllBytes(directory.resolve("accounts.dpapi")).toString(Charsets.ISO_8859_1).contains("fixture-secret"))
             store.clear()
             assertNull(store.load())
-        } finally { Files.deleteIfExists(directory.resolve("account.dpapi")); Files.deleteIfExists(directory) }
+            assertFalse(store.allowsAutomaticLogin())
+            assertEquals(listOf(credentials), store.savedAccounts())
+            store.removeAccount(rsv.squitv.desktop.liveCategoryScope(credentials)!!)
+            assertTrue(store.savedAccounts().isEmpty())
+        } finally {
+            Files.deleteIfExists(directory.resolve("account.dpapi"))
+            Files.deleteIfExists(directory.resolve("accounts.dpapi"))
+            Files.deleteIfExists(directory.resolve("login.paused"))
+            Files.deleteIfExists(directory)
+        }
     }
 }

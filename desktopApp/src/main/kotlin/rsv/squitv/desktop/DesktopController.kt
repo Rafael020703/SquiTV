@@ -10,6 +10,8 @@ import rsv.squitv.shared.xtream.*
 import rsv.squitv.domain.model.ChannelQuality
 
 enum class DesktopPage { DASHBOARD, LIVE, MOVIES, SERIES, SETTINGS, UPDATES, SEARCH, FAVORITES, MULTIVIEW, DOWNLOADS }
+internal val ALL_LIVE_CATEGORY = LiveCategory("ALL", "Todos")
+internal val RECENT_LIVE_CATEGORY = LiveCategory("RECENTS", "Adicionados recentemente")
 data class LiveSession(val sourceName: String, val channels: List<LiveChannel>, val index: Int,
     val sourceScope: String = "", val selectedStreamId: Int? = null, val sourceCategoryId: String? = null) {
     val channel: LiveChannel get() = LiveChannelGroups.select(channels[index], selectedStreamId) ?: channels[index]
@@ -21,6 +23,8 @@ data class DesktopState(
     val restoring: Boolean = true, val busy: Boolean = false,
     val refreshingCatalog: Boolean = false, val catalogSyncError: String? = null, val automaticLogin: Boolean = false,
     val credentials: ServerCredentials? = null, val savedCredentials: ServerCredentials? = null,
+    val savedAccounts: List<ServerCredentials> = emptyList(), val managingAccounts: Boolean = false,
+    val accountError: String? = null,
     val debugLoginDefaults: ServerCredentials? = null,
     val account: ServerAccount? = null, val categories: List<LiveCategory> = emptyList(),
     val selectedCategory: LiveCategory? = null, val channels: List<LiveChannel> = emptyList(),
@@ -50,6 +54,7 @@ class DesktopController(
     internal val multiView = DesktopMultiViewController(liveIndex)
     private var watchSaveJob: Job? = null
     private var connectionJob: Job? = null
+    private var accountManagementJob: Job? = null
     private var channelsJob: Job? = null
     private var dnsJob: Job? = null
     private var epgJob: Job? = null
@@ -95,8 +100,10 @@ class DesktopController(
                     mutable.value = mutable.value.copy(notice = "Não foi possível ler a conta salva. Entre novamente.")
                     Triple(null, false, null)
                 }
-            mutable.value = mutable.value.copy(restoring = false, savedCredentials = saved, debugLoginDefaults = debugDefaults,
+            mutable.value = mutable.value.copy(savedCredentials = saved, debugLoginDefaults = debugDefaults,
                 selectedDns = saved?.baseUrl?.let { url -> availableDns.firstOrNull { it == url } })
+            reloadSavedAccounts()
+            mutable.value = mutable.value.copy(restoring = false)
             if (saved != null && reconnect) connect(
                 saved.baseUrl.takeUnless { it in availableDns }.orEmpty(), saved.username, saved.password,
                 remember = true, automatic = true)
@@ -107,6 +114,54 @@ class DesktopController(
     fun selectDns(address: String?) {
         if (mutable.value.busy) return
         if (address == null || address in availableDns) mutable.value = mutable.value.copy(selectedDns = address)
+    }
+
+    private suspend fun reloadSavedAccounts() {
+        try {
+            val accounts = withContext(Dispatchers.IO) { store.savedAccounts() }
+            mutable.value = mutable.value.copy(savedAccounts = accounts, accountError = null)
+        } catch (e: CancellationException) { throw e }
+        catch (_: Exception) { mutable.value = mutable.value.copy(accountError = "Não foi possível ler as contas salvas. Os arquivos foram preservados.") }
+    }
+
+    internal fun switchSavedAccount(id: String) {
+        if (mutable.value.busy || mutable.value.managingAccounts) return
+        val target = mutable.value.savedAccounts.firstOrNull { liveCategoryScope(it) == id } ?: return
+        if (mutable.value.credentials == target) return
+        disconnect()
+        mutable.value = mutable.value.copy(savedCredentials = target, selectedDns = null)
+        connect(target.baseUrl, target.username, target.password, remember = true)
+    }
+
+    internal fun removeSavedAccount(id: String) {
+        if (mutable.value.busy || mutable.value.managingAccounts || mutable.value.savedAccounts.none { liveCategoryScope(it) == id }) return
+        mutable.value = mutable.value.copy(managingAccounts = true, accountError = null)
+        accountManagementJob = scope.launch {
+            try {
+                credentialWrites.withLock { withContext(Dispatchers.IO) { store.removeAccount(id) } }
+                if (liveCategoryScope(mutable.value.savedCredentials) == id)
+                    mutable.value = mutable.value.copy(savedCredentials = null)
+                reloadSavedAccounts()
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { mutable.value = mutable.value.copy(accountError = "Não foi possível remover a conta salva.") }
+            finally { mutable.value = mutable.value.copy(managingAccounts = false) }
+        }
+    }
+
+    internal fun refreshAccountInfo() {
+        val account = mutable.value.credentials ?: return
+        if (mutable.value.managingAccounts || mutable.value.busy) return
+        mutable.value = mutable.value.copy(managingAccounts = true, accountError = null)
+        accountManagementJob = scope.launch {
+            try {
+                val info = withContext(Dispatchers.IO) { client.login(account) }
+                if (mutable.value.credentials == account) mutable.value = mutable.value.copy(account = info)
+                reloadSavedAccounts()
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                if (mutable.value.credentials == account) mutable.value = mutable.value.copy(accountError = "Não foi possível atualizar os dados da conta. Tente novamente.")
+            } finally { mutable.value = mutable.value.copy(managingAccounts = false) }
+        }
     }
 
     fun testDns() {
@@ -160,8 +215,12 @@ class DesktopController(
                 credentialWrites.withLock { withContext(Dispatchers.IO) {
                     try { if (remember) store.save(credentials) else store.clear() }
                     catch (e: CancellationException) { throw e }
-                    catch (_: Exception) { notice = "Conectado, mas não foi possível atualizar a conta salva." }
+                    catch (_: Exception) {
+                        runCatching { store.setAutomaticLogin(false) }
+                        notice = "Conectado, mas não foi possível atualizar a conta salva. Confira as contas salvas nas Configurações."
+                    }
                 } }
+                reloadSavedAccounts()
                 mutable.value = mutable.value.copy(restoring = false, credentials = credentials, account = account,
                     savedCredentials = if (remember) credentials else null, notice = notice, busy = true,
                     connectingServer = null, error = null, categories = emptyList(), channels = emptyList(),
@@ -187,6 +246,8 @@ class DesktopController(
     fun loadChannels(category: LiveCategory) = loadChannels(category, force = false)
 
     private fun loadChannels(category: LiveCategory, force: Boolean) {
+        // Synthetic categories are supplied as explicit snapshots, never provider/global queries.
+        if (category.id in setOf(RECENT_LIVE_CATEGORY.id, ALL_LIVE_CATEGORY.id)) return
         val credentials = mutable.value.credentials ?: return
         val current = mutable.value
         if (!force && current.selectedCategory == category && (current.loadingChannels || current.channelsLoaded && current.channelError == null)) return
@@ -211,6 +272,20 @@ class DesktopController(
         }
     }
 
+    internal fun loadCatalogSnapshot(category: LiveCategory, channels: List<LiveChannel>) {
+        if (category !in listOf(RECENT_LIVE_CATEGORY, ALL_LIVE_CATEGORY)) return
+        val current = mutable.value
+        val accountScope = liveCategoryScope(current.credentials) ?: return
+        val index = liveIndex.state.value
+        if (!index.loaded || index.accountScope != accountScope || channels.isEmpty() || category == RECENT_LIVE_CATEGORY && channels.size > 100) return
+        val known = index.channels.associateBy { it.id }
+        if (channels.distinctBy { it.id }.size != channels.size || channels.any { known[it.id] != it }) return
+        if (current.selectedCategory == category && current.channels == channels && current.channelsLoaded) return
+        channelsJob?.cancel()
+        mutable.value = current.copy(selectedCategory = category, channels = channels.toList(),
+            loadingChannels = false, channelsLoaded = true, channelError = null)
+    }
+
     internal fun clearLiveSelection() {
         channelsJob?.cancel()
         mutable.value = mutable.value.copy(selectedCategory = null, channels = emptyList(),
@@ -220,7 +295,7 @@ class DesktopController(
         val current = mutable.value
         val index = liveIndex.state.value
         if (current.page == DesktopPage.LIVE && index.loaded && index.accountScope == liveCategoryScope(current.credentials))
-            current.selectedCategory?.let { loadChannels(it, force = true) }
+            current.selectedCategory?.takeUnless { it.id in setOf(RECENT_LIVE_CATEGORY.id, ALL_LIVE_CATEGORY.id) }?.let { loadChannels(it, force = true) }
     }
 
     fun openLive() {
@@ -328,6 +403,7 @@ class DesktopController(
     }
 
     fun disconnect() {
+        accountManagementJob?.cancel()
         downloads?.bind(null)
         favorites.reset(); multiView.reset(); liveIndex.reset()
         ++catalogSyncRevision
@@ -346,6 +422,7 @@ class DesktopController(
         }
         val saved = mutable.value.savedCredentials
         mutable.value = mutable.value.copy(restoring = false, busy = false, credentials = null,
+            managingAccounts = false, accountError = null,
             account = null, categories = emptyList(), channels = emptyList(), selectedCategory = null,
             refreshingCatalog = false, catalogSyncError = null,
             loadingChannels = false, channelsLoaded = false, error = null, channelError = null, notice = null, connectingServer = null,
@@ -368,7 +445,12 @@ class DesktopController(
                 if (mutable.value.page == DesktopPage.LIVE) liveIndex.load(account)
                 mutable.value.selectedCategory?.let { old ->
                     val selected = categories.firstOrNull { it.id == old.id }
-                    if (selected == null) clearLiveSelection()
+                    if (old.id in setOf(RECENT_LIVE_CATEGORY.id, ALL_LIVE_CATEGORY.id)) {
+                        // The live screen rebuilds this snapshot after the refreshed index is ready.
+                        channelsJob?.cancel()
+                        mutable.value = mutable.value.copy(channels = emptyList(), channelsLoaded = false,
+                            loadingChannels = false, channelError = null)
+                    } else if (selected == null) clearLiveSelection()
                     else if (mutable.value.page == DesktopPage.LIVE) loadChannels(selected, force = true)
                     else {
                         channelsJob?.cancel()
@@ -389,10 +471,10 @@ class DesktopController(
     private fun backupFile(): java.nio.file.Path = java.nio.file.Path.of(
         System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), DesktopBuildInfo.DATA_FOLDER, "squitv-backup.json")
 
-    internal suspend fun exportBackup(preferences: DesktopPreferences): Boolean = withContext(Dispatchers.IO) {
+    internal suspend fun exportBackup(preferences: DesktopPreferences, destination: java.nio.file.Path = backupFile()): Boolean = withContext(Dispatchers.IO) {
         try {
             validateDesktopPreferences(preferences)
-            val file = backupFile()
+            val file = destination.toAbsolutePath().normalize()
             java.nio.file.Files.createDirectories(file.parent)
             val payload = backupJson.encodeToString(DesktopPreferences.serializer(), preferences)
             require(payload.toByteArray(Charsets.UTF_8).size <= 64 * 1024)
@@ -409,11 +491,22 @@ class DesktopController(
         catch (_: Exception) { false }
     }
 
-    internal suspend fun importBackup(): DesktopPreferences? = withContext(Dispatchers.IO) {
+    internal suspend fun importBackup(source: java.nio.file.Path = backupFile()): DesktopPreferences? = withContext(Dispatchers.IO) {
         try {
-            val file = backupFile()
+            val file = source.toAbsolutePath().normalize()
+            require(java.nio.file.Files.isRegularFile(file))
             require(java.nio.file.Files.size(file) in 1..64L * 1024)
-            val restored = backupJson.decodeFromString(DesktopPreferences.serializer(), java.nio.file.Files.readString(file))
+            val bytes = java.nio.file.Files.newInputStream(file).use { it.readNBytes(64 * 1024 + 1) }
+            require(bytes.size in 1..64 * 1024)
+            val root = backupJson.parseToJsonElement(bytes.toString(Charsets.UTF_8)) as? kotlinx.serialization.json.JsonObject
+                ?: error("Invalid Windows backup")
+            // Existing Windows exports always include these defaults. Reject unrelated JSON/Android
+            // instead of decoding it as empty preferences and silently resetting the application.
+            require(root["schema"] == kotlinx.serialization.json.JsonPrimitive(1))
+            require("format" !in root && "schemaVersion" !in root)
+            require(setOf("autoPlayEpisodes", "interfaceScale", "volume", "fullscreen", "groupLiveChannels", "preferredChannelQuality")
+                .all(root::containsKey))
+            val restored = backupJson.decodeFromJsonElement(DesktopPreferences.serializer(), root)
             validateDesktopPreferences(restored)
             restored
         } catch (e: CancellationException) { throw e }

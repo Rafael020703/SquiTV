@@ -17,7 +17,7 @@ data class ServerAccount(
 )
 data class LiveCategory(val id: String, val name: String)
 data class LiveChannel(val id: Int, val name: String, val categoryId: String?, val iconUrl: String?, val epgId: String?,
-    val versions: List<LiveChannel> = emptyList(), val groupKey: String? = null) {
+    val versions: List<LiveChannel> = emptyList(), val groupKey: String? = null, val added: String? = null) {
     val stableKey: String get() = groupKey ?: "LIVE:$id"
     fun containsStream(streamId: Int) = id == streamId || versions.any { it.id == streamId }
 }
@@ -73,7 +73,7 @@ object XtreamCatalogParser {
         val item = element as? JsonObject ?: return@mapNotNull null
         val id = item.text("stream_id")?.toIntOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
         LiveChannel(id, item.text("name") ?: "Canal $id", item.text("category_id"),
-            item.text("stream_icon"), item.text("epg_channel_id"))
+            item.text("stream_icon"), item.text("epg_channel_id"), added = item.text("added"))
     }.distinctBy { it.id }
 
     fun epg(body: String): List<LiveProgramme> {

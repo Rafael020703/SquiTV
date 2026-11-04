@@ -376,34 +376,44 @@ class PlayerViewModel @Inject constructor(
                             recoveryCount = 0
                             consecutiveStallCount = 0
                         }
-                        _nextEpisodeCountdown.value = null
+                        episodeCountdown.cancel()
                         updatePlayingState(p, currentSession)
                     }
                     Player.STATE_ENDED -> {
                         stopWatchdog("STATE_ENDED_REACHED")
                         viewModelScope.launch {
                             if (!isPlaybackEventValid(currentSession, eventMediaId)) return@launch
+                            val endedId = currentStreamId
+                            val endedType = currentType
+                            val endedSeriesId = currentSeriesId
+                            val endedSeason = currentSeasonNumber
+                            val endedNext = nextEpisodeStreamId
 
-                            if (currentStreamId != null && currentType != ContentType.LIVE) {
+                            if (endedId != null && endedType != ContentType.LIVE) {
                                 val dur = p.duration.coerceAtLeast(0L)
                                 syncWatchProgressUseCase(
-                                    streamId = currentStreamId!!,
-                                    type = currentType.toString(),
+                                    streamId = endedId,
+                                    type = endedType.toString(),
                                     position = dur,
                                     duration = dur,
-                                    seriesId = currentSeriesId,
+                                    seriesId = endedSeriesId,
                                     forceSync = true,
                                     isEndedEvent = true
                                 )
                             }
 
                             val settings = settingsRepository.settingsFlow.first()
-                            if (settings.autoPlayEnabled && currentType == ContentType.SERIES && nextEpisodeStreamId != null) {
-                                startNextEpisodeCountdown()
+                            if (!isPlaybackEventValid(currentSession, eventMediaId) || currentStreamId != endedId ||
+                                currentType != endedType || p.playbackState != Player.STATE_ENDED) return@launch
+                            if (settings.autoPlayEnabled && endedType == ContentType.SERIES && endedNext != null) {
+                                episodeCountdown.start {
+                                    if (isPlaybackEventValid(currentSession, eventMediaId) && currentStreamId == endedId &&
+                                        nextEpisodeStreamId == endedNext && p.playbackState == Player.STATE_ENDED) playNextEpisode()
+                                }
                             }
 
-                            if (currentType == ContentType.SERIES && currentSeriesId != null && currentSeasonNumber != null && currentStreamId != null) {
-                                smartDownloadUseCase(currentSeriesId!!, currentSeasonNumber!!, currentStreamId!!)
+                            if (endedType == ContentType.SERIES && endedSeriesId != null && endedSeason != null && endedId != null) {
+                                smartDownloadUseCase(endedSeriesId, endedSeason, endedId)
                             }
                         }
                     }
@@ -561,8 +571,8 @@ class PlayerViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<PlayerUiState>(PlayerUiState.Loading())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
-    private val _nextEpisodeCountdown = MutableStateFlow<Int?>(null)
-    val nextEpisodeCountdown: StateFlow<Int?> = _nextEpisodeCountdown.asStateFlow()
+    private val episodeCountdown = rsv.squitv.shared.player.NextEpisodeCountdown(viewModelScope)
+    val nextEpisodeCountdown: StateFlow<Int?> = episodeCountdown.seconds
 
     private val _currentProgram = MutableStateFlow<EpgProgramme?>(null)
     val currentProgram: StateFlow<EpgProgramme?> = _currentProgram.asStateFlow()
@@ -753,6 +763,7 @@ class PlayerViewModel @Inject constructor(
         existingChannelSwitchId: String? = null,
         sourceId: String? = null
     ) {
+        episodeCountdown.cancel()
         val t0 = System.currentTimeMillis()
         zapStartTimeMs = t0
 
@@ -1315,22 +1326,10 @@ class PlayerViewModel @Inject constructor(
     }
     fun setResizeMode(value: Int) { _resizeMode.value = rsv.squitv.shared.player.VideoScaleMode.fromMedia3(value).media3Value }
 
-    private fun startNextEpisodeCountdown() {
-        viewModelScope.launch {
-            for (i in 5 downTo 1) {
-                _nextEpisodeCountdown.value = i
-                delay(1000)
-            }
-            _nextEpisodeCountdown.value = null
-            playNextEpisode()
-        }
-    }
-
-    fun cancelCountdown() {
-        _nextEpisodeCountdown.value = null
-    }
+    fun cancelCountdown() { episodeCountdown.cancel() }
 
     fun playNextEpisode() {
+        episodeCountdown.cancel()
         val currentState = _uiState.value as? PlayerUiState.Playing ?: return
         val nextId = currentState.nextEpisodeStreamId ?: return
         val nextName = currentState.nextEpisodeName ?: "Próximo Episódio"
@@ -1456,6 +1455,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun stopPlayback() {
+        episodeCountdown.cancel()
         epgJob?.cancel()
         syncFinalProgress()
         stopWatchdog()
@@ -1524,12 +1524,12 @@ class PlayerViewModel @Inject constructor(
         if (C.TRACK_TYPE_AUDIO !in manuallyConfiguredTrackTypes &&
             tracks.groups.any { it.type == C.TRACK_TYPE_AUDIO } &&
             current.overrides.values.none { it.type == C.TRACK_TYPE_AUDIO }) {
-            builder.setPreferredAudioLanguage(settings.preferredAudioLang)
+            builder.setPreferredAudioLanguage(rsv.squitv.shared.player.TrackLanguage.normalize(settings.preferredAudioLang) ?: settings.preferredAudioLang)
         }
         if (C.TRACK_TYPE_TEXT !in manuallyConfiguredTrackTypes &&
             C.TRACK_TYPE_TEXT !in current.disabledTrackTypes &&
             current.overrides.values.none { it.type == C.TRACK_TYPE_TEXT }) {
-            builder.setPreferredTextLanguage(settings.preferredSubtitleLang)
+            builder.setPreferredTextLanguage(rsv.squitv.shared.player.TrackLanguage.normalize(settings.preferredSubtitleLang) ?: settings.preferredSubtitleLang)
         }
         val updated = builder.build()
         if (updated != current) updateTrackParameters(updated)

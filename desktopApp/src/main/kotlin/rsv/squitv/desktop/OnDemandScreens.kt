@@ -82,7 +82,8 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
         else if (preferencesLoaded && browse.categoriesLoaded && !browse.allItemsLoaded && !browse.loadingAll && browse.allError == null)
             controller.catalog.loadAllItems(kind)
     }
-    var alphabetical by rememberSaveable(kind) { mutableStateOf(false) }
+    var sortOrder by rememberSaveable(kind) { mutableStateOf("NAME") }
+    var showSort by remember { mutableStateOf(false) }
     var editingSearch by remember { mutableStateOf(false) }
     val sidebar = androidx.compose.foundation.lazy.rememberLazyListState()
     val images = rememberDesktopImages(DesktopImageKind.POSTERS)
@@ -108,7 +109,7 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
             val special = buildList {
                 if (continuing.isNotEmpty()) add(rsv.squitv.shared.catalog.CatalogCategoryEntry("CONTINUE_WATCHING", "Continuar assistindo", continuing.map { it.item() }))
                 if (favoriteIds.isNotEmpty()) add(rsv.squitv.shared.catalog.CatalogCategoryEntry("FAVORITES", "Favoritos", favoriteResults.mapNotNull { it.catalogItem }))
-                if (kind == CatalogKind.MOVIES && browse.allItemsLoaded) {
+                if (browse.allItemsLoaded) {
                     val recent = RecentlyAddedCatalog.select(visible, 100, added = { it.added }, id = { it.id })
                     if (recent.isNotEmpty()) add(rsv.squitv.shared.catalog.CatalogCategoryEntry("RECENTS", "Adicionados recentemente", recent))
                 }
@@ -152,22 +153,19 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
         else -> emptyList()
     }
     val query = search.trim()
-    var preparedItems by remember(sourceItems, query, alphabetical) { mutableStateOf<List<CatalogItem>?>(null) }
-    LaunchedEffect(sourceItems, query, alphabetical) {
+    var preparedItems by remember(sourceItems, query, sortOrder) { mutableStateOf<List<CatalogItem>?>(null) }
+    LaunchedEffect(sourceItems, query, sortOrder) {
         preparedItems = withContext(Dispatchers.Default) {
             val filtered = if (query.isBlank()) sourceItems else sourceItems.filter {
                 ensureActive()
                 it.name.contains(query, true)
             }
             ensureActive()
-            if (!alphabetical) filtered else {
-                val collator = Collator.getInstance(Locale.forLanguageTag("pt-BR"))
-                filtered.sortedWith { a, b -> collator.compare(a.name, b.name) }
-            }
+            rsv.squitv.shared.catalog.CatalogOrdering.sort(filtered, sortOrder, { it.name }, { it.releaseDate }, { it.rating })
         }
     }
     val items = preparedItems.orEmpty()
-    val gridMemory = rememberContentGridState("$accountScope/${kind.name}/${mode.name}/${selected?.id}/$alphabetical/${search.trim()}")
+    val gridMemory = rememberContentGridState("$accountScope/${kind.name}/${mode.name}/${selected?.id}/$sortOrder/${search.trim()}")
     val grid = gridMemory.scroll
     val gridFocus = remember { FocusRequester() }
     val selectedCategoryFocus = remember { FocusRequester() }
@@ -206,10 +204,19 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
             runCatching { if (items.isEmpty()) selectedCategoryFocus.requestFocus() else gridFocus.requestFocus() }
         }
     }
+    if (showSort) AlertDialog(onDismissRequest = { showSort = false }, modifier = Modifier.directionalNavigation(),
+        title = { Text("Ordenar por") }, confirmButton = { TextButton({ showSort = false }) { Text("Concluir") } },
+        text = { Column {
+            val options = listOf("NAME" to "Nome (A–Z)", "RECENT" to "Lançamento") +
+                if (kind == CatalogKind.MOVIES) listOf("RATING" to "Melhores notas") else emptyList()
+            options.forEach { (key, label) ->
+                TextButton({ sortOrder = key; showSort = false }) { Text((if (sortOrder == key) "✓ " else "") + label) }
+            }
+        } })
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         DesktopPageHeading(kind.title, selected?.name ?: "Categorias do servidor") {
             CatalogModeSelector(mode, preferencesLoaded) { chosen -> store.update { it.withCatalogMode(accountScope, kind, chosen) } }
-            FilterChip(alphabetical, { alphabetical = !alphabetical }, { Text("A–Z") },
+            FilterChip(true, { showSort = true }, { Text(when (sortOrder) { "RECENT" -> "Lançamento"; "RATING" -> "Melhores notas"; else -> "Nome (A–Z)" }) },
                 leadingIcon = { Icon(Icons.Rounded.SortByAlpha, null, Modifier.size(18.dp)) })
             OutlinedTextField(search, { search = it }, singleLine = true,
                 placeholder = { Text("Buscar nesta categoria") },
@@ -461,6 +468,30 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
         OnDemandPlayback.episodes(info, selectedSeason) else emptyList() }
     val metadata = info?.info ?: detail.item.series
     val movie = detail.movie?.info
+    var person by remember(detail.kind, detail.item.id) { mutableStateOf<String?>(null) }
+    var trailerError by remember(detail.kind, detail.item.id) { mutableStateOf<String?>(null) }
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    val trailerUrl = rsv.squitv.shared.catalog.ContentDiscovery.trailerUrl(movie?.youtubeTrailer ?: metadata?.youtubeTrailer)
+    val related = detail.related.filter { it.categoryId !in preferences.hiddenCategories(accountScope.orEmpty(), detail.kind) }
+    person?.let { name ->
+        var works by remember(name) { mutableStateOf<List<Pair<CatalogKind, CatalogItem>>?>(null) }
+        LaunchedEffect(name, detail.loading, preferences.hiddenCatalogCategoriesByScope) {
+            works = controller.catalog.worksByPerson(name).filter { (kind, item) ->
+                item.categoryId !in preferences.hiddenCategories(accountScope.orEmpty(), kind)
+            }
+        }
+        AlertDialog(onDismissRequest = { person = null }, modifier = Modifier.directionalNavigation(),
+            title = { Text(name) }, confirmButton = { TextButton({ person = null }) { Text("Concluir") } },
+            text = { Column(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Obras com metadados já carregados neste computador. A lista pode estar incompleta.", style = MaterialTheme.typography.bodySmall)
+                if (works == null) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (works?.isEmpty() == true) Text("Nenhuma obra correspondente nos metadados carregados.")
+                LazyColumn { items(works.orEmpty(), key = { it.first.name + it.second.id }) { (kind, item) ->
+                    TextButton({ person = null; controller.catalog.openRelated(kind, item) }) { Text("${kind.title} · ${item.name}") }
+                } }
+            } })
+    }
+
     val scroll = androidx.compose.foundation.lazy.rememberLazyListState()
     val seasonScroll = androidx.compose.foundation.lazy.rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -563,11 +594,28 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
                             Text(movie?.plot?.takeIf(String::isNotBlank) ?: metadata?.plot?.takeIf(String::isNotBlank)
                                 ?: "Sinopse não informada pelo servidor.", color = palette.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodyMedium)
-                            (movie?.director ?: metadata?.director)?.takeIf(String::isNotBlank)?.let {
-                                Text("Direção: $it", style = MaterialTheme.typography.bodySmall)
+                            rsv.squitv.shared.catalog.ContentDiscovery.people(movie?.director ?: metadata?.director).forEach { name ->
+                                TextButton({ person = name }) { Text("Direção: $name") }
                             }
-                            (movie?.cast ?: metadata?.cast)?.takeIf(String::isNotBlank)?.let {
-                                Text("Elenco: $it", style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant)
+                            val cast = rsv.squitv.shared.catalog.ContentDiscovery.people(movie?.cast ?: metadata?.cast)
+                            if (cast.isNotEmpty()) {
+                                Text("ELENCO", style = MaterialTheme.typography.labelSmall, color = palette.onSurfaceVariant)
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    cast.forEach { name -> AssistChip({ person = name }, { Text(name) }) }
+                                }
+                            }
+                            trailerUrl?.let { url ->
+                                OutlinedButton({ runCatching { uriHandler.openUri(url) }.onFailure {
+                                    trailerError = "Não foi possível abrir o trailer no navegador."
+                                } }) { Icon(Icons.Rounded.PlayCircle, null); Spacer(Modifier.width(8.dp)); Text("Trailer") }
+                            }
+                            trailerError?.let { Text(it, color = palette.error) }
+                            detail.relatedError?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall) }
+                            if (related.isNotEmpty()) {
+                                Text("CONTEÚDOS SEMELHANTES", style = MaterialTheme.typography.labelSmall, color = palette.primary)
+                                related.forEach { item ->
+                                    TextButton({ controller.catalog.openRelated(detail.kind, item) }) { Text(item.name) }
+                                }
                             }
                             historyError?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall) }
                             if (saved != null) Button(controller.catalog::resumePlayback,

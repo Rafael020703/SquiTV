@@ -63,6 +63,9 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
     val error by store.error.collectAsState()
     val loaded by store.loaded.collectAsState()
     var selected by rememberSaveable { mutableStateOf<DesktopSetting?>(null) }
+    var backupBusy by remember { mutableStateOf(false) }
+    val backupWindow = LocalDesktopWindow.current
+    var removingAccount by remember { mutableStateOf<String?>(null) }
     var customizationKind by rememberSaveable { mutableStateOf<CatalogKind?>(null) }
     val customizationCategories = customizationKind?.let { catalogState.browse[it]?.categories }.orEmpty()
         .let { if (customizationKind == null) state.categories else it }
@@ -143,10 +146,17 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
         }
 
     }
+    removingAccount?.let { id ->
+        AlertDialog(onDismissRequest = { removingAccount = null }, modifier = Modifier.directionalNavigation(),
+            title = { Text("Remover conta salva?") },
+            text = { Text("Remove apenas as credenciais desta lista. Histórico, favoritos, downloads e configurações são preservados. Uma sessão já aberta continua ativa até você sair.") },
+            confirmButton = { TextButton({ removingAccount = null; controller.removeSavedAccount(id) }) { Text("Remover") } },
+            dismissButton = { TextButton({ removingAccount = null }) { Text("Manter") } })
+    }
     selected?.let { category ->
-        AlertDialog(onDismissRequest = { selected = null; confirmCategoryReset = false },
+        AlertDialog(onDismissRequest = { if (!backupBusy) { selected = null; confirmCategoryReset = false } },
             modifier = Modifier.directionalNavigation(),
-            title = { Text(category.label) }, confirmButton = { TextButton({ selected = null; confirmCategoryReset = false }) { Text("Concluir") } },
+            title = { Text(category.label) }, confirmButton = { TextButton({ selected = null; confirmCategoryReset = false }, enabled = !backupBusy) { Text("Concluir") } },
             text = {
                 val contentModifier = Modifier.widthIn(min = 320.dp).heightIn(max = 420.dp)
                 Column(if (category == DesktopSetting.CATALOG_CATEGORIES) contentModifier
@@ -154,6 +164,29 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     when (category) {
                         DesktopSetting.ACCOUNT -> {
+                            state.accountError?.let { Text(it, color = palette.error) }
+                            if (state.managingAccounts) LinearProgressIndicator(Modifier.fillMaxWidth())
+                            OutlinedButton(controller::refreshAccountInfo, enabled = !state.managingAccounts && !state.busy) { Text("Atualizar dados da conta") }
+                            Text("CONTAS SALVAS", style = MaterialTheme.typography.labelSmall, color = palette.primary)
+                            state.savedAccounts.forEach { saved ->
+                                val id = liveCategoryScope(saved).orEmpty()
+                                val name = rsv.squitv.shared.account.AccountPresentation.displayName(preferences.displayNamesByAccount[id], saved.username)
+                                Surface(color = palette.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
+                                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                        Text(name, style = MaterialTheme.typography.titleSmall)
+                                        Text(saved.baseUrl, maxLines = 2, style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant)
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            TextButton({ selected = null; controller.switchSavedAccount(id) }, enabled =
+                                                !state.managingAccounts && !state.busy && id != accountScope) { Text(if (id == accountScope) "Ativa" else "Entrar") }
+                                            TextButton({ removingAccount = id }, enabled = !state.managingAccounts && !state.busy) { Text("Remover") }
+                                        }
+                                    }
+                                }
+                            }
+                            OutlinedButton({ selected = null; controller.disconnect() }, enabled = !state.managingAccounts && !state.busy) {
+                                Text("Entrar com outra conta")
+                            }
+
                             state.account?.let { account ->
                                 val savedName = preferences.displayNamesByAccount[accountScope].orEmpty()
                                 val shownName = rsv.squitv.shared.account.AccountPresentation.displayName(savedName, account.username)
@@ -322,33 +355,55 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                         DesktopSetting.BACKUP -> {
                             Text("Exporte ou restaure o arquivo de preferências e configurações do aplicativo:", style = MaterialTheme.typography.bodyMedium)
                             var backupNotice by remember { mutableStateOf<String?>(null) }
-                            var backupBusy by remember { mutableStateOf(false) }
-                            Text("Arquivo local: %LOCALAPPDATA%/${DesktopBuildInfo.DATA_FOLDER}/squitv-backup.json. Inclui preferências, organização de categorias e favoritos de canais, filmes e séries por conta. Não inclui credenciais, catálogos, histórico ou backup Android.",
+                            var backupError by remember { mutableStateOf(false) }
+                            Text("Escolha onde salvar ou de onde restaurar um arquivo JSON. Inclui todas as preferências, organização de categorias e favoritos de canais, filmes e séries por conta. Restaurar substitui as preferências atuais. Não inclui credenciais, catálogos, histórico ou backup Android.",
                                 style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant)
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Button(enabled = !backupBusy, onClick = {
+                                Button(enabled = loaded && !backupBusy, onClick = {
                                     backupBusy = true
+                                    backupNotice = null
+                                    backupError = false
                                     scope.launch {
                                         try {
-                                            val ok = controller.exportBackup(preferences)
-                                            backupNotice = if (ok) "Preferências exportadas." else "Não foi possível exportar as preferências."
+                                            val file = chooseDesktopBackupFile(requireNotNull(backupWindow), save = true) ?: return@launch
+                                            if (!file.fileName.toString().endsWith(".json", ignoreCase = true)) {
+                                                backupError = true
+                                                backupNotice = "Escolha um nome de arquivo terminado em .json."
+                                                return@launch
+                                            }
+                                            val ok = controller.exportBackup(preferences, file)
+                                            backupError = !ok
+                                            backupNotice = if (ok) "Preferências exportadas para ${file.fileName}." else "Não foi possível exportar as preferências."
+                                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                                        catch (_: Exception) {
+                                            backupError = true
+                                            backupNotice = "Não foi possível abrir o seletor ou exportar o arquivo."
                                         } finally { backupBusy = false }
                                     }
                                 }) { Text("Exportar") }
-                                OutlinedButton(enabled = !backupBusy, onClick = {
+                                OutlinedButton(enabled = loaded && !backupBusy, onClick = {
                                     backupBusy = true
+                                    backupNotice = null
+                                    backupError = false
                                     scope.launch {
                                         try {
-                                            val restored = controller.importBackup()
+                                            val file = chooseDesktopBackupFile(requireNotNull(backupWindow), save = false) ?: return@launch
+                                            val restored = controller.importBackup(file)
                                             val applied = restored != null && store.updateAndAwait { restored }
+                                            backupError = !applied
                                             backupNotice = if (applied) "Preferências restauradas."
-                                                else "Não foi possível restaurar. Confira se o backup existe e é compatível."
+                                                else "Não foi possível restaurar. Confira se o arquivo selecionado é um backup Windows compatível."
+                                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                                        catch (_: Exception) {
+                                            backupError = true
+                                            backupNotice = "Não foi possível abrir o seletor ou restaurar o arquivo."
                                         } finally { backupBusy = false }
                                     }
                                 }) { Text("Restaurar") }
                             }
+                            if (backupBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
                             backupNotice?.let {
-                                Text(it, style = MaterialTheme.typography.bodySmall, color = palette.primary, fontWeight = FontWeight.Bold)
+                                Text(it, style = MaterialTheme.typography.bodySmall, color = if (backupError) palette.error else palette.primary, fontWeight = FontWeight.Bold)
                             }
                         }
                         DesktopSetting.CATALOG_MODE -> {

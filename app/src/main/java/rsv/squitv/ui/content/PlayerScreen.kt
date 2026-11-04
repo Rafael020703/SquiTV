@@ -622,39 +622,8 @@ fun PlayerContent(
 
 @Composable
 fun NextEpisodeCountdown(seconds: Int, onWatchNow: () -> Unit, onCancel: () -> Unit) {
-    val tokens = AppDesignSystem
-    Surface(
-        color = tokens.colors.backgroundSecondary.copy(alpha = 0.9f),
-        shape = tokens.shapes.large,
-        border = BorderStroke(1.dp, tokens.colors.border.copy(alpha = 0.2f)),
-        modifier = Modifier.width(320.dp)
-    ) {
-        Column(modifier = Modifier.padding(tokens.spacing.large)) {
-            Text(
-                stringResource(R.string.next_episode_in_title).uppercase(), 
-                style = tokens.typography.caption, 
-                color = tokens.colors.textSecondary,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                stringResource(R.string.seconds_label, seconds).uppercase(), 
-                style = tokens.typography.headline, 
-                fontWeight = FontWeight.Black, 
-                color = tokens.colors.primary
-            )
-            Spacer(Modifier.height(tokens.spacing.medium))
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                AppButton(
-                    text = "ASSISTIR AGORA", 
-                    onClick = onWatchNow, 
-                    modifier = Modifier.weight(1f)
-                )
-                AppIconButton(
-                    icon = Icons.Rounded.Close, 
-                    onClick = onCancel,
-                    tint = tokens.colors.textSecondary
-                )
-            }
-        }
-    }
+    val colors = AppDesignSystem.colors
+    rsv.squitv.core.ui.components.player.NextEpisodeNotice(
+        stringResource(R.string.next_episode_in_title).uppercase(), stringResource(R.string.seconds_label, seconds),
+        onWatchNow, onCancel, colors.backgroundSecondary.copy(alpha = .9f), colors.textPrimary, colors.primary)
 }

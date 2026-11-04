@@ -41,7 +41,8 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
     private var viewportWidth = 0
     private var viewportHeight = 0
     private var appliedGeometry: VlcVideoGeometry? = null
-    private data class PendingMedia(val address: String, val generation: Long)
+    private data class PendingMedia(val address: String, val generation: Long,
+        val audioLanguage: String?, val subtitleLanguage: String?)
     private var pendingMedia: PendingMedia? = null
     private var active = false
     private var activeGeneration = 0L
@@ -83,14 +84,15 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
         }
     }
 
-    fun play(address: String, sourceId: Int? = null) {
+    fun play(address: String, sourceId: Int? = null, audioLanguage: String? = null, subtitleLanguage: String? = null) {
         val token = generation.incrementAndGet()
         mutable.update { it.copy(phase = "Conectando…", paused = false, error = null,
             timeMs = 0, durationMs = 0, seekable = false, ended = false, sourceId = sourceId, playbackGeneration = token,
             audioTracks = emptyList(), subtitleTracks = emptyList(), speed = 1f, optionError = null) }
         submit {
             if (token != generation.get()) return@submit
-            pendingMedia = PendingMedia(address, token)
+            pendingMedia = PendingMedia(address, token, rsv.squitv.shared.player.TrackLanguage.normalize(audioLanguage),
+                rsv.squitv.shared.player.TrackLanguage.normalize(subtitleLanguage))
             startPending()
         }
     }
@@ -161,7 +163,7 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
     }
 
     fun setSpeed(speed: Float) = submit(mediaScoped = true) {
-        if (speed !in listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f)) return@submit
+        if (speed !in listOf(.5f, .75f, 1f, 1.25f, 1.5f, 1.75f, 2f)) return@submit
         val p = player ?: return@submit
         val result = api!!.libvlc_media_player_set_rate(p, speed)
         mutable.update { if (result == 0) it.copy(speed = speed, optionError = null)
@@ -210,6 +212,8 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
         try {
             vlc.libvlc_media_add_option(media, ":network-caching=1200")
             vlc.libvlc_media_add_option(media, ":http-user-agent=IPTVSmarters")
+            request.audioLanguage?.let { vlc.libvlc_media_add_option(media, ":audio-language=$it") }
+            request.subtitleLanguage?.let { vlc.libvlc_media_add_option(media, ":sub-language=$it") }
             vlc.libvlc_media_player_set_media(p, media)
         } finally { vlc.libvlc_media_release(media) }
         vlc.libvlc_media_player_set_hwnd(p, surface!!)

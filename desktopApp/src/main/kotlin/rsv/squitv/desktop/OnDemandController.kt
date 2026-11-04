@@ -13,13 +13,14 @@ import java.nio.file.Path
 internal enum class CatalogKind(val title: String) { MOVIES("FILMES"), SERIES("SÉRIES") }
 internal data class CatalogItem(val id: Int, val name: String, val cover: String?, val rating: String?,
     val genre: String? = null, val extension: String? = null, val series: XtreamSeries? = null, val categoryId: String? = null,
-    val added: String? = null)
+    val added: String? = null, val releaseDate: String? = null, val cast: String? = null, val director: String? = null)
 internal fun XtreamVod.toCatalogItem(): CatalogItem? = streamId?.takeIf { it > 0 }?.let { id ->
     CatalogItem(id, name ?: "Filme $id", streamIcon, rating, genre = genre, extension = container_extension,
-        categoryId = categoryId, added = added)
+        categoryId = categoryId, added = added, releaseDate = releaseDate, cast = cast, director = director)
 }
 internal fun XtreamSeries.toCatalogItem(): CatalogItem? = seriesId?.takeIf { it > 0 }?.let { id ->
-    CatalogItem(id, name ?: "Série $id", cover, rating, genre, series = this, categoryId = categoryId)
+    CatalogItem(id, name ?: "Série $id", cover, rating, genre, series = this, categoryId = categoryId,
+        added = lastModified, releaseDate = releaseDate, cast = cast, director = director)
 }
 internal data class CatalogBrowse(val categories: List<LiveCategory> = emptyList(),
     val category: LiveCategory? = null, val items: List<CatalogItem> = emptyList(),
@@ -30,7 +31,7 @@ internal data class CatalogBrowse(val categories: List<LiveCategory> = emptyList
 internal data class CatalogDetail(val kind: CatalogKind, val item: CatalogItem,
     val movie: XtreamVodInfo? = null, val series: XtreamSeriesInfo? = null,
     val loading: Boolean = true, val error: String? = null, val lastPlayedSeason: Int? = null,
-    val lastPlayedEpisodeId: String? = null)
+    val lastPlayedEpisodeId: String? = null, val related: List<CatalogItem> = emptyList(), val relatedError: String? = null)
 internal data class VodSession(val id: Int, val title: String, val extension: String?, val series: Boolean,
     val cover: String?, val episodes: List<XtreamEpisode> = emptyList(), val episodeIndex: Int = -1,
     val catalogId: Int = id, val catalogTitle: String = title, val catalogCover: String? = cover,
@@ -65,8 +66,31 @@ internal class OnDemandController(private val client: XtreamClient, private val 
     private var detailJob: Job? = null
     private val categoryOptionsJobs = mutableMapOf<CatalogKind, Job>()
     private val fullJobs = mutableMapOf<CatalogKind, Job>()
+    private val knownDetails = linkedMapOf<Pair<CatalogKind, Int>, CatalogItem>()
+
+    internal suspend fun worksByPerson(name: String): List<Pair<CatalogKind, CatalogItem>> {
+        val browse = mutable.value.browse
+        val details = knownDetails.map { it.key.first to it.value }
+        return withContext(Dispatchers.Default) {
+            (details + browse.flatMap { (kind, items) -> (items.allItems + items.items).map { kind to it } }).asSequence()
+                .distinctBy { it.first to it.second.id }.filter {
+                    ensureActive()
+                    rsv.squitv.shared.catalog.ContentDiscovery.matchesPerson(name, it.second.cast, it.second.director)
+                }.take(200).toList()
+        }
+    }
+
+    internal fun openRelated(kind: CatalogKind, item: CatalogItem) {
+        val account = credentials ?: return
+        val known = mutable.value.browse[kind]?.let { it.allItems + it.items }.orEmpty() +
+            knownDetails.filterKeys { it.first == kind }.values + mutable.value.detail?.takeIf { it.kind == kind }?.related.orEmpty()
+        if (known.none { it.id == item.id }) return
+        if (mutable.value.kind != kind) mutable.update { it.copy(kind = kind) }
+        loadDetail(kind, item, account)
+    }
 
     fun clearCache() {
+        knownDetails.clear()
         beforePlaybackChange?.invoke()
         fullJobs.values.forEach(Job::cancel); fullJobs.clear(); preparation?.reset()
         categoryOptionsJobs.values.forEach(Job::cancel)
@@ -212,7 +236,11 @@ internal class OnDemandController(private val client: XtreamClient, private val 
         loadDetail(kind, item, account)
     }
 
-    private fun loadDetail(kind: CatalogKind, item: CatalogItem, account: ServerCredentials) {
+    private fun loadDetail(kind: CatalogKind, requestedItem: CatalogItem, account: ServerCredentials) {
+        val browse = mutable.value.browse[kind]
+        val known = knownDetails[kind to requestedItem.id] ?: (browse?.allItems.orEmpty() + browse?.items.orEmpty())
+            .firstOrNull { it.id == requestedItem.id }
+        val item = requestedItem.copy(categoryId = requestedItem.categoryId ?: known?.categoryId)
         preparation?.setActive(null)
         val detail = CatalogDetail(kind, item)
         detailJob?.cancel()
@@ -226,16 +254,39 @@ internal class OnDemandController(private val client: XtreamClient, private val 
                 ensureActive()
                 val cover = rsv.squitv.shared.catalog.ContentImages.first(result.movie?.info?.movieImage,
                     result.series?.info?.cover, item.cover)
-                if (cover != null) change(kind) { browse ->
-                    fun artwork(items: List<CatalogItem>) = items.map { if (it.id == item.id) it.copy(cover = cover) else it }
+                val enriched = item.copy(cover = cover ?: item.cover,
+                    releaseDate = result.movie?.info?.releaseDate ?: result.series?.info?.releaseDate ?: item.releaseDate,
+                    cast = result.movie?.info?.cast ?: result.series?.info?.cast ?: item.cast,
+                    director = result.movie?.info?.director ?: result.series?.info?.director ?: item.director)
+                knownDetails[kind to item.id] = enriched
+                while (knownDetails.size > 256) knownDetails.remove(knownDetails.keys.first())
+                change(kind) { browse ->
+                    fun artwork(items: List<CatalogItem>) = items.map { if (it.id == item.id) enriched else it }
                     browse.copy(items = artwork(browse.items), allItems = artwork(browse.allItems))
                 }
                 preparation?.rememberGenre(account, kind, item.id,
                     result.movie?.info?.genre ?: result.series?.info?.genre ?: item.genre)
                 history()?.ready()
                 val saved = liveCategoryScope(account)?.let { history()?.latest(it, kind == CatalogKind.SERIES, item.id) }
-                mutable.update { it.copy(detail = result.copy(lastPlayedSeason = saved?.season,
+                mutable.update { it.copy(detail = result.copy(item = enriched, lastPlayedSeason = saved?.season,
                     lastPlayedEpisodeId = saved?.takeIf { it.series }?.streamId?.toString())) }
+                try {
+                    val browse = mutable.value.browse[kind]
+                    val candidates = if (browse?.allItemsLoaded == true) browse.allItems else if (item.categoryId.isNullOrBlank()) emptyList()
+                        else withContext(Dispatchers.IO) {
+                            if (kind == CatalogKind.MOVIES) client.movies(account, item.categoryId).mapNotNull { it.toCatalogItem() }
+                            else client.series(account, item.categoryId).mapNotNull { it.toCatalogItem() }
+                        }
+                    val related = withContext(Dispatchers.Default) {
+                        rsv.squitv.shared.catalog.ContentDiscovery.similar(candidates, item.id, item.categoryId, { it.id }, { it.categoryId })
+                    }
+                    ensureActive()
+                    mutable.update { it.copy(detail = it.detail?.copy(related = related)) }
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) {
+                    ensureActive()
+                    mutable.update { it.copy(detail = it.detail?.copy(relatedError = "Não foi possível carregar os conteúdos semelhantes.")) }
+                }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 ensureActive()
@@ -355,7 +406,7 @@ internal class OnDemandController(private val client: XtreamClient, private val 
             b.copy(loading = false, loadingCategories = false, loadingAll = false)
         }) }
     }
-    fun reset() { leave(); preparation?.reset(); credentials = null; mutable.value = OnDemandState() }
+    fun reset() { leave(); preparation?.reset(); knownDetails.clear(); credentials = null; mutable.value = OnDemandState() }
     private fun change(kind: CatalogKind, transform: (CatalogBrowse) -> CatalogBrowse) {
         mutable.update { it.copy(browse = it.browse + (kind to transform(it.browse[kind] ?: CatalogBrowse()))) }
     }

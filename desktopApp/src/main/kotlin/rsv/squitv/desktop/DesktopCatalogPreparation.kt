@@ -9,6 +9,8 @@ import rsv.squitv.domain.model.PreparationSpeed
 import rsv.squitv.domain.usecase.GenreUtils
 import rsv.squitv.shared.xtream.ServerCredentials
 import java.nio.file.Path
+import rsv.squitv.shared.catalog.PreparationProgress
+import rsv.squitv.shared.catalog.PreparationBatchPolicy
 import kotlin.math.min
 import kotlin.random.Random
 
@@ -20,7 +22,8 @@ internal data class DesktopGenreData(val schema: Int = 1, val records: Map<Int, 
 internal data class DesktopPreparationState(val kind: CatalogKind? = null, val total: Int = 0, val done: Int = 0,
     val withGenre: Int = 0, val noData: Int = 0, val failed: Int = 0, val running: Boolean = false,
     val paused: Boolean = false, val speed: PreparationSpeed = PreparationSpeed.NORMAL,
-    val message: String? = null, val error: String? = null)
+    val message: String? = null, val error: String? = null,
+    val inFlight: Int = 0, val estimatedRemainingMs: Long? = null)
 
 /** Windows transport/lifecycle adapter for Android's economical preparation policy. */
 internal class DesktopCatalogPreparation(private val client: XtreamClient, private val directory: Path,
@@ -95,7 +98,7 @@ internal class DesktopCatalogPreparation(private val client: XtreamClient, priva
     fun setActive(kind: CatalogKind?) { if (active != kind) { active = kind; restart() } }
     fun setForeground(value: Boolean) { if (foreground != value) { foreground = value; restart() } }
     fun setPaused(value: Boolean) { paused = value; restart() }
-    fun setSpeed(value: PreparationSpeed) { speed = value; mutable.value = mutable.value.copy(speed = value) }
+    fun setSpeed(value: PreparationSpeed) { if (speed != value) { speed = value; restart() } }
     fun retryFailures() {
         val kind = active ?: return
         val credentials = account ?: return
@@ -135,7 +138,7 @@ internal class DesktopCatalogPreparation(private val client: XtreamClient, priva
         val token = ++revision
         val kind = active
         val previous = mutable.value.takeIf { it.kind == kind } ?: DesktopPreparationState()
-        mutable.value = previous.copy(kind = kind, running = false, paused = paused || !foreground, speed = speed,
+        mutable.value = previous.copy(kind = kind, running = false, paused = paused || !foreground, speed = speed, inFlight = 0, estimatedRemainingMs = null,
             message = when { paused -> "Pausado"; !foreground -> "Pausado em segundo plano"; else -> null })
         job = scope.launch {
             old?.join()
@@ -150,81 +153,122 @@ internal class DesktopCatalogPreparation(private val client: XtreamClient, priva
         val cache = store(requireNotNull(liveCategoryScope(credentials)), kind)
         cache.load()
         if (cache.error.value != null) { mutable.value = mutable.value.copy(error = cache.error.value); return }
-        val ordered = withContext(Dispatchers.Default) { items.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }) }
+        val ordered = withContext(Dispatchers.Default) { items.distinctBy { it.id }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }) }
+        val ready = java.util.ArrayDeque<CatalogItem>()
+        val waiting = java.util.TreeMap<Long, MutableList<CatalogItem>>()
         val pending = linkedMapOf<Int, DesktopGenreRecord>()
+        val estimator = PreparationProgress()
+        val policy = PreparationBatchPolicy()
+        val ttl = 7L * 24 * 60 * 60 * 1000
+        fun resolved(record: DesktopGenreRecord?, now: Long) = record?.status == "SUCCESS" ||
+            record?.status == "NO_DATA" && now - record.updatedAt < ttl
+        val initial = withContext(Dispatchers.Default) {
+            val now = System.currentTimeMillis()
+            val records = cache.state.value.records
+            val eligible = ordered.filter { item ->
+                val record = records[item.id]
+                !resolved(record, now) && (record?.status != "FAILED" || record.attempts < 5)
+            }
+            Triple(eligible, ordered.count { resolved(records[it.id], now) },
+                ordered.count { records[it.id]?.status == "FAILED" })
+        }
+        var done = initial.second
+        var failed = initial.third
+        var withGenre = withContext(Dispatchers.Default) { ordered.count { cache.state.value.records[it.id]?.genre != null } }
+        var noData = done - withGenre
+        initial.first.forEach { item ->
+            val due = cache.state.value.records[item.id]?.nextEligibleAt ?: 0L
+            if (due <= System.currentTimeMillis()) ready.addLast(item)
+            else waiting.getOrPut(due) { mutableListOf() }.add(item)
+        }
+        var lastFlush = System.nanoTime()
         suspend fun flush(): Boolean {
             if (pending.isEmpty()) return true
             val batch = pending.toMap()
-            val ok = cache.update { old ->
-                old.copy(records = old.records + batch.filter { (id, record) ->
-                    (old.records[id]?.updatedAt ?: 0) <= record.updatedAt
-                })
-            }
-            if (ok) pending.clear()
+            val ok = cache.update { old -> old.copy(records = old.records + batch.filter { (id, record) ->
+                (old.records[id]?.updatedAt ?: 0) <= record.updatedAt
+            }) }
+            if (ok) { pending.clear(); lastFlush = System.nanoTime() }
             return ok
         }
-        suspend fun progress(message: String? = null, publishResults: Boolean = false) {
+        fun progress(message: String? = null, inFlight: Int = 0) {
             if (token != revision) return
-            val records = cache.state.value.records + pending
-            val actual = withContext(Dispatchers.Default) { items.mapNotNull { records[it.id] } }
-            mutable.value = DesktopPreparationState(kind, items.size,
-                actual.count { it.status != "FAILED" }, actual.count { it.genre != null },
-                actual.count { it.status == "NO_DATA" }, actual.count { it.status == "FAILED" },
-                running = true, speed = speed, message = message)
-            if (publishResults) publish(kind, records)
+            mutable.value = DesktopPreparationState(kind, ordered.size, done, withGenre, noData, failed,
+                running = true, speed = speed, message = message, inFlight = inFlight,
+                estimatedRemainingMs = estimator.remainingMs(ordered.size, done, failed))
         }
-        var batchSize = 0
-        var batchStarted = System.nanoTime()
         try {
+            progress()
             while (currentCoroutineContext().isActive && token == revision) {
                 val now = System.currentTimeMillis()
-                val records = cache.state.value.records + pending
-                val candidates = withContext(Dispatchers.Default) { ordered.filter { item ->
-                    val record = records[item.id]
-                    record == null || record.status == "NO_DATA" && now - record.updatedAt >= 7L * 24 * 60 * 60 * 1000 ||
-                        record.status == "FAILED" && record.attempts < 5
-                }
-                }
-                val next = candidates.firstOrNull { (records[it.id]?.nextEligibleAt ?: 0) <= now }
-                if (next == null) {
+                while (waiting.isNotEmpty() && waiting.firstKey() <= now) ready.addAll(waiting.pollFirstEntry().value)
+                if (ready.isEmpty()) {
                     if (!flush()) { mutable.value = mutable.value.copy(error = cache.error.value); break }
-                    progress(if (candidates.isEmpty()) {
-                        if (records.values.any { it.status == "FAILED" }) "Há falhas pendentes; use Tentar falhas novamente" else "Preparação concluída"
-                    } else "Aguardando nova tentativa", publishResults = true)
-                    if (candidates.isEmpty()) break
-                    delay((candidates.minOf { records[it.id]?.nextEligibleAt ?: now } - now).coerceIn(1000, 60_000))
+                    publish(kind, cache.state.value.records)
+                    progress(if (waiting.isNotEmpty()) "Aguardando nova tentativa" else if (failed > 0)
+                        "Há falhas pendentes; use Tentar falhas novamente" else "Preparação concluída")
+                    if (waiting.isEmpty()) break
+                    mutable.value = mutable.value.copy(estimatedRemainingMs = null)
+                    delay((waiting.firstKey() - now).coerceIn(1000, 60_000))
                     continue
                 }
-                progress("Preparando ${next.name}")
-                val record = try {
-                    val raw = withContext(Dispatchers.IO) {
-                        if (kind == CatalogKind.MOVIES) client.movieInfo(credentials, next.id).info?.genre
-                        else client.seriesInfo(credentials, next.id).info?.genre
-                    }
-                    currentCoroutineContext().ensureActive()
-                    val genre = raw?.take(4096)?.takeIf { GenreUtils.extractNormalizedGenres(it).isNotEmpty() }
-                    DesktopGenreRecord(next.id, genre, if (genre == null) "NO_DATA" else "SUCCESS", System.currentTimeMillis())
-                } catch (e: CancellationException) { throw e }
-                catch (_: Exception) {
-                    currentCoroutineContext().ensureActive()
-                    val attempts = (records[next.id]?.attempts ?: 0) + 1
-                    val wait = min(300_000L, 5000L * (1L shl min(attempts, 6))) + Random.nextLong(1000)
-                    DesktopGenreRecord(next.id, status = "FAILED", updatedAt = System.currentTimeMillis(), attempts = attempts,
-                        nextEligibleAt = System.currentTimeMillis() + wait)
+                val batch = buildList {
+                    repeat(minOf(policy.size(speed), ready.size)) { add(ready.removeFirst()) }
                 }
-                pending[next.id] = record
-                progress()
-                batchSize++
-                if (batchSize >= 10 || System.nanoTime() - batchStarted >= 30_000_000_000L) {
+                val records = batch.associate { it.id to (pending[it.id] ?: cache.state.value.records[it.id]) }
+                val started = System.nanoTime()
+                progress("Consultando ${batch.size} conteúdo(s)", batch.size)
+                val results = coroutineScope {
+                    batch.map { item -> async(Dispatchers.IO) {
+                        try {
+                            val response = withTimeoutOrNull(45_000L) {
+                                listOf(if (kind == CatalogKind.MOVIES) client.movieInfo(credentials, item.id).info?.genre
+                                else client.seriesInfo(credentials, item.id).info?.genre)
+                            } ?: throw java.io.IOException("Tempo limite ao consultar metadados")
+                            val raw = response.single()
+                            currentCoroutineContext().ensureActive()
+                            val genre = raw?.take(4096)?.takeIf { GenreUtils.extractNormalizedGenres(it).isNotEmpty() }
+                            DesktopGenreRecord(item.id, genre, if (genre == null) "NO_DATA" else "SUCCESS", System.currentTimeMillis())
+                        } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) {
+                            currentCoroutineContext().ensureActive()
+                            val attempts = (records[item.id]?.attempts ?: 0) + 1
+                            val wait = min(300_000L, 5000L * (1L shl min(attempts, 6))) + Random.nextLong(1000)
+                            DesktopGenreRecord(item.id, status = "FAILED", updatedAt = System.currentTimeMillis(), attempts = attempts,
+                                nextEligibleAt = System.currentTimeMillis() + wait)
+                        }
+                    } }.awaitAll()
+                }
+                currentCoroutineContext().ensureActive()
+                if (token != revision || account != credentials) return
+                results.forEach { record ->
+                    val old = records[record.id]
+                    if (resolved(old, now)) done--
+                    if (old?.genre != null) withGenre--
+                    if (old?.status == "NO_DATA" && resolved(old, now)) noData--
+                    if (old?.status == "FAILED") failed--
+                    if (resolved(record, System.currentTimeMillis())) done++
+                    if (record.genre != null) withGenre++
+                    if (record.status == "NO_DATA") noData++
+                    if (record.status == "FAILED") {
+                        failed++
+                        if (record.attempts < 5) waiting.getOrPut(record.nextEligibleAt) { mutableListOf() }
+                            .add(batch.first { it.id == record.id })
+                    }
+                    pending[record.id] = record
+                }
+                val interval = policy.complete(speed, results.any { it.status == "FAILED" })
+                if (pending.size >= 25 || System.nanoTime() - lastFlush >= 10_000_000_000L) {
                     if (!flush()) { mutable.value = mutable.value.copy(error = cache.error.value); break }
-                    progress("Pausa entre lotes", publishResults = true)
-                    delay(speed.batchCooldownMs)
-                    batchSize = 0; batchStarted = System.nanoTime()
-                } else delay(speed.itemDelayMs)
+                    publish(kind, cache.state.value.records)
+                }
+                estimator.record(results.count { it.status != "FAILED" }, (System.nanoTime() - started) / 1_000_000L, interval)
+                progress(if (interval > speed.batchCooldownMs) "Ritmo reduzido após falha do servidor" else "Intervalo entre lotes")
+                delay(interval)
             }
         } finally {
             withContext(NonCancellable) { flush() }
-            if (token == revision) mutable.value = mutable.value.copy(running = false,
+            if (token == revision) mutable.value = mutable.value.copy(running = false, inFlight = 0,
                 error = cache.error.value ?: mutable.value.error)
         }
     }

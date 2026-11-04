@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-internal enum class PlayerLayerPlacement { BOTTOM, TOP, TOP_START, START, CENTER }
+internal enum class PlayerLayerPlacement { BOTTOM, BOTTOM_END, TOP, TOP_START, START, CENTER }
 
 /** An owned lightweight HUD window above LibVLC's heavyweight Canvas, without copying video frames.
  * It follows the owner, hides when another app gains focus, and is disposed with the player. */
@@ -63,8 +63,10 @@ internal fun NativePlayerLayer(visible: Boolean, placement: PlayerLayerPlacement
             PlayerLayerPlacement.BOTTOM, PlayerLayerPlacement.TOP, PlayerLayerPlacement.START -> owner.x
             PlayerLayerPlacement.TOP_START -> owner.x + margin
             PlayerLayerPlacement.CENTER -> owner.x + (owner.width - width) / 2
+            PlayerLayerPlacement.BOTTOM_END -> owner.x + owner.width - width - margin
         }
         val y = when (placement) {
+            PlayerLayerPlacement.BOTTOM_END -> owner.y + owner.height - height - margin
             PlayerLayerPlacement.BOTTOM -> owner.y + owner.height - height
             PlayerLayerPlacement.TOP, PlayerLayerPlacement.START -> owner.y
             PlayerLayerPlacement.TOP_START -> owner.y + margin

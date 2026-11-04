@@ -483,6 +483,10 @@ fun SettingsScreen(
                             Spacer(Modifier.height(16.dp))
 
                             Text(stringResource(R.string.catalog_preparing_title).uppercase(), color = tokens.colors.primary, style = tokens.typography.label, fontWeight = FontWeight.Black)
+                            rsv.squitv.core.ui.components.common.PreparationProgressSummary(
+                                prepState.totalItems, prepState.processedItems, prepState.estimatedRemainingMs, prepState.isPaused,
+                                prepState.failedItems, tokens.colors.primary, tokens.colors.textSecondary)
+                            prepState.error?.let { Text(it, color = tokens.colors.error, style = tokens.typography.caption) }
                             Text("Prioridade atual: ${if (prepState.priorityType == "SERIES") "Séries" else "Filmes"}", style = tokens.typography.body, color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold)
                             Text("Filmes: ${prepState.vodProcessed} / ${prepState.vodTotal} (com gênero: ${prepState.vodWithGenre})", style = tokens.typography.caption, color = tokens.colors.textSecondary)
                             Text("Séries: ${prepState.seriesProcessed} / ${prepState.seriesTotal} (com gênero: ${prepState.seriesWithGenre})", style = tokens.typography.caption, color = tokens.colors.textSecondary)

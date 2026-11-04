@@ -80,6 +80,7 @@ internal fun LiveSettingsPanel(status: PlayerStatus, engine: WindowsLivePlayer, 
         if (session != null && controller != null && store != null) listOf("Canais") else emptyList())
         .mapIndexed { index, title -> PlayerSettingsTab(index, title) }
     var selected by remember { mutableIntStateOf(0) }
+    var languageNotice by remember { mutableStateOf<String?>(null) }
     val initialFocus = remember { FocusRequester() }
     PlayerSettingsPanel(tabs, selected, 0, { selected = it }, close, initialFocus,
         palette.primary, palette.surface, palette.onSurface, palette.onSurfaceVariant, palette.outline,
@@ -98,10 +99,21 @@ internal fun LiveSettingsPanel(status: PlayerStatus, engine: WindowsLivePlayer, 
                             val subtitles = selected == 2
                             val tracks = if (subtitles) status.subtitleTracks else status.audioTracks
                             val active = if (subtitles) status.subtitleTrack else status.audioTrack
-                            if (subtitles) item { PlayerOption("Desativadas", active == -1) { engine.selectTrack(-1, true) } }
+                            item { PlayerOption(if (subtitles) "Desativadas" else "Usar padrão nos próximos conteúdos",
+                                if (subtitles) active == -1 else preferences?.preferredAudioLanguage == null) {
+                                if (subtitles) engine.selectTrack(-1, true)
+                                store?.update { if (subtitles) it.copy(preferredSubtitleLanguage = null) else it.copy(preferredAudioLanguage = null) }
+                            } }
                             items(tracks.filter { it.id >= 0 }, key = { it.id }) { track ->
-                                PlayerOption(track.name, active == track.id) { engine.selectTrack(track.id, subtitles) }
+                                PlayerOption(track.name, active == track.id) {
+                                    engine.selectTrack(track.id, subtitles)
+                                    val language = rsv.squitv.shared.player.TrackLanguage.fromLabel(track.name)
+                                    languageNotice = if (language == null) "Idioma não identificado. A seleção vale para este conteúdo." else
+                                        "Idioma preferido: ${java.util.Locale.forLanguageTag(language).getDisplayLanguage(java.util.Locale.forLanguageTag("pt-BR"))}"
+                                    store?.update { if (subtitles) it.copy(preferredSubtitleLanguage = language) else it.copy(preferredAudioLanguage = language) }
+                                }
                             }
+                            languageNotice?.let { message -> item { Text(message, color = palette.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } }
                             if (tracks.none { it.id >= 0 }) item {
                                 Text(if (subtitles) "Nenhuma legenda informada pela transmissão." else "Nenhuma faixa de áudio disponível.",
                                     color = palette.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
@@ -116,7 +128,7 @@ internal fun LiveSettingsPanel(status: PlayerStatus, engine: WindowsLivePlayer, 
                                 }
                             }
                         }
-                        3 -> items(listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f)) { speed ->
+                        3 -> items(listOf(.5f, .75f, 1f, 1.25f, 1.5f, 1.75f, 2f)) { speed ->
                             PlayerOption(if (speed == 1f) "Normal (1×)" else "${speed}×", status.speed == speed) { engine.setSpeed(speed) }
                         }
                         4 -> items(listOf<Int?>(null, 15, 30, 45, 60, 90, 120)) { minutes ->
@@ -139,11 +151,11 @@ internal fun LiveSettingsPanel(status: PlayerStatus, engine: WindowsLivePlayer, 
                             if (versions.isEmpty()) item {
                                 Text("Nenhuma outra versão disponível nesta lista.", color = palette.onSurfaceVariant)
                             }
-                            preferencesError?.let { message -> item {
-                                Text(message, color = palette.error, style = MaterialTheme.typography.bodySmall)
-                            } }
                         }
                     }
+                    preferencesError?.let { message -> item {
+                        Text(message, color = palette.error, style = MaterialTheme.typography.bodySmall)
+                    } }
                     status.optionError?.let { message -> item { Text(message, color = palette.error, style = MaterialTheme.typography.bodySmall) } }
                 }
                 if (listState.canScrollBackward || listState.canScrollForward) {

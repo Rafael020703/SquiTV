@@ -66,12 +66,16 @@ internal fun CatalogPreparationPanel(state: DesktopPreparationState, preparation
     Surface(color = palette.surface.copy(alpha = .7f), shape = RoundedCornerShape(12.dp)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (state.running) "Preparando catálogo · ${state.done}/${state.total}" else "Catálogo · ${state.done}/${state.total} preparados",
+                val percent = rsv.squitv.shared.catalog.PreparationProgress.percent(state.total, state.done)
+                Text(if (state.running) "Preparando catálogo · $percent%" else "Catálogo · $percent% · ${state.done}/${state.total} preparados",
                     Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = palette.onSurfaceVariant)
                 TextButton({ expanded = !expanded }) { Text(if (expanded) "Recolher" else "Detalhes") }
             }
             state.error?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall) }
             if (expanded) {
+                rsv.squitv.core.ui.components.common.PreparationProgressSummary(
+                    state.total, state.done, state.estimatedRemainingMs, state.paused,
+                    state.failed, palette.primary, palette.onSurfaceVariant)
                 Text("Com gênero: ${state.withGenre} · Sem gênero: ${state.noData} · Falhas: ${state.failed}", style = MaterialTheme.typography.bodySmall)
                 state.message?.let { Text(it, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant) }

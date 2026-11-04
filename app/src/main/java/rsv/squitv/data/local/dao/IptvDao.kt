@@ -381,16 +381,20 @@ interface IptvDao {
     suspend fun getAllMetadataCacheForAccount(accountKey: String, type: String): List<rsv.squitv.data.local.entities.CatalogMetadataEntity>
 
     @Query("""
-        SELECT c.* FROM catalog_metadata_cache c
+        SELECT DISTINCT c.* FROM catalog_metadata_cache c
         INNER JOIN iptv_streams s ON c.streamId = s.id AND (c.streamType = s.streamType OR (c.streamType = 'VOD' AND s.streamType = 'MOVIE') OR (c.streamType = 'SERIES' AND s.streamType = 'SERIES'))
         WHERE c.accountKey = :accountKey
           AND (c.streamType = :type OR (:type = 'VOD' AND s.streamType = 'MOVIE') OR (:type = 'SERIES' AND s.streamType = 'SERIES'))
           AND c.status IN ('PENDING', 'FAILED_TEMPORARY', 'NO_DATA')
+          AND (c.status != 'FAILED_TEMPORARY' OR c.attempts < 5)
           AND c.nextEligibleAt <= :now
         ORDER BY s.name ASC, c.streamId ASC
         LIMIT :limit
     """)
     suspend fun getPendingMetadataItems(accountKey: String, type: String, now: Long, limit: Int): List<rsv.squitv.data.local.entities.CatalogMetadataEntity>
+
+    @Query("UPDATE catalog_metadata_cache SET status = 'PENDING', attempts = 0, nextEligibleAt = 0, errorMessage = NULL WHERE accountKey = :accountKey AND status = 'FAILED_TEMPORARY'")
+    suspend fun retryFailedMetadata(accountKey: String)
 
     @Query("SELECT COUNT(*) FROM catalog_metadata_cache WHERE accountKey = :accountKey AND streamType = :type AND status = :status")
     suspend fun getMetadataCountByStatus(accountKey: String, type: String, status: String): Int
@@ -398,8 +402,34 @@ interface IptvDao {
     @Query("SELECT COUNT(*) FROM catalog_metadata_cache WHERE accountKey = :accountKey AND streamType = :type")
     suspend fun getTotalMetadataCount(accountKey: String, type: String): Int
 
+    @Query("""
+        SELECT c.streamType, CASE WHEN c.status = 'NO_DATA' AND c.nextEligibleAt <= :now
+            THEN 'PENDING' ELSE c.status END AS status, COUNT(*) AS itemCount FROM catalog_metadata_cache c
+        WHERE c.accountKey = :accountKey AND EXISTS (
+            SELECT 1 FROM iptv_streams s WHERE s.id = c.streamId AND
+            (s.streamType = c.streamType OR (c.streamType = 'VOD' AND s.streamType = 'MOVIE'))
+        ) GROUP BY c.streamType, CASE WHEN c.status = 'NO_DATA' AND c.nextEligibleAt <= :now
+            THEN 'PENDING' ELSE c.status END
+    """)
+    suspend fun getMetadataProgress(accountKey: String, now: Long): List<CatalogMetadataCount>
+
+    @Transaction
+    suspend fun applyPreparationBatch(rows: List<CatalogMetadataEntity>, details: List<CatalogMetadataUpdate>) {
+        details.forEach { item ->
+            updateDetailedStreamMetadata(item.id, item.type, item.genre, item.cast, item.director,
+                item.plot, item.duration, item.backdrop, item.trailer)
+        }
+        insertOrUpdateMetadataCacheList(rows)
+    }
+
     @Query("SELECT * FROM iptv_streams WHERE streamType IN ('VOD', 'MOVIE', 'SERIES')")
     suspend fun getVodAndSeriesStreams(): List<IptvStreamEntity>
+
+    @Query("SELECT id, streamType, genre FROM iptv_streams WHERE streamType IN ('VOD', 'MOVIE', 'SERIES')")
+    suspend fun getMetadataSeedStreams(): List<CatalogMetadataSeed>
+
+    @Query("SELECT streamType, streamId FROM catalog_metadata_cache WHERE accountKey = :accountKey")
+    suspend fun getMetadataKeys(accountKey: String): List<CatalogMetadataKey>
 
     @Transaction
     @Query("SELECT * FROM iptv_streams WHERE (streamType = 'VOD' OR streamType = 'SERIES') AND `cast` LIKE '%' || :actor || '%'")

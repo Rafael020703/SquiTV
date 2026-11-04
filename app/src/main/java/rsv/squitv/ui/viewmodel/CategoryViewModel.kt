@@ -64,11 +64,7 @@ class CategoryViewModel @Inject constructor(
                         else row.items.filter { it.name.contains(query, ignoreCase = true) }
             
             items = rsv.squitv.domain.model.LiveChannelGrouping.visible(items, options.third, options.first, options.second)
-            items = when (sort) {
-                "RECENT" -> items.sortedByDescending { it.releaseDate }
-                "RATING" -> items.sortedByDescending { it.rating?.toDoubleOrNull() ?: 0.0 }
-                else -> items.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
-            }
+            items = rsv.squitv.shared.catalog.CatalogOrdering.sort(items, sort, { it.name }, { it.releaseDate }, { it.rating })
             
             row.copy(items = items)
         }.filter { it.items.isNotEmpty() }

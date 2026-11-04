@@ -2,6 +2,8 @@ package rsv.squitv.ui.content.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -34,8 +36,10 @@ fun CatalogPreparationIndicator(
     if (state.totalItems <= 0) return
 
     val text = when {
-        state.isRunning -> "${stringResource(R.string.catalog_preparing_title)} · ${state.processedItems}/${state.totalItems}"
+        state.error != null -> "Preparação interrompida"
+        state.isRunning -> "${stringResource(R.string.catalog_preparing_title)} · ${rsv.squitv.shared.catalog.PreparationProgress.percent(state.totalItems, state.processedItems)}%"
         state.isPaused -> stringResource(R.string.catalog_prep_paused)
+        state.waitingForRetry -> "Preparação · aguardando nova tentativa"
         else -> stringResource(R.string.catalog_prep_completed)
     }
 
@@ -105,8 +109,12 @@ fun CatalogPreparationDialog(
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState())
             ) {
+                rsv.squitv.core.ui.components.common.PreparationProgressSummary(
+                    state.totalItems, state.processedItems, state.estimatedRemainingMs, state.isPaused,
+                    state.failedItems, tokens.colors.primary, tokens.colors.textSecondary)
+                state.error?.let { Text(it, color = tokens.colors.error, style = tokens.typography.caption) }
                 if (state.isPaused) {
                     Surface(
                         color = tokens.colors.warning.copy(alpha = 0.15f),
@@ -125,17 +133,20 @@ fun CatalogPreparationDialog(
 
                 if (!state.currentItemName.isNullOrBlank()) {
                     Text(
-                        text = "Consultando: ${state.currentItemName}",
+                        text = if (state.inFlight > 1) "Consultando ${state.inFlight} conteúdos por vez · ${state.currentItemName}"
+                            else "Consultando: ${state.currentItemName}",
                         style = tokens.typography.caption,
                         fontWeight = FontWeight.Bold,
                         color = tokens.colors.primary
                     )
                 } else if (state.isCooldown) {
                     Text(
-                        text = "Aguardando intervalo entre lotes",
+                        text = if (state.isThrottled) "Ritmo reduzido temporariamente após falhas" else "Aguardando intervalo entre lotes",
                         style = tokens.typography.caption,
                         color = tokens.colors.textSecondary
                     )
+                } else if (state.waitingForRetry) {
+                    Text("Aguardando itens elegíveis para nova tentativa", style = tokens.typography.caption, color = tokens.colors.textSecondary)
                 }
 
                 Text(
@@ -156,6 +167,7 @@ fun CatalogPreparationDialog(
                     style = tokens.typography.body,
                     color = tokens.colors.textPrimary
                 )
+                Text("Sem gênero informado pelo servidor: ${state.noDataItems}", style = tokens.typography.caption, color = tokens.colors.textSecondary)
 
                 if (state.failedItems > 0) {
                     Text(
@@ -203,7 +215,7 @@ fun CatalogPreparationDialog(
                         text = stringResource(R.string.catalog_prep_pause_action),
                         onClick = onPause
                     )
-                } else if (state.isPaused) {
+                } else if (state.isPaused || state.error != null) {
                     AppButton(
                         text = stringResource(R.string.catalog_prep_resume_action),
                         onClick = onResume

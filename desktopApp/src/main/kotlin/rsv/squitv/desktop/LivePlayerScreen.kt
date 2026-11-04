@@ -128,7 +128,7 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
     }
     LaunchedEffect(session.channel.id, credentials, retry) {
         hideControls(); menu = null; banner = true
-        engine.play(LiveStreamAddress.build(credentials.baseUrl, credentials.username, credentials.password, session.channel.id))
+        engine.play(LiveStreamAddress.build(credentials.baseUrl, credentials.username, credentials.password, session.channel.id), session.channel.id, preferences.preferredAudioLanguage, preferences.preferredSubtitleLanguage)
         delay(3000); banner = false
     }
     LaunchedEffect(preferences.volume, preferences.muted) {

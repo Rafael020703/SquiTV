@@ -14,6 +14,7 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.builtins.nullable
 
 // Portable Xtream DTOs and tolerant serializers originally implemented in Android.
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class XtreamVod(
     @Serializable(with = IntOrAnySerializer::class) val num: Int? = null,
@@ -26,7 +27,11 @@ data class XtreamVod(
     val container_extension: String? = null,
     @Serializable(with = StringOrAnySerializer::class) val rating: String? = null,
     val rating_5based: Double? = null,
-    @Serializable(with = OptionalGenreTextSerializer::class) val genre: String? = null
+    @Serializable(with = OptionalGenreTextSerializer::class) val genre: String? = null,
+    @SerialName("release_date") @JsonNames("releaseDate", "releasedate")
+    @Serializable(with = StringOrAnySerializer::class) val releaseDate: String? = null,
+    @Serializable(with = OptionalGenreTextSerializer::class) val cast: String? = null,
+    @Serializable(with = OptionalGenreTextSerializer::class) val director: String? = null
 )
 
 /** An optional listing field must not make a previously readable VOD list fail. */

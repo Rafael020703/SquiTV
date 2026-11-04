@@ -39,6 +39,10 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
     settings: DesktopPreferencesStore, fullscreen: Boolean, toggleFullscreen: () -> Unit,
     registerPlayer: (WindowsLivePlayer?) -> Unit, registerInput: (((KeyEvent) -> Boolean)?) -> Unit = {}) {
     val scope = rememberCoroutineScope()
+    val nextCountdown = remember { rsv.squitv.shared.player.NextEpisodeCountdown(scope) }
+    val nextSeconds by nextCountdown.seconds.collectAsState()
+    DisposableEffect(nextCountdown) { onDispose { nextCountdown.cancel() } }
+
     val engine = remember { WindowsLivePlayer(onDemand = true) }
     val overlay = remember { PlayerOverlayController() }
     val status by engine.state.collectAsState()
@@ -87,6 +91,7 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
             event.key == Key.Escape || event.key == Key.Back -> {
                 if (event.type == KeyEventType.KeyUp) when {
                     menu != null -> closeMenu()
+                    nextSeconds != null -> nextCountdown.cancel()
                     else -> {
                         seek.cancelSeek(); dragging = null; holding = false
                         controller.catalog.stopPlayback()
@@ -94,7 +99,7 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
                 }
                 true
             }
-            menu != null -> false
+            menu != null || nextSeconds != null -> false
             !controls && event.key in listOf(Key.DirectionLeft, Key.DirectionRight) -> {
                 if (event.type == KeyEventType.KeyUp && preferencesLoaded) {
                     val next = rsv.squitv.shared.player.PlayerVolume.adjust(
@@ -155,7 +160,7 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
     LaunchedEffect(session.id, session.series, session.localMediaUri, account, retry) {
         val saved = liveCategoryScope(account)?.let { controller.watchHistory?.resume(it, session) }
         menu = null; seek.cancelSeek(); dragging = null; showControls()
-        engine.play(session.localMediaUri ?: OnDemandPlayback.address(account, session.series, session.id, session.extension), session.id)
+        engine.play(session.localMediaUri ?: OnDemandPlayback.address(account, session.series, session.id, session.extension), session.id, preferences.preferredAudioLanguage, preferences.preferredSubtitleLanguage)
         expectedGeneration = engine.state.value.playbackGeneration
         resumeTarget = saved?.positionMs
     }
@@ -212,8 +217,20 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
     val pending = remember(seekRevision, seek) { seek.pendingConfirmedSeek }
     LaunchedEffect(pending) { if (pending != null) { delay(2500); seek.cancelSeek() } }
     LaunchedEffect(status.ended, status.sourceId, status.playbackGeneration, expectedGeneration, session.id, preferences.autoPlayEpisodes) {
+        nextCountdown.cancel()
         if (status.ended && status.sourceId == session.id && status.playbackGeneration == expectedGeneration && preferences.autoPlayEpisodes && session.series &&
-            session.episodeIndex in 0 until session.episodes.lastIndex) controller.catalog.nextEpisode(1)
+            session.episodeIndex in 0 until session.episodes.lastIndex) {
+            val generation = expectedGeneration
+            nextCountdown.start {
+                val current = engine.state.value
+                if (current.sourceId == session.id && current.playbackGeneration == generation && current.ended &&
+                    controller.catalog.state.value.playback == session) controller.catalog.nextEpisode(1)
+            }
+        }
+    }
+    NativePlayerLayer(nextSeconds != null && menu == null, PlayerLayerPlacement.BOTTOM_END, heightDp = 185, widthDp = 350, onKey = input) {
+        nextSeconds?.let { NextEpisodeNotice("PRÓXIMO EPISÓDIO EM", "$it segundos", nextCountdown::finish, nextCountdown::cancel,
+            palette.surface, palette.onSurface, palette.primary) }
     }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         NativeVideoSurface(engine, Modifier.fillMaxSize(),
@@ -225,14 +242,14 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
         heightDp = 76, widthDp = 168, interactive = false) {
         volumeNotice?.let { PlayerVolumeNotice(it) }
     }
-    NativePlayerLayer(controls && menu == null, PlayerLayerPlacement.TOP, heightDp = 112,
+    NativePlayerLayer(controls && menu == null && nextSeconds == null, PlayerLayerPlacement.TOP, heightDp = 112,
         interactive = false) {
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
             listOf(Color.Black.copy(alpha = .6f), Color.Transparent))).padding(24.dp)) {
             PlayerTitle(session.title, MaterialTheme.typography.titleLarge, palette.onSurface)
         }
     }
-    NativePlayerLayer(controls && menu == null, PlayerLayerPlacement.BOTTOM,
+    NativePlayerLayer(controls && menu == null && nextSeconds == null, PlayerLayerPlacement.BOTTOM,
         heightDp = if (status.error != null || historyError != null || resumeWarning != null || preferencesError != null) 320 else 260, onKey = input,
         onInputCancelled = { holding = false; dragging = null; seek.cancelSeek() }) {
         LaunchedEffect(controls) { if (controls) { withFrameNanos { }; pauseFocus.requestFocus() } }
@@ -325,7 +342,7 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
         heightDp = if (menu == VodMenu.EPISODES) null else 450,
         widthDp = if (menu == VodMenu.EPISODES) 380 else 760, onKey = input) {
         when (menu) {
-            VodMenu.SETTINGS -> LiveSettingsPanel(status, engine, sleepMinutes, { sleepMinutes = it }, closeMenu)
+            VodMenu.SETTINGS -> LiveSettingsPanel(status, engine, sleepMinutes, { sleepMinutes = it }, closeMenu, store = settings)
             VodMenu.EPISODES -> VodEpisodesPanel(session, controller, closeMenu)
             null -> Unit
         }

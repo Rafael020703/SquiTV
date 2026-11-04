@@ -16,6 +16,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.semantics
 import rsv.squitv.core.ui.components.updates.*
 import rsv.squitv.ui.updates.releaseHighlights
 import rsv.squitv.desktop.update.*
@@ -49,24 +51,45 @@ internal fun DesktopUpdatesScreen(install: () -> Unit) {
         else -> Icons.Rounded.SystemUpdate
     }
     val primaryFocus = remember { FocusRequester() }
-    LaunchedEffect(state.phase) {
+    val summaryFocus = remember { FocusRequester() }
+    val errorFocus = remember { FocusRequester() }
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    val hasError = state.phase == UpdatePhase.ERROR
+    var errorFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(state.phase, state.error) {
+        if (hasError) scroll.scrollTo(0)
         if (state.phase !in setOf(UpdatePhase.DISABLED, UpdatePhase.INSTALLING)) {
             withFrameNanos { }
-            primaryFocus.requestFocus()
+            if (hasError) errorFocus.requestFocus() else primaryFocus.requestFocus()
         }
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         DesktopPageHeading("ATUALIZAÇÕES", "Mantenha o Squi TV atualizado")
-        Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 20.dp),
+        if (hasError) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            UpdateStatusPanel(title, state.error ?: description, icon,
+                palette.surface, palette.outline, palette.onSurface, palette.onSurfaceVariant, palette.error,
+                MaterialTheme.typography.titleLarge, MaterialTheme.typography.bodyLarge,
+                Modifier.widthIn(max = 720.dp).border(2.dp, if (errorFocused) palette.primary else Color.Transparent, RoundedCornerShape(24.dp))
+                    .focusRequester(errorFocus).focusProperties { down = summaryFocus }
+                    .onFocusChanged { errorFocused = it.isFocused }.semantics(mergeDescendants = true) {}.focusable()) {}
+        }
+        Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).padding(horizontal = 24.dp, vertical = 20.dp),
             contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 720.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                UpdateStatusPanel(title, state.error ?: description, icon,
+                UpdateStatusPanel(if (hasError) "Dados da atualização" else title, if (hasError) "Confira os dados e tente novamente abaixo." else description, icon,
                     palette.surface, palette.outline, palette.onSurface, palette.onSurfaceVariant,
                     if (state.phase == UpdatePhase.ERROR) palette.error else palette.primary,
                     MaterialTheme.typography.titleLarge, MaterialTheme.typography.bodyLarge) {
+                    Box(Modifier.focusRequester(summaryFocus).focusProperties {
+                        up = if (hasError) errorFocus else FocusRequester.Default
+                        down = if (state.phase !in setOf(UpdatePhase.DISABLED, UpdatePhase.INSTALLING)) primaryFocus else FocusRequester.Default
+                    }.onFocusChanged { if (it.isFocused) scope.launch { scroll.scrollTo(0) } }
+                        .semantics(mergeDescendants = true) {}.focusable()) {
                     UpdateVersionPanel("Versão instalada", DesktopBuildInfo.VERSION, "Versão disponível",
                         state.info?.artifact?.versionName?.let { "v$it" }, palette.background, palette.onSurface,
                         palette.onSurfaceVariant, palette.primary, MaterialTheme.typography.titleLarge, MaterialTheme.typography.labelSmall)
+                    }
                     state.info?.let { info ->
                         val date = remember(info.publishedAt) {
                             runCatching { java.time.Instant.parse(info.publishedAt).atZone(java.time.ZoneId.systemDefault())
@@ -99,7 +122,7 @@ internal fun DesktopUpdatesScreen(install: () -> Unit) {
                             Text("${megabytes(state.bytes)} / ${megabytes(total)}", color = palette.onSurfaceVariant)
                         }
                     }
-                    val action = Modifier.fillMaxWidth().focusRequester(primaryFocus)
+                    val action = Modifier.fillMaxWidth().focusRequester(primaryFocus).focusProperties { up = summaryFocus }
                     when (state.phase) {
                         UpdatePhase.DOWNLOADING, UpdatePhase.CHECKING -> DesktopUpdateAction("Cancelar", updater::cancel, action, primary = false)
                         UpdatePhase.AVAILABLE -> {

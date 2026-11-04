@@ -15,9 +15,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.update
 import rsv.squitv.core.data.repository.CatalogRepository
 import rsv.squitv.data.local.dao.IptvDao
 import rsv.squitv.data.local.entities.CatalogMetadataEntity
+import rsv.squitv.data.local.entities.CatalogMetadataUpdate
+import rsv.squitv.shared.catalog.PreparationBatchPolicy
+import rsv.squitv.shared.catalog.PreparationProgress
+import rsv.squitv.domain.usecase.GenreUtils
 import rsv.squitv.data.model.SettingsBackupCodec
 import rsv.squitv.data.model.XtreamCredentials
 import rsv.squitv.data.repository.SettingsRepository
@@ -54,7 +61,12 @@ data class CatalogPreparationState(
     val processedItems: Int = 0,
     val withGenreItems: Int = 0,
     val noDataItems: Int = 0,
-    val failedItems: Int = 0
+    val failedItems: Int = 0,
+    val inFlight: Int = 0,
+    val estimatedRemainingMs: Long? = null,
+    val waitingForRetry: Boolean = false,
+    val isThrottled: Boolean = false,
+    val error: String? = null
 )
 
 @UnstableApi
@@ -67,7 +79,7 @@ class CatalogPreparationCoordinator @Inject constructor(
     private val playbackManager: PlaybackManager
 ) {
 
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
 
     private val _state = MutableStateFlow(CatalogPreparationState())
     val state: StateFlow<CatalogPreparationState> = _state.asStateFlow()
@@ -78,6 +90,7 @@ class CatalogPreparationCoordinator @Inject constructor(
     private var isPlaybackActive = false
     private var activeScreenType = "VOD" // VOD or SERIES
     private var job: Job? = null
+    private var generation = 0L
 
     init {
         isNetworkConnected = isNetworkAvailable()
@@ -88,10 +101,11 @@ class CatalogPreparationCoordinator @Inject constructor(
 
     fun setActiveContentType(type: String) {
         val normType = if (type.equals("series", ignoreCase = true)) "SERIES" else "VOD"
-        if (activeScreenType != normType) {
+        val restartIdle = !_state.value.isRunning && !_state.value.isPaused
+        if (activeScreenType != normType || restartIdle) {
             activeScreenType = normType
             _state.value = _state.value.copy(priorityType = normType)
-            evaluateAndTrigger()
+            evaluateAndTrigger(restart = restartIdle)
         }
     }
 
@@ -111,18 +125,19 @@ class CatalogPreparationCoordinator @Inject constructor(
     }
 
     fun retryFailed() {
-        scope.launch(Dispatchers.IO) {
+        scope.launch {
+          try {
             val settings = settingsRepository.settingsFlow.first()
             val credentials = settings.credentials ?: return@launch
             val accountKey = SettingsBackupCodec.accountKey(credentials)
-            val failed = iptvDao.getPendingMetadataItems(accountKey, "VOD", System.currentTimeMillis() + 864000000L, 1000) +
-                    iptvDao.getPendingMetadataItems(accountKey, "SERIES", System.currentTimeMillis() + 864000000L, 1000)
-            val resetList = failed.map { it.copy(status = CatalogMetadataEntity.STATUS_PENDING, attempts = 0, nextEligibleAt = 0L) }
-            if (resetList.isNotEmpty()) {
-                iptvDao.insertOrUpdateMetadataCacheList(resetList)
-            }
+            val token = ++generation
+            job?.cancelAndJoin()
+            iptvDao.retryFailedMetadata(accountKey)
+            if (token != generation || settingsRepository.settingsFlow.first().credentials != credentials) return@launch
             userPaused = false
-            evaluateAndTrigger()
+            evaluateAndTrigger(restart = true)
+          } catch (cancelled: CancellationException) { throw cancelled }
+          catch (_: Exception) { _state.value = _state.value.copy(error = "Não foi possível reagendar as falhas. Tente novamente.") }
         }
     }
 
@@ -141,18 +156,15 @@ class CatalogPreparationCoordinator @Inject constructor(
 
         cm.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                isNetworkConnected = isNetworkAvailable()
-                evaluateAndTrigger()
+                scope.launch { isNetworkConnected = isNetworkAvailable(); evaluateAndTrigger() }
             }
 
             override fun onLost(network: Network) {
-                isNetworkConnected = isNetworkAvailable()
-                evaluateAndTrigger()
+                scope.launch { isNetworkConnected = isNetworkAvailable(); evaluateAndTrigger() }
             }
 
             override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                isNetworkConnected = isNetworkAvailable()
-                evaluateAndTrigger()
+                scope.launch { isNetworkConnected = isNetworkAvailable(); evaluateAndTrigger() }
             }
         })
     }
@@ -168,14 +180,18 @@ class CatalogPreparationCoordinator @Inject constructor(
 
     private fun observeSettings() {
         scope.launch {
-            settingsRepository.settingsFlow.collect { settings ->
-                val speed = PreparationSpeed.fromString(settings.preparationSpeed)
-                _state.value = _state.value.copy(speed = speed)
+            var previousAccount: XtreamCredentials? = null
+            settingsRepository.settingsFlow.map { it.credentials to PreparationSpeed.fromString(it.preparationSpeed) }
+                .distinctUntilChanged().collect { (credentials, speed) ->
+                if (credentials != previousAccount) _state.value = CatalogPreparationState(speed = speed)
+                previousAccount = credentials
+                _state.value = _state.value.copy(speed = speed, estimatedRemainingMs = null)
+                evaluateAndTrigger(restart = true)
             }
         }
     }
 
-    private fun evaluateAndTrigger() {
+    private fun evaluateAndTrigger(restart: Boolean = false) {
         val pauseReason = when {
             userPaused -> PauseReason.USER_PAUSED
             !isAppInForeground -> PauseReason.APP_BACKGROUND
@@ -186,14 +202,14 @@ class CatalogPreparationCoordinator @Inject constructor(
 
         if (pauseReason != null) {
             job?.cancel()
-            job = null
+            generation++
             _state.value = _state.value.copy(
                 isRunning = false,
                 isPaused = true,
                 isCooldown = false,
                 pauseReason = pauseReason,
                 currentItemName = null,
-                currentItemType = null
+                currentItemType = null, inFlight = 0, estimatedRemainingMs = null
             )
         } else {
             _state.value = _state.value.copy(
@@ -202,190 +218,159 @@ class CatalogPreparationCoordinator @Inject constructor(
                 pauseReason = null,
                 priorityType = activeScreenType
             )
-            if (job?.isActive != true) {
-                job = scope.launch(Dispatchers.IO) {
-                    runPreparationLoop()
+            if (restart || job?.isActive != true) {
+                val previous = job
+                previous?.cancel()
+                val token = ++generation
+                job = scope.launch {
+                    previous?.join()
+                    if (token != generation) return@launch
+                    try { runPreparationLoop(token) }
+                    catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) {
+                        if (token == generation) _state.value = _state.value.copy(error = "Não foi possível preparar o catálogo. Tente retomar.", estimatedRemainingMs = null)
+                    } finally {
+                        if (token == generation) _state.value = _state.value.copy(isRunning = false, inFlight = 0)
+                    }
                 }
             }
         }
     }
 
-    private suspend fun runPreparationLoop() {
-        while (currentCoroutineContext().isActive) {
-            val settings = settingsRepository.settingsFlow.first()
-            val credentials = settings.credentials ?: break
-            val accountKey = SettingsBackupCodec.accountKey(credentials)
-            val speed = PreparationSpeed.fromString(settings.preparationSpeed)
-
-            // 1. Seed cache from Room if new streams exist
-            seedCacheFromStreams(accountKey)
-
-            // 2. Update stats
-            updateStats(accountKey)
-
-            // 3. Query candidate queue prioritised by activeScreenType and ordered by name ASC
-            val now = System.currentTimeMillis()
-            val primaryType = activeScreenType
-            val secondaryType = if (primaryType == "VOD") "SERIES" else "VOD"
-
-            var candidates = iptvDao.getPendingMetadataItems(accountKey, primaryType, now, 10)
-            if (candidates.isEmpty()) {
-                candidates = iptvDao.getPendingMetadataItems(accountKey, secondaryType, now, 10)
+    private suspend fun runPreparationLoop(token: Long) {
+        val estimator = PreparationProgress()
+        val policy = PreparationBatchPolicy()
+        var seededAt = 0L
+        var queuePriority = ""
+        val queue = java.util.ArrayDeque<CatalogMetadataEntity>()
+        val credentials = settingsRepository.settingsFlow.first().credentials ?: return
+        val accountKey = SettingsBackupCodec.accountKey(credentials)
+        while (currentCoroutineContext().isActive && token == generation) {
+            if (settingsRepository.settingsFlow.first().credentials != credentials) return
+            val speed = _state.value.speed
+            if (seededAt == 0L || System.nanoTime() - seededAt >= 60_000_000_000L) {
+                seedCacheFromStreams(accountKey)
+                seededAt = System.nanoTime()
+                updateStats(accountKey, estimator)
+                queue.clear()
             }
-
+            val primary = activeScreenType
+            val now = System.currentTimeMillis()
+            val limit = policy.size(speed)
+            if (queuePriority != primary) { queue.clear(); queuePriority = primary }
+            if (queue.isEmpty()) queue.addAll(iptvDao.getPendingMetadataItems(accountKey, primary, now, 50).ifEmpty {
+                iptvDao.getPendingMetadataItems(accountKey, if (primary == "VOD") "SERIES" else "VOD", now, 50)
+            })
+            val candidates = buildList {
+                repeat(minOf(limit, queue.size)) { add(queue.removeFirst()) }
+            }
             if (candidates.isEmpty()) {
-                _state.value = _state.value.copy(
-                    isRunning = false,
-                    isPaused = false,
-                    isCooldown = false,
-                    pauseReason = null,
-                    currentItemName = null,
-                    currentItemType = null
-                )
-                delay(speed.batchCooldownMs) // Cooldown when no candidates eligible
+                updateStats(accountKey, estimator)
+                _state.value = _state.value.copy(isRunning = false, isCooldown = false, inFlight = 0,
+                    currentItemName = null, currentItemType = null, estimatedRemainingMs = null,
+                    waitingForRetry = _state.value.processedItems < _state.value.totalItems)
+                delay(15_000L)
                 continue
             }
-
-            // Process batch (limited to 10 items or 30 seconds active processing)
-            val batchStartTime = System.nanoTime()
-            var batchProcessed = 0
-
-            for (candidate in candidates) {
-                if (!currentCoroutineContext().isActive) break
-                val elapsedSec = (System.nanoTime() - batchStartTime) / 1_000_000_000L
-                if (elapsedSec >= 30L) break // 30s batch active time limit
-
-                if (userPaused || !isAppInForeground || !isNetworkConnected || isPlaybackActive) {
-                    evaluateAndTrigger()
-                    return
+            val started = System.nanoTime()
+            val names = iptvDao.getStreamsByIds(candidates.map { it.streamId })
+            val first = candidates.first()
+            _state.value = _state.value.copy(isRunning = true, isCooldown = false, waitingForRetry = false,
+                error = null, inFlight = candidates.size, currentItemType = first.streamType,
+                currentItemName = names.firstOrNull { it.id == first.streamId &&
+                    (it.streamType == first.streamType || first.streamType == "VOD" && it.streamType == "MOVIE") }?.name)
+            val results = coroutineScope {
+                candidates.map { candidate -> async { processCandidate(credentials, candidate) } }.awaitAll()
+            }
+            currentCoroutineContext().ensureActive()
+            if (token != generation || settingsRepository.settingsFlow.first().credentials != credentials) return
+            iptvDao.applyPreparationBatch(results.map { it.first }, results.mapNotNull { it.second })
+            val interval = policy.complete(speed, results.any { it.first.status == CatalogMetadataEntity.STATUS_FAILED_TEMPORARY })
+            estimator.record(results.count { it.first.status != CatalogMetadataEntity.STATUS_FAILED_TEMPORARY },
+                (System.nanoTime() - started) / 1_000_000L, interval)
+            val oldRows = candidates.associateBy { it.streamType to it.streamId }
+            val resultRows = results.map { it.first }
+            fun resolved(row: CatalogMetadataEntity) = row.status == CatalogMetadataEntity.STATUS_SUCCESS ||
+                row.status == CatalogMetadataEntity.STATUS_NO_DATA && row.nextEligibleAt > now
+            fun delta(type: String?, predicate: (CatalogMetadataEntity) -> Boolean) = resultRows
+                .filter { type == null || it.streamType == type }.sumOf { row ->
+                    (if (predicate(row)) 1 else 0) - (if (predicate(oldRows.getValue(row.streamType to row.streamId))) 1 else 0)
                 }
-
-                // Get item stream name for status UI
-                val streamEntity = iptvDao.getStreamsByIds(listOf(candidate.streamId)).firstOrNull()
-                _state.value = _state.value.copy(
-                    isCooldown = false,
-                    currentItemName = streamEntity?.name,
-                    currentItemType = candidate.streamType
-                )
-
-                processCandidate(credentials, accountKey, candidate)
-                batchProcessed++
-                updateStats(accountKey)
-
-                delay(speed.itemDelayMs)
-            }
-
-            _state.value = _state.value.copy(
-                isCooldown = true,
-                currentItemName = null,
-                currentItemType = null
-            )
-
-            if (batchProcessed > 0) {
-                delay(speed.batchCooldownMs)
-            }
+            val old = _state.value
+            val done = old.processedItems + delta(null, ::resolved)
+            val failed = old.failedItems + delta(null) { it.status == CatalogMetadataEntity.STATUS_FAILED_TEMPORARY }
+            _state.value = old.copy(processedItems = done, failedItems = failed,
+                vodProcessed = old.vodProcessed + delta("VOD", ::resolved), seriesProcessed = old.seriesProcessed + delta("SERIES", ::resolved),
+                vodWithGenre = old.vodWithGenre + delta("VOD") { it.status == CatalogMetadataEntity.STATUS_SUCCESS },
+                seriesWithGenre = old.seriesWithGenre + delta("SERIES") { it.status == CatalogMetadataEntity.STATUS_SUCCESS },
+                withGenreItems = old.withGenreItems + delta(null) { it.status == CatalogMetadataEntity.STATUS_SUCCESS },
+                noDataItems = old.noDataItems + delta(null) { it.status == CatalogMetadataEntity.STATUS_NO_DATA && resolved(it) },
+                estimatedRemainingMs = estimator.remainingMs(old.totalItems, done, failed))
+            _state.value = _state.value.copy(inFlight = 0, isCooldown = true,
+                isThrottled = interval > speed.batchCooldownMs, currentItemName = null, currentItemType = null)
+            delay(interval)
         }
     }
 
-    private suspend fun seedCacheFromStreams(accountKey: String) {
+    private suspend fun seedCacheFromStreams(accountKey: String): Unit = withContext(Dispatchers.Default) {
         try {
-            val existingCache = iptvDao.getAllMetadataCacheForAccount(accountKey, "VOD") +
-                    iptvDao.getAllMetadataCacheForAccount(accountKey, "SERIES")
+            val existingCache = iptvDao.getMetadataKeys(accountKey)
             val cachedKeys = existingCache.map { "${it.streamType}_${it.streamId}" }.toSet()
 
-            val allStreams = iptvDao.getVodAndSeriesStreams()
+            val allStreams = iptvDao.getMetadataSeedStreams()
             val newEntries = mutableListOf<CatalogMetadataEntity>()
 
             for (stream in allStreams) {
                 val type = if (stream.streamType.equals("SERIES", ignoreCase = true)) "SERIES" else "VOD"
                 val key = "${type}_${stream.id}"
                 if (key !in cachedKeys) {
-                    val hasGenre = !stream.genre.isNullOrBlank()
+                    val hasGenre = GenreUtils.extractNormalizedGenres(stream.genre).isNotEmpty()
                     newEntries.add(
                         CatalogMetadataEntity(
                             accountKey = accountKey,
                             streamType = type,
                             streamId = stream.id,
                             status = if (hasGenre) CatalogMetadataEntity.STATUS_SUCCESS else CatalogMetadataEntity.STATUS_PENDING,
-                            genre = stream.genre
+                            genre = stream.genre?.takeIf { hasGenre }
                         )
                     )
                 }
             }
 
+            currentCoroutineContext().ensureActive()
+            if (settingsRepository.settingsFlow.first().credentials?.let(SettingsBackupCodec::accountKey) != accountKey) return@withContext
             if (newEntries.isNotEmpty()) {
                 iptvDao.insertOrUpdateMetadataCacheList(newEntries)
             }
-        } catch (e: Exception) {
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) {
             Timber.e(e, "Error seeding metadata cache")
+            throw e
         }
     }
 
-    private suspend fun processCandidate(credentials: XtreamCredentials, accountKey: String, candidate: CatalogMetadataEntity) {
-        val now = System.currentTimeMillis()
-
-        // Verify account hasn't changed before writing
-        val currentAccountKey = settingsRepository.settingsFlow.first().credentials?.let { SettingsBackupCodec.accountKey(it) } ?: ""
-        if (currentAccountKey != accountKey) return
-
+    private suspend fun processCandidate(credentials: XtreamCredentials, candidate: CatalogMetadataEntity):
+        Pair<CatalogMetadataEntity, CatalogMetadataUpdate?> {
         try {
-            if (candidate.streamType == "VOD") {
-                val vodInfo = catalogRepository.getVodInfo(credentials, vodId = candidate.streamId)
-                val genre = vodInfo.info?.genre
-                if (!genre.isNullOrBlank()) {
-                    iptvDao.insertOrUpdateMetadataCache(
-                        candidate.copy(
-                            status = CatalogMetadataEntity.STATUS_SUCCESS,
-                            genre = genre,
-                            lastSuccess = now,
-                            lastAttempt = now
-                        )
-                    )
-                } else {
-                    // Cache negative response for 7 days
-                    iptvDao.insertOrUpdateMetadataCache(
-                        candidate.copy(
-                            status = CatalogMetadataEntity.STATUS_NO_DATA,
-                            lastAttempt = now,
-                            nextEligibleAt = now + (7 * 86400_000L)
-                        )
-                    )
-                }
-            } else { // SERIES
-                val seriesInfo = catalogRepository.getSeriesMetadata(credentials, seriesId = candidate.streamId)
-                val genre = seriesInfo?.genre
-                if (!genre.isNullOrBlank()) {
-                    iptvDao.insertOrUpdateMetadataCache(
-                        candidate.copy(
-                            status = CatalogMetadataEntity.STATUS_SUCCESS,
-                            genre = genre,
-                            lastSuccess = now,
-                            lastAttempt = now
-                        )
-                    )
-                } else {
-                    iptvDao.insertOrUpdateMetadataCache(
-                        candidate.copy(
-                            status = CatalogMetadataEntity.STATUS_NO_DATA,
-                            lastAttempt = now,
-                            nextEligibleAt = now + (7 * 86400_000L)
-                        )
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
+            val detail = withTimeoutOrNull(45_000L) {
+                catalogRepository.fetchPreparationMetadata(credentials, candidate.streamId, candidate.streamType == "SERIES")
+            } ?: throw java.io.IOException("Tempo limite ao consultar metadados")
+            currentCoroutineContext().ensureActive()
+            val now = System.currentTimeMillis()
+            val genre = detail.genre?.take(4096)?.takeIf { GenreUtils.extractNormalizedGenres(it).isNotEmpty() }
+            val row = candidate.copy(status = if (genre == null) CatalogMetadataEntity.STATUS_NO_DATA else CatalogMetadataEntity.STATUS_SUCCESS,
+                genre = genre, lastAttempt = now, lastSuccess = if (genre != null) now else candidate.lastSuccess,
+                nextEligibleAt = if (genre == null) now + 7L * 86400_000L else 0,
+                attempts = 0, errorMessage = null)
+            return row to detail.copy(genre = genre)
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) {
+            currentCoroutineContext().ensureActive()
+            val now = System.currentTimeMillis()
             val attempts = candidate.attempts + 1
-            val backoffMs = calculateBackoffMs(attempts)
-            iptvDao.insertOrUpdateMetadataCache(
-                candidate.copy(
-                    status = CatalogMetadataEntity.STATUS_FAILED_TEMPORARY,
-                    lastAttempt = now,
-                    nextEligibleAt = now + backoffMs,
-                    attempts = attempts,
-                    errorMessage = e.message
-                )
-            )
+            return candidate.copy(status = CatalogMetadataEntity.STATUS_FAILED_TEMPORARY,
+                lastAttempt = now, nextEligibleAt = now + calculateBackoffMs(attempts), attempts = attempts,
+                errorMessage = "Não foi possível consultar os metadados") to null
         }
     }
 
@@ -395,35 +380,25 @@ class CatalogPreparationCoordinator @Inject constructor(
         return base + jitter
     }
 
-    private suspend fun updateStats(accountKey: String) {
-        val vodTotal = iptvDao.getTotalMetadataCount(accountKey, "VOD")
-        val seriesTotal = iptvDao.getTotalMetadataCount(accountKey, "SERIES")
-        val total = vodTotal + seriesTotal
-
-        val vodSuccess = iptvDao.getMetadataCountByStatus(accountKey, "VOD", CatalogMetadataEntity.STATUS_SUCCESS)
-        val seriesSuccess = iptvDao.getMetadataCountByStatus(accountKey, "SERIES", CatalogMetadataEntity.STATUS_SUCCESS)
-        val success = vodSuccess + seriesSuccess
-
-        val vodNoData = iptvDao.getMetadataCountByStatus(accountKey, "VOD", CatalogMetadataEntity.STATUS_NO_DATA)
-        val seriesNoData = iptvDao.getMetadataCountByStatus(accountKey, "SERIES", CatalogMetadataEntity.STATUS_NO_DATA)
-        val noData = vodNoData + seriesNoData
-
-        val vodFailed = iptvDao.getMetadataCountByStatus(accountKey, "VOD", CatalogMetadataEntity.STATUS_FAILED_TEMPORARY)
-        val seriesFailed = iptvDao.getMetadataCountByStatus(accountKey, "SERIES", CatalogMetadataEntity.STATUS_FAILED_TEMPORARY)
-        val failed = vodFailed + seriesFailed
-
-        _state.value = _state.value.copy(
-            vodTotal = vodTotal,
-            vodProcessed = vodSuccess + vodNoData,
-            vodWithGenre = vodSuccess,
-            seriesTotal = seriesTotal,
-            seriesProcessed = seriesSuccess + seriesNoData,
-            seriesWithGenre = seriesSuccess,
-            totalItems = total,
-            processedItems = success + noData,
-            withGenreItems = success,
-            noDataItems = noData,
-            failedItems = failed
-        )
+    private suspend fun updateStats(accountKey: String, estimator: PreparationProgress) {
+        val rows = iptvDao.getMetadataProgress(accountKey, System.currentTimeMillis())
+        if (settingsRepository.settingsFlow.first().credentials?.let(SettingsBackupCodec::accountKey) != accountKey) return
+        fun count(type: String, status: String? = null) = rows.filter {
+            it.streamType == type && (status == null || it.status == status)
+        }.sumOf { it.itemCount }
+        val vodTotal = count("VOD")
+        val seriesTotal = count("SERIES")
+        val vodSuccess = count("VOD", CatalogMetadataEntity.STATUS_SUCCESS)
+        val seriesSuccess = count("SERIES", CatalogMetadataEntity.STATUS_SUCCESS)
+        val vodNoData = count("VOD", CatalogMetadataEntity.STATUS_NO_DATA)
+        val seriesNoData = count("SERIES", CatalogMetadataEntity.STATUS_NO_DATA)
+        val failed = count("VOD", CatalogMetadataEntity.STATUS_FAILED_TEMPORARY) + count("SERIES", CatalogMetadataEntity.STATUS_FAILED_TEMPORARY)
+        val done = vodSuccess + seriesSuccess + vodNoData + seriesNoData
+        _state.update { it.copy(vodTotal = vodTotal, seriesTotal = seriesTotal,
+            vodProcessed = vodSuccess + vodNoData, seriesProcessed = seriesSuccess + seriesNoData,
+            vodWithGenre = vodSuccess, seriesWithGenre = seriesSuccess, totalItems = vodTotal + seriesTotal,
+            processedItems = done, withGenreItems = vodSuccess + seriesSuccess,
+            noDataItems = vodNoData + seriesNoData, failedItems = failed,
+            estimatedRemainingMs = estimator.remainingMs(vodTotal + seriesTotal, done, failed)) }
     }
 }

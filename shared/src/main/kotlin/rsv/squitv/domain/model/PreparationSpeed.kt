@@ -4,14 +4,12 @@ import java.util.Locale
 
 /**
  * Speed configuration for background catalog metadata preparation.
- * SLOW: min 5s per item, 30s batch cooldown.
- * NORMAL: min 2s per item, 20s batch cooldown.
- * FAST: min 1s per item, 10s batch cooldown.
+ * Bounded waves, with one interval between waves (no additional per-item sleep).
  */
-enum class PreparationSpeed(val itemDelayMs: Long, val batchCooldownMs: Long) {
-    SLOW(5000L, 30_000L),
-    NORMAL(2000L, 20_000L),
-    FAST(1000L, 10_000L);
+enum class PreparationSpeed(val itemDelayMs: Long, val batchCooldownMs: Long, val concurrentItems: Int) {
+    SLOW(5000L, 5000L, 1),
+    NORMAL(2000L, 2000L, 2),
+    FAST(1000L, 1000L, 5);
 
     companion object {
         fun fromString(value: String?): PreparationSpeed = when (value?.trim()?.uppercase(Locale.ROOT)) {

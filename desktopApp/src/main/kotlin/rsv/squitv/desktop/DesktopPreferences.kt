@@ -27,7 +27,8 @@ internal data class DesktopPreferences(val schema: Int = 1, val autoPlayEpisodes
     val catalogModesByScope: Map<String, String> = emptyMap(),
     val favoriteCatalogItemsByScope: Map<String, Set<Int>> = emptyMap(),
     val displayNamesByAccount: Map<String, String> = emptyMap(),
-    val browseMemory: rsv.squitv.shared.catalog.CatalogBrowseMemory = rsv.squitv.shared.catalog.CatalogBrowseMemory())
+    val browseMemory: rsv.squitv.shared.catalog.CatalogBrowseMemory = rsv.squitv.shared.catalog.CatalogBrowseMemory(),
+    val preferredAudioLanguage: String? = null, val preferredSubtitleLanguage: String? = null)
 
 /** Variant-local preferences only. Credentials remain exclusively in the existing DPAPI store. */
 internal class DesktopPreferencesStore(private val directory: Path, private val scope: CoroutineScope) {
@@ -118,6 +119,9 @@ internal class DesktopPreferencesStore(private val directory: Path, private val 
 }
 
 internal fun validateDesktopPreferences(value: DesktopPreferences) {
+    listOf(value.preferredAudioLanguage, value.preferredSubtitleLanguage).forEach {
+        require(it == null || rsv.squitv.shared.player.TrackLanguage.normalize(it) == it)
+    }
     value.browseMemory.validate()
     require(value.schema == 1 && value.interfaceScale in .8f..1.25f && value.volume in 0..100)
     require(value.hiddenSections.size <= 6 && value.hiddenSections.all { it in setOf("LIVE_TV", "MOVIES", "SERIES", "MULTI_VIEW", "DOWNLOADS", "FAVORITES") })
