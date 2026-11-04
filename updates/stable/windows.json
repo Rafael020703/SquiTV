@@ -3,7 +3,7 @@
   "productId": "squi-tv",
   "channel": "stable",
   "platform": "windows",
-  "versionName": "1.24.0",
-  "releaseTag": "v1.24",
-  "manifestSha256": "1016046fc45908330d131a03cb99499cb7a66e8037300768c9c24e61809b7fb0"
+  "versionName": "1.25.0",
+  "releaseTag": "v1.25",
+  "manifestSha256": "caa32b51bbaab5bad29493159501338d5bfc6070c35cc4b90127191fd5be2424"
 }

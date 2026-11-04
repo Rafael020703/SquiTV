@@ -2,7 +2,7 @@
 
 Aplicativo para Android e Windows para assistir a canais ao vivo, filmes e séries de servidores compatíveis com Xtream Codes. Tema escuro, com navegação por controle remoto/toque no Android e mouse/teclado no Windows. A versão Windows está em desenvolvimento e ainda não tem todas as funções Android.
 
-[Android](https://github.com/Rafael020703/SquiTV/releases/latest) · [Windows 1.24.0](https://github.com/Rafael020703/SquiTV/releases/tag/v1.24) · [Histórico de versões](https://github.com/Rafael020703/SquiTV/releases)
+[Android](https://github.com/Rafael020703/SquiTV/releases/latest) · [Windows 1.25.0](https://github.com/Rafael020703/SquiTV/releases/tag/v1.25) · [Histórico de versões](https://github.com/Rafael020703/SquiTV/releases)
 
 Este README descreve o código do projeto. Recursos em desenvolvimento podem ainda não estar disponíveis no APK da última release.
 
@@ -38,7 +38,7 @@ Para atualizar, use um APK do mesmo pacote e com assinatura compatível. A vers�
 
 ## Instalação no Windows
 
-1. Abra a [release v1.24](https://github.com/Rafael020703/SquiTV/releases/tag/v1.24) e baixe `SquiTV-1.24.0.exe` para Windows x64.
+1. Abra a [release v1.25](https://github.com/Rafael020703/SquiTV/releases/tag/v1.25) e baixe `SquiTV-1.25.0.exe` para Windows x64.
 2. Execute o instalador e siga as etapas. A partir do Windows 1.22.1, o EXE verifica as bibliotecas de reprodução e baixa/prepara automaticamente o VLC oficial somente quando necessário. Java está incluído; não é preciso instalar dependências manualmente. A primeira preparação sem bibliotecas válidas requer internet.
 3. Instalações novas usam `C:\Program Files\Squi TV`, com permissão de administrador e opção de outra pasta. Atualizações preservam a pasta e o contexto da instalação existente, inclusive as antigas por usuário; conta e configurações são mantidas. Debug possui identidade/dados separados.
 4. A desinstalação normal remove arquivos, atalhos, dados e componentes em cache do aplicativo. Essa limpeza não roda durante upgrades. Instaladores baixados manualmente e registros de manutenção do próprio Windows ficam sob controle do usuário/sistema.
@@ -57,7 +57,7 @@ O endereço tem autorização temporária e não deve ser compartilhado. Esse lo
 
 Filmes e séries permitem escolher categorias do provedor ou gêneros informados nos metadados. Categorias do servidor utilizadas como fallback não são gravadas como gêneros reais.
 
-O painel de preparação mostra o processamento de metadados e oferece pausa, retomada, novas tentativas e velocidades Lento/Normal/Rápido. O tempo total e a disponibilidade de gêneros dependem do provedor. A preparação é distinta da sincronização inicial das listas.
+O painel de preparação mostra percentual e estimativa de tempo restante, com pausa, retomada, novas tentativas e velocidades Lento/Normal/Rápido. São até 1/2/5 consultas simultâneas, respectivamente; falhas reduzem automaticamente o ritmo. A estimativa usa o processamento recente e fica indisponível durante pausas ou falhas pendentes. O tempo total e a disponibilidade de gêneros dependem do provedor. A preparação é distinta da sincronização inicial das listas.
 
 ## Backup e transferência local
 
@@ -169,8 +169,10 @@ A versão v1.22 reúne Android 1.22/code 23 e Windows 1.22.0. Notas por platafor
 
 A versão conjunta [v1.24](https://github.com/Rafael020703/SquiTV/releases/tag/v1.24) reúne Android 1.24/code 25 e Windows 1.24.0. Inclui ajustes de reprodução/histórico, volume por setas, memória dos catálogos e capas. Windows recebe downloads de episódios/temporadas, navegação por teclado/mouse e ajustes de janela. Notas separadas: [Android](docs/releases/v1.24-android.md) e [Windows](docs/releases/v1.24-windows.md). Mantém o instalador online e preserva os assets das versões anteriores.
 
-O Android recebeu a atualização exclusiva [v1.24.1](https://github.com/Rafael020703/SquiTV/releases/tag/v1.24.1), código 26, com compatibilidade da leitura de assinatura e erros persistentes/navegáveis na tela de atualização. Windows permanece 1.24.0 na release conjunta v1.24. [Notas Android](docs/releases/v1.24.1-android.md). No aparelho bloqueado pelo atualizador anterior, abra o APK oficial v1.24.1 manualmente sobre a instalação existente.
+O Android recebeu a atualização exclusiva [v1.24.1](https://github.com/Rafael020703/SquiTV/releases/tag/v1.24.1), código 26, com compatibilidade da leitura de assinatura e erros persistentes/navegáveis na tela de atualização. Naquela publicação, Windows permaneceu 1.24.0 na release conjunta v1.24. [Notas Android](docs/releases/v1.24.1-android.md). No aparelho bloqueado pelo atualizador anterior, abra o APK oficial v1.24.1 manualmente sobre a instalação existente.
 
-A release Android atual é a [v1.24.2](https://github.com/Rafael020703/SquiTV/releases/tag/v1.24.2), código 27, com o mesmo código funcional da v1.24.1. Ela permite conferir a atualização pelo app a partir da v1.24.1 instalada manualmente: Configurações → Atualizações → Verificar atualizações. [Notas Android](docs/releases/v1.24.2-android.md). Windows permanece 1.24.0, com sua referência estável preservada.
+A publicação exclusiva Android [v1.24.2](https://github.com/Rafael020703/SquiTV/releases/tag/v1.24.2), código 27, manteve o mesmo código funcional da v1.24.1. Ela permite conferir a atualização pelo app a partir da v1.24.1 instalada manualmente: Configurações → Atualizações → Verificar atualizações. [Notas Android](docs/releases/v1.24.2-android.md). Naquela publicação, Windows permaneceu 1.24.0, com sua referência estável preservada.
+
+A release conjunta atual é a [v1.25](https://github.com/Rafael020703/SquiTV/releases/tag/v1.25), com Android **1.25/code 28** e Windows **1.25.0**. Inclui preparação em lotes com progresso/estimativa e correção do cancelamento do próximo episódio. Windows também recebe categorias recentes, ordenação, contas salvas e melhorias de detalhes, backup e atualização. Notas: [Android](docs/releases/v1.25-android.md) e [Windows](docs/releases/v1.25-windows.md). Atualizações usam o manifesto conjunto e notas próprias de cada plataforma.
 
 `tools/prepare_release.py` prepara APK/EXE, checksums, manifesto com changelogs separados, plano de release e candidatos de referência por plataforma. Não publica. Correções exclusivas podem manter o mesmo número nos dois apps; as tags únicas e a proteção de Latest estão descritas no [contrato](docs/contrato-atualizacoes.md). Os arquivos de [referência](updates/README.md) só são avançados depois de uma publicação autorizada e conferida.

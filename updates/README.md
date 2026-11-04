@@ -8,4 +8,4 @@ Cada referência contém plataforma, versão, tag e SHA-256 do manifesto final. 
 
 Consultar [o contrato](../docs/contrato-atualizacoes.md) e [o checklist](../docs/checklist-release.md).
 
-Referências atuais: release conjunta [v1.23](https://github.com/Rafael020703/SquiTV/releases/tag/v1.23), Android 1.23/code 24 e Windows 1.23.0. Ambas foram avançadas após a conferência dos cinco assets publicados e do SHA-256 do manifesto; cada aplicativo seleciona seu artefato e suas notas.
+Referências atuais: release conjunta [v1.25](https://github.com/Rafael020703/SquiTV/releases/tag/v1.25), Android 1.25/code 28 e Windows 1.25.0. Ambas foram avançadas após a conferência dos cinco assets publicados e do SHA-256 do manifesto; cada aplicativo seleciona seu artefato e suas notas.
