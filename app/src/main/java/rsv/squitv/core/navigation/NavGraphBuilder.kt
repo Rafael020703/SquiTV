@@ -54,6 +54,7 @@ fun NavGraphBuilder.appNavGraph(
             onOpenLocalLogin = { appController.navigate(Route.LocalLogin) },
             onOpenGallery = if (BuildConfig.DEBUG) { { appController.navigate(Route.Gallery) } } else null,
             onOpenUpdates = { appController.navigate(Route.Updates) },
+            onOpenAppDns = { appController.navigate(Route.AppDns) },
             onLoginSuccess = { /* Managed by LaunchedEffect in MainNavigation */ }
         )
     }
@@ -65,6 +66,8 @@ fun NavGraphBuilder.appNavGraph(
             onBack = { appController.goBack() }
         )
     }
+
+    composable<Route.AppDns> { rsv.squitv.ui.settings.AppDnsScreen() }
 
     composable<Route.Gallery> {
         AppGalleryScreen(
@@ -105,7 +108,8 @@ fun NavGraphBuilder.appNavGraph(
             onNavigateToAccount = { appController.navigate(Route.Account) },
             onNavigateToSettings = { appController.navigate(Route.Settings) },
             onNavigateToDownloads = { appController.navigate(Route.Downloads) },
-            onNavigateToUpdates = { appController.navigate(Route.Updates) }
+            onNavigateToUpdates = { appController.navigate(Route.Updates) },
+            onNavigateToAppDns = { appController.navigate(Route.AppDns) }
         )
     }
 

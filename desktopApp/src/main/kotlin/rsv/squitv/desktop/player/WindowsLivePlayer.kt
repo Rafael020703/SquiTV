@@ -236,7 +236,9 @@ class WindowsLivePlayer(private val onDemand: Boolean = false) : AutoCloseable {
             mapOf(Library.OPTION_STRING_ENCODING to "UTF-8", Library.OPTION_OPEN_FLAGS to 8))
         api = vlc
         val options = arrayOf("--quiet", "--ignore-config", "--no-video-title-show", "--no-osd", "--no-stats",
-            "--http-user-agent=IPTVSmarters")
+            "--http-user-agent=IPTVSmarters", "--http-proxy=${
+                if (rsv.squitv.shared.network.AppDns.state.value.mode == rsv.squitv.shared.network.AppDnsMode.SYSTEM)
+                    "" else PlayerDnsBridge.proxyUrl}")
         val arguments = StringArray(options, "UTF-8")
         val created = vlc.libvlc_new(options.size, arguments) ?: error("Native instance unavailable")
         val createdPlayer = vlc.libvlc_media_player_new(created)

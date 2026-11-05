@@ -54,6 +54,9 @@ sealed interface Route {
     data object DnsTester : Route
 
     @Serializable
+    data object AppDns : Route
+
+    @Serializable
     data class Search(val query: String? = null) : Route
 
     @Serializable

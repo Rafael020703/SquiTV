@@ -4,9 +4,7 @@ import android.content.ActivityNotFoundException
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.semantics.Role
+import rsv.squitv.core.ui.components.settings.BackupChoiceRow
 import rsv.squitv.data.model.BackupOption
 import rsv.squitv.data.model.SettingsBackupCodec
 import androidx.compose.foundation.rememberScrollState
@@ -85,11 +83,11 @@ fun SettingsBackupDialog(onDismiss: () -> Unit, viewModel: SettingsBackupViewMod
                 }
 
                 if (state.preview != null) {
-                    Text(stringResource(R.string.settings_backup_preview, state.matchedAccounts, state.skippedAccounts))
-                    Text(stringResource(R.string.settings_backup_confirm_description))
-                    if (state.skippedAccounts > 0) {
-                        Text(stringResource(R.string.settings_backup_account_warning), color = MaterialTheme.colorScheme.error)
-                    }
+                    rsv.squitv.core.ui.components.settings.BackupRestorePreview(
+                        summary = stringResource(R.string.settings_backup_preview, state.matchedAccounts, state.skippedAccounts),
+                        description = stringResource(R.string.settings_backup_confirm_description),
+                        warning = if (state.skippedAccounts > 0) stringResource(R.string.settings_backup_account_warning) else null
+                    )
                 } else {
                     HorizontalDivider()
                     Text(stringResource(R.string.settings_backup_file_section), style = MaterialTheme.typography.titleSmall)
@@ -142,16 +140,6 @@ fun SettingsBackupDialog(onDismiss: () -> Unit, viewModel: SettingsBackupViewMod
             }
         }
     )
-}
-
-@Composable
-internal fun BackupChoiceRow(label: String, checked: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-        .toggleable(value = checked, enabled = enabled, role = Role.Checkbox, onValueChange = { onClick() }),
-        verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = checked, enabled = enabled, onCheckedChange = null)
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-    }
 }
 
 internal fun backupOptionLabel(option: BackupOption): Int = when (option) {

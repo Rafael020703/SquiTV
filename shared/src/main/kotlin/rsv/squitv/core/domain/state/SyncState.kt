@@ -1,4 +1,4 @@
-﻿package rsv.squitv.core.domain.state
+package rsv.squitv.core.domain.state
 
 sealed class AppSyncStatus {
     data object Skipped : AppSyncStatus()

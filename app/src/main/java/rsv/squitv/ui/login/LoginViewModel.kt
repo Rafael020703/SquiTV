@@ -171,6 +171,7 @@ class LoginViewModel @Inject constructor(
     }
 
     fun login() {
+        if (_isLoading.value) return
         val currentUser = _username.value.trim()
         val currentPass = _password.value.trim()
         val customUrl = _url.value.trim()
@@ -218,6 +219,8 @@ class LoginViewModel @Inject constructor(
                                 break 
                             }
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         lastError = "Erro no servidor: ${e.message}"
                     }
@@ -228,6 +231,8 @@ class LoginViewModel @Inject constructor(
                     _state.value = LoginState.ERROR
                 }
 
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _errorMessage.value = "Erro inesperado: ${e.message}"
                 _state.value = LoginState.ERROR

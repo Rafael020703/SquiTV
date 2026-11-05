@@ -34,9 +34,9 @@ import kotlin.math.max
 
 internal class ChannelLogos(private val maximumSide: Int = 128, private val maximumBytes: Int = 512 * 1024,
     private val maximumCacheBytes: Long = 16L * 1024 * 1024, private val baseUrl: String? = null) : AutoCloseable {
-    private val client = OkHttpClient.Builder().connectTimeout(4, TimeUnit.SECONDS)
+    private val client = OkHttpClient.Builder().dns(rsv.squitv.shared.network.AppDns).connectTimeout(4, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS).callTimeout(8, TimeUnit.SECONDS)
-        .followRedirects(false).followSslRedirects(false).build()
+        .followRedirects(false).followSslRedirects(false).build().also(rsv.squitv.shared.network.AppDns::register)
     private val slots = Semaphore(4)
     private data class CachedImage(val bitmap: ImageBitmap?, val created: Long = System.nanoTime()) {
         val bytes: Long = bitmap?.let { it.width.toLong() * it.height * 4 } ?: 0L

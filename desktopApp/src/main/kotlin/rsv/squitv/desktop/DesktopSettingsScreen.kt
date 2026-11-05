@@ -37,6 +37,29 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.launch
 
+private data class DesktopBackupPreview(val fileName: String, val preferences: DesktopPreferences,
+    val available: Set<DesktopBackupGroup> = DesktopBackupGroup.entries.toSet(),
+    val selected: Set<DesktopBackupGroup> = available, val customizing: Boolean = false) {
+    val summary: String get() = with(preferences) {
+        val channels = favoriteLiveChannelsByAccount.values.sumOf { it.size }
+        fun favorites(type: String) = favoriteCatalogItemsByScope.filterKeys { it.endsWith("/$type") }.values.sumOf { it.size }
+        val orders = (liveCategoryOrderByAccount.values + catalogCategoryOrderByScope.values).count { it.isNotEmpty() }
+        val hidden = hiddenCategoryIds.size + hiddenLiveCategoriesByAccount.values.sumOf { it.size } +
+            hiddenCatalogCategoriesByScope.values.sumOf { it.size }
+        buildList {
+            if (DesktopBackupGroup.FAVORITES in available)
+                add("Favoritos: $channels canais · ${favorites("MOVIES")} filmes · ${favorites("SERIES")} séries")
+            if (DesktopBackupGroup.CATEGORIES in available) {
+                add("Listas com ordem personalizada: $orders")
+                add("Categorias ocultas (registros): $hidden")
+            }
+            if (DesktopBackupGroup.DISPLAY_NAMES in available) add("Nomes de exibição: ${displayNamesByAccount.size}")
+            if (DesktopBackupGroup.PLAYBACK in available) add("Configurações de reprodução")
+            if (DesktopBackupGroup.INTERFACE in available) add("Configurações de interface e navegação")
+        }.joinToString("\n")
+    }
+}
+
 private enum class DesktopSetting(val label: String, val icon: ImageVector) {
     ACCOUNT("Conta", Icons.Rounded.ManageAccounts),
     SIGN_OUT("Sair da conta", Icons.AutoMirrored.Rounded.Logout),
@@ -65,6 +88,46 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
     var selected by rememberSaveable { mutableStateOf<DesktopSetting?>(null) }
     var backupBusy by remember { mutableStateOf(false) }
     val backupWindow = LocalDesktopWindow.current
+    var backupPreview by remember(state.credentials) { mutableStateOf<DesktopBackupPreview?>(null) }
+    var backupNotice by remember { mutableStateOf<String?>(null) }
+    var backupError by remember { mutableStateOf(false) }
+    var backupExportSelected by remember { mutableStateOf(DesktopBackupGroup.entries.toSet()) }
+    var backupExportCustomizing by remember { mutableStateOf(false) }
+    val backupCancelFocus = remember { FocusRequester() }
+    fun cancelBackupPreview() { backupPreview = null; backupNotice = null; backupError = false }
+    fun toggleBackupGroup(group: DesktopBackupGroup?) {
+        val preview = backupPreview ?: return
+        if (backupBusy) return
+        val next = if (group == null) {
+            if (preview.selected.containsAll(preview.available)) emptySet() else preview.available
+        } else if (group !in preview.available) return else if (group in preview.selected) preview.selected - group else preview.selected + group
+        backupPreview = preview.copy(selected = next)
+    }
+    fun toggleBackupExport(group: DesktopBackupGroup?) {
+        if (backupBusy) return
+        backupExportSelected = if (group == null) {
+            if (backupExportSelected.size == DesktopBackupGroup.entries.size) emptySet() else DesktopBackupGroup.entries.toSet()
+        } else if (group in backupExportSelected) backupExportSelected - group else backupExportSelected + group
+    }
+    fun restoreBackupPreview() {
+        val preview = backupPreview ?: return
+        if (backupBusy || !loaded || preview.selected.isEmpty()) return
+        backupBusy = true
+        backupNotice = null
+        backupError = false
+        scope.launch {
+            try {
+                val applied = store.updateAndAwait { current -> mergeDesktopBackup(current, preview.preferences, preview.selected, preview.available) }
+                backupError = !applied
+                backupNotice = if (applied) "Grupos selecionados restaurados." else "Não foi possível restaurar. Verifique o armazenamento e os limites de tamanho e quantidade de itens."
+                if (applied) backupPreview = null
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                backupError = true
+                backupNotice = "Não foi possível restaurar as preferências."
+            } finally { backupBusy = false }
+        }
+    }
     var removingAccount by remember { mutableStateOf<String?>(null) }
     var customizationKind by rememberSaveable { mutableStateOf<CatalogKind?>(null) }
     val customizationCategories = customizationKind?.let { catalogState.browse[it]?.categories }.orEmpty()
@@ -137,7 +200,14 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                                     controller.syncCatalog()
                                     selected = category
                                 }
-                                else -> selected = category
+                                else -> {
+                                    if (category == DesktopSetting.BACKUP) {
+                                        cancelBackupPreview()
+                                        backupExportSelected = DesktopBackupGroup.entries.toSet()
+                                        backupExportCustomizing = false
+                                    }
+                                    selected = category
+                                }
                             }
                         }
                     }
@@ -154,9 +224,23 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
             dismissButton = { TextButton({ removingAccount = null }) { Text("Manter") } })
     }
     selected?.let { category ->
-        AlertDialog(onDismissRequest = { if (!backupBusy) { selected = null; confirmCategoryReset = false } },
+        val previewingBackup = category == DesktopSetting.BACKUP && backupPreview != null
+        LaunchedEffect(previewingBackup) {
+            if (previewingBackup) { withFrameNanos { }; backupCancelFocus.requestFocus() }
+        }
+        AlertDialog(onDismissRequest = { if (!backupBusy) {
+            if (previewingBackup) cancelBackupPreview() else { selected = null; confirmCategoryReset = false }
+        } },
             modifier = Modifier.directionalNavigation(),
-            title = { Text(category.label) }, confirmButton = { TextButton({ selected = null; confirmCategoryReset = false }, enabled = !backupBusy) { Text("Concluir") } },
+            title = { Text(if (previewingBackup) "Conferir restauração" else category.label) },
+            confirmButton = {
+                if (previewingBackup) TextButton(::restoreBackupPreview, enabled = loaded && !backupBusy && backupPreview?.selected?.isNotEmpty() == true) { Text("Restaurar") }
+                else TextButton({ selected = null; confirmCategoryReset = false }, enabled = !backupBusy) { Text("Concluir") }
+            },
+            dismissButton = {
+                if (previewingBackup) TextButton(::cancelBackupPreview, enabled = !backupBusy,
+                    modifier = Modifier.focusRequester(backupCancelFocus)) { Text("Cancelar") }
+            },
             text = {
                 val contentModifier = Modifier.widthIn(min = 320.dp).heightIn(max = 420.dp)
                 Column(if (category == DesktopSetting.CATALOG_CATEGORIES) contentModifier
@@ -353,53 +437,101 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                             }
                         }
                         DesktopSetting.BACKUP -> {
-                            Text("Exporte ou restaure o arquivo de preferências e configurações do aplicativo:", style = MaterialTheme.typography.bodyMedium)
-                            var backupNotice by remember { mutableStateOf<String?>(null) }
-                            var backupError by remember { mutableStateOf(false) }
-                            Text("Escolha onde salvar ou de onde restaurar um arquivo JSON. Inclui todas as preferências, organização de categorias e favoritos de canais, filmes e séries por conta. Restaurar substitui as preferências atuais. Não inclui credenciais, catálogos, histórico ou backup Android.",
-                                style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant)
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Button(enabled = loaded && !backupBusy, onClick = {
-                                    backupBusy = true
-                                    backupNotice = null
-                                    backupError = false
-                                    scope.launch {
-                                        try {
-                                            val file = chooseDesktopBackupFile(requireNotNull(backupWindow), save = true) ?: return@launch
-                                            if (!file.fileName.toString().endsWith(".json", ignoreCase = true)) {
+                            val preview = backupPreview
+                            if (preview != null) {
+                                Text(preview.fileName, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.titleSmall)
+                                Surface(color = palette.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
+                                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                        Text("${preview.selected.size}/${preview.available.size} grupos selecionados",
+                                            style = MaterialTheme.typography.titleSmall)
+                                        TextButton(enabled = !backupBusy, onClick = {
+                                            backupPreview = preview.copy(customizing = !preview.customizing)
+                                        }) { Text(if (preview.customizing) "Ocultar opções" else "Personalizar") }
+                                    }
+                                }
+                                if (preview.customizing) {
+                                    rsv.squitv.core.ui.components.settings.BackupChoiceRow("Selecionar todos",
+                                        preview.selected.containsAll(preview.available), !backupBusy) { toggleBackupGroup(null) }
+                                    DesktopBackupGroup.entries.filter { it in preview.available }.forEach { group ->
+                                        rsv.squitv.core.ui.components.settings.BackupChoiceRow(group.label, group in preview.selected, !backupBusy) {
+                                            toggleBackupGroup(group)
+                                        }
+                                    }
+                                }
+                                rsv.squitv.core.ui.components.settings.BackupRestorePreview(
+                                    summary = "Conteúdo do arquivo:\n${preview.summary}",
+                                    description = "Somente os grupos selecionados serão aplicados. Favoritos são adicionados aos existentes; organização e nomes são atualizados nos escopos de conta presentes no arquivo. Os demais escopos e grupos são preservados. Formato exclusivo Windows.",
+                                    warning = if (DesktopBackupGroup.INTERFACE in preview.selected || DesktopBackupGroup.PLAYBACK in preview.selected)
+                                        "Os valores selecionados de reprodução e interface serão substituídos pelos do arquivo." else null
+                                )
+                            } else {
+                                Text("Exporte ou restaure o arquivo de preferências e configurações do aplicativo:", style = MaterialTheme.typography.bodyMedium)
+                                Text("Escolha os grupos para exportar ou restaure um arquivo JSON Windows. Backups novos exigem uma versão Windows com backup seletivo; os arquivos antigos continuam aceitos aqui. Não inclui credenciais, catálogos, histórico ou backup Android.",
+                                    style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant)
+                                Surface(color = palette.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
+                                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                        Text("Exportar ${backupExportSelected.size}/${DesktopBackupGroup.entries.size} grupos",
+                                            style = MaterialTheme.typography.titleSmall)
+                                        TextButton(enabled = !backupBusy, onClick = { backupExportCustomizing = !backupExportCustomizing }) {
+                                            Text(if (backupExportCustomizing) "Ocultar opções" else "Personalizar exportação")
+                                        }
+                                    }
+                                }
+                                if (backupExportCustomizing) {
+                                    rsv.squitv.core.ui.components.settings.BackupChoiceRow("Selecionar todos",
+                                        backupExportSelected.size == DesktopBackupGroup.entries.size, !backupBusy) { toggleBackupExport(null) }
+                                    DesktopBackupGroup.entries.forEach { group ->
+                                        rsv.squitv.core.ui.components.settings.BackupChoiceRow(group.label, group in backupExportSelected, !backupBusy) {
+                                            toggleBackupExport(group)
+                                        }
+                                    }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Button(enabled = loaded && !backupBusy && backupExportSelected.isNotEmpty(), onClick = {
+                                        if (backupExportSelected.isEmpty()) return@Button
+                                        val exportSelection = backupExportSelected.toSet()
+                                        backupBusy = true
+                                        backupNotice = null
+                                        backupError = false
+                                        scope.launch {
+                                            try {
+                                                val file = chooseDesktopBackupFile(requireNotNull(backupWindow), save = true) ?: return@launch
+                                                if (!file.fileName.toString().endsWith(".json", ignoreCase = true)) {
+                                                    backupError = true
+                                                    backupNotice = "Escolha um nome de arquivo terminado em .json."
+                                                    return@launch
+                                                }
+                                                val ok = controller.exportBackup(preferences, file, exportSelection)
+                                                backupError = !ok
+                                                backupNotice = if (ok) "${exportSelection.size} grupos exportados para ${file.fileName}." else "Não foi possível exportar as preferências."
+                                            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                                            catch (_: Exception) {
                                                 backupError = true
-                                                backupNotice = "Escolha um nome de arquivo terminado em .json."
-                                                return@launch
-                                            }
-                                            val ok = controller.exportBackup(preferences, file)
-                                            backupError = !ok
-                                            backupNotice = if (ok) "Preferências exportadas para ${file.fileName}." else "Não foi possível exportar as preferências."
-                                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                                        catch (_: Exception) {
-                                            backupError = true
-                                            backupNotice = "Não foi possível abrir o seletor ou exportar o arquivo."
-                                        } finally { backupBusy = false }
-                                    }
-                                }) { Text("Exportar") }
-                                OutlinedButton(enabled = loaded && !backupBusy, onClick = {
-                                    backupBusy = true
-                                    backupNotice = null
-                                    backupError = false
-                                    scope.launch {
-                                        try {
-                                            val file = chooseDesktopBackupFile(requireNotNull(backupWindow), save = false) ?: return@launch
-                                            val restored = controller.importBackup(file)
-                                            val applied = restored != null && store.updateAndAwait { restored }
-                                            backupError = !applied
-                                            backupNotice = if (applied) "Preferências restauradas."
-                                                else "Não foi possível restaurar. Confira se o arquivo selecionado é um backup Windows compatível."
-                                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                                        catch (_: Exception) {
-                                            backupError = true
-                                            backupNotice = "Não foi possível abrir o seletor ou restaurar o arquivo."
-                                        } finally { backupBusy = false }
-                                    }
-                                }) { Text("Restaurar") }
+                                                backupNotice = "Não foi possível abrir o seletor ou exportar o arquivo."
+                                            } finally { backupBusy = false }
+                                        }
+                                    }) { Text("Exportar") }
+                                    OutlinedButton(enabled = loaded && !backupBusy, onClick = {
+                                        backupBusy = true
+                                        backupNotice = null
+                                        backupError = false
+                                        scope.launch {
+                                            try {
+                                                val file = chooseDesktopBackupFile(requireNotNull(backupWindow), save = false) ?: return@launch
+                                                val restored = controller.importBackup(file)
+                                                if (restored == null) {
+                                                    backupError = true
+                                                    backupNotice = "Não foi possível ler o backup. Confira se o arquivo selecionado é um backup Windows compatível."
+                                                } else backupPreview = DesktopBackupPreview(file.fileName.toString(), restored.preferences, restored.available)
+                                            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                                            catch (_: Exception) {
+                                                backupError = true
+                                                backupNotice = "Não foi possível abrir o seletor ou restaurar o arquivo."
+                                            } finally { backupBusy = false }
+                                        }
+                                    }) { Text("Restaurar") }
+                                }
                             }
                             if (backupBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
                             backupNotice?.let {

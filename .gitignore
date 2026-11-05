@@ -87,6 +87,7 @@ screenshot.png
 !/docs/contrato-atualizacoes.md
 !/docs/desenvolvimento.md
 !/docs/windows.md
+!/docs/dns-do-aplicativo.md
 /docs/releases/verificacao-*.md
 
 # Keep Gradle Wrapper, Room schemas, source resources and release notes tracked.

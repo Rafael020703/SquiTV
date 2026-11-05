@@ -60,7 +60,8 @@ fun DashboardScreen(
     onNavigateToAccount: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
-    onNavigateToUpdates: () -> Unit = {}
+    onNavigateToUpdates: () -> Unit = {},
+    onNavigateToAppDns: () -> Unit = {}
 ) {
     val windowInfo = rememberWindowInfo()
     val accountInfo by viewModel.accountInfo.collectAsStateWithLifecycle()
@@ -99,6 +100,7 @@ fun DashboardScreen(
         onNavigateToAccount = onNavigateToAccount,
         onNavigateToSettings = onNavigateToSettings,
         onNavigateToDownloads = onNavigateToDownloads,
+        onNavigateToAppDns = onNavigateToAppDns,
         onRefresh = { viewModel.loadData(force = true) }
     )
 
@@ -145,7 +147,8 @@ data class DashboardActions(
     val onNavigateToAccount: () -> Unit,
     val onNavigateToSettings: () -> Unit,
     val onNavigateToDownloads: () -> Unit,
-    val onRefresh: () -> Unit
+    val onRefresh: () -> Unit,
+    val onNavigateToAppDns: () -> Unit = {}
 )
 
 @UnstableApi
@@ -265,6 +268,7 @@ fun DashboardContent(
                         onClick = actions.onNavigateToSettings,
                         modifier = Modifier.size(responsive.dp(48.dp))
                     )
+                    FilledTonalButton(onClick = actions.onNavigateToAppDns) { Text("DNS") }
                     
                     Spacer(Modifier.width(responsive.dp(tokens.spacing.medium)))
                     

@@ -51,6 +51,7 @@ private fun runApplication() {
             Path.of(System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), DesktopBuildInfo.DATA_FOLDER)
         }
         val history = remember { DesktopWatchHistory(directory, scope) }
+        remember(directory) { initializeDesktopAppDns(directory) }
         val downloads = remember { DesktopDownloads(directory, scope) }
         val controller = remember { DesktopController(XtreamClient(),
             WindowsCredentialStore(directory, useDebugDefaults = DesktopBuildInfo.DEBUG,
@@ -133,17 +134,19 @@ private fun runApplication() {
                     true
                 }
                 else if (showExitDialog) false
-                else if (updateState.prompt && current.account != null && current.page == DesktopPage.DASHBOARD && catalog.detail == null && !playing && back) {
+                else if (updateState.prompt && current.account != null && current.loginSync == null && current.page == DesktopPage.DASHBOARD && catalog.detail == null && !playing && back) {
                     if (event.type == KeyEventType.KeyUp) updates.dismissPrompt()
                     true
                 }
-                else if (updateState.prompt && current.account != null && current.page == DesktopPage.DASHBOARD && catalog.detail == null && !playing) false
+                else if (updateState.prompt && current.account != null && current.loginSync == null && current.page == DesktopPage.DASHBOARD && catalog.detail == null && !playing) false
                 else if ((playing || current.page == DesktopPage.MULTIVIEW) && livePlayerInput?.invoke(event) == true) true
                 else if (back) {
                     if (event.type == KeyEventType.KeyUp) when {
+                        current.loginSync != null -> if (current.loginSync.isRunning) controller.cancelConnection() else controller.disconnect()
                         current.playback != null -> controller.stopPlayback()
                         catalog.playback != null -> controller.catalog.stopPlayback()
                         catalog.detail != null -> controller.catalog.closeDetail()
+                        current.page == DesktopPage.APP_DNS -> controller.home()
                         current.page == DesktopPage.DOWNLOADS && current.account == null -> controller.home()
                         current.account != null && current.page == DesktopPage.UPDATES -> controller.openSettings()
                         current.account != null && current.page != DesktopPage.DASHBOARD -> controller.home()
@@ -190,7 +193,7 @@ private fun runApplication() {
                     val state by controller.state.collectAsState()
                     val contentState by controller.catalog.state.collectAsState()
                     val dashboardActive = state.page == DesktopPage.DASHBOARD && state.playback == null &&
-                        contentState.detail == null && contentState.playback == null
+                        state.loginSync == null && contentState.detail == null && contentState.playback == null
                     LaunchedEffect(state.account != null, dashboardActive, preferencesLoaded) {
                         if (preferencesLoaded && state.account != null && dashboardActive) updates.check(notify = true)
                     }
@@ -253,9 +256,18 @@ private fun DesktopScreenContent(state: DesktopState, controller: DesktopControl
             savedDetailKey = next
         }
     }
-    LaunchedEffect(state.account == null) { if (state.account == null) {
+    val loginFinished = state.account != null && state.loginSync == null
+    LaunchedEffect(state.account == null, loginFinished) { if (state.account == null) {
         listOf("dashboard", "live", "MOVIES", "SERIES", "settings", "search", "favorites", "downloads").forEach(screens::removeState)
-    } }
+    } else if (loginFinished) screens.removeState("login") }
+    if (state.account != null && state.loginSync != null) {
+        Box(Modifier.fillMaxSize().directionalNavigation()) { DesktopLoginSyncScreen(state.loginSync, controller) }
+        return
+    }
+    if (state.page == DesktopPage.APP_DNS) {
+        Box(Modifier.fillMaxSize().directionalNavigation()) { rsv.squitv.core.ui.components.settings.AppDnsPanel() }
+        return
+    }
     if (state.playback != null) {
         LivePlayerScreen(state, controller, preferences, fullscreen, toggleFullscreen, registerPlayer, registerLiveInput)
         return
@@ -282,7 +294,7 @@ private fun DesktopScreenContent(state: DesktopState, controller: DesktopControl
                 TextButton(controller::cancelConnection) { Text("Cancelar") }
             }
         } else if (state.account == null) {
-            LoginForm(state, controller, Modifier.weight(1f))
+            screens.SaveableStateProvider("login") { LoginForm(state, controller, Modifier.weight(1f)) }
         } else if (catalog.detail != null && state.page == DesktopPage.DASHBOARD) {
             val detail = requireNotNull(catalog.detail)
             screens.SaveableStateProvider("detail-${detail.kind}-${detail.item.id}") { OnDemandDetailScreen(detail, controller, preferences) }

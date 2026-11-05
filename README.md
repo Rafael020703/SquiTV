@@ -21,6 +21,7 @@ PiP, segundo plano e transferência pela rede local desta lista são funções A
 - **Downloads:** gerenciamento de filmes e episódios para reprodução local, conforme suporte do conteúdo.
 - **Backup e transferência:** exportação/importação seletiva, incluindo favoritos e organização, e transferência pela rede local entre versões compatíveis.
 - **Login pela rede local:** preenchimento das credenciais da TV pelo navegador de outro aparelho da mesma rede.
+- **DNS do aplicativo:** Google, Cloudflare, seleção automática por tempo de resposta e opção de desativar, acessíveis pelo login e pela dashboard. A escolha não altera o DNS de outros aplicativos.
 - **Atualizações:** consulta ao GitHub, download e abertura do instalador após ação do usuário. A instalação depende das permissões e da confirmação do Android.
 
 O aplicativo não fornece canais, filmes, séries ou credenciais. É necessário configurar um servidor e uma conta compatíveis.
@@ -66,6 +67,8 @@ Nas configurações, selecione os dados a exportar/importar. Favoritos, categori
 Para transferir entre aparelhos, abra o recebimento no destino e o envio no outro dispositivo, na mesma rede. Confira o destino e as opções na interface. Formatos novos podem não ser aceitos por versões antigas; confira a compatibilidade entre os aparelhos.
 
 O backup de configurações não inclui os arquivos de vídeo baixados.
+
+No Windows, o backup permite selecionar grupos e conferir uma prévia antes de importar. Favoritos são combinados com os existentes; grupos desmarcados são mantidos. Backups Windows antigos completos continuam aceitos, mas os novos arquivos seletivos exigem um leitor compatível. Os formatos Android e Windows ainda não são intercambiáveis.
 
 ## Desenvolvimento
 

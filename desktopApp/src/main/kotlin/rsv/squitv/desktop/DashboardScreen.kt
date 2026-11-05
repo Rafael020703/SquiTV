@@ -80,7 +80,7 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
 
     val visibleTilesCount = main.size + secondary.size
     val cardFocus = remember(visibleTilesCount) { List(visibleTilesCount) { FocusRequester() } }
-    val headerFocus = remember { List(3) { FocusRequester() } }
+    val headerFocus = remember { List(4) { FocusRequester() } }
     var lastFocused by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(main, secondary) {
         withFrameNanos { }
@@ -132,6 +132,8 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
                             modifier = Modifier.focusRequester(headerFocus[1]).focusProperties { down = cardFocus.getOrElse(1) { firstCardFocus } })
                         DashboardAction(Icons.Rounded.Settings, "Configurações", controller::openSettings,
                             Modifier.focusRequester(headerFocus[2]).focusProperties { down = cardFocus.getOrElse(2) { firstCardFocus } })
+                        FilledTonalButton(controller::openAppDns, modifier = Modifier.focusRequester(headerFocus[3])
+                            .focusProperties { down = firstCardFocus }) { Text("DNS") }
                         Spacer(Modifier.width(12.dp))
                         Text(now.format(DateTimeFormatter.ofPattern("HH:mm")), style = MaterialTheme.typography.displayLarge.copy(fontSize =
                                 maxOf(MaterialTheme.typography.displayLarge.fontSize.value * textScale, 10f).sp),

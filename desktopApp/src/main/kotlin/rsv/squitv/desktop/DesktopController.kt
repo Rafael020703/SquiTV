@@ -8,8 +8,10 @@ import kotlinx.coroutines.sync.withLock
 import rsv.squitv.desktop.data.*
 import rsv.squitv.shared.xtream.*
 import rsv.squitv.domain.model.ChannelQuality
+import rsv.squitv.core.domain.state.AppSyncProgress
+import rsv.squitv.core.domain.state.AppSyncStatus
 
-enum class DesktopPage { DASHBOARD, LIVE, MOVIES, SERIES, SETTINGS, UPDATES, SEARCH, FAVORITES, MULTIVIEW, DOWNLOADS }
+enum class DesktopPage { DASHBOARD, LIVE, MOVIES, SERIES, SETTINGS, UPDATES, SEARCH, FAVORITES, MULTIVIEW, DOWNLOADS, APP_DNS }
 internal val ALL_LIVE_CATEGORY = LiveCategory("ALL", "Todos")
 internal val RECENT_LIVE_CATEGORY = LiveCategory("RECENTS", "Adicionados recentemente")
 data class LiveSession(val sourceName: String, val channels: List<LiveChannel>, val index: Int,
@@ -21,6 +23,7 @@ data class LiveSession(val sourceName: String, val channels: List<LiveChannel>, 
 
 data class DesktopState(
     val restoring: Boolean = true, val busy: Boolean = false,
+    val loginSync: AppSyncProgress? = null,
     val refreshingCatalog: Boolean = false, val catalogSyncError: String? = null, val automaticLogin: Boolean = false,
     val credentials: ServerCredentials? = null, val savedCredentials: ServerCredentials? = null,
     val savedAccounts: List<ServerCredentials> = emptyList(), val managingAccounts: Boolean = false,
@@ -62,7 +65,6 @@ class DesktopController(
     private var catalogSyncRevision = 0L
     private var groupLiveChannels = true
     private var preferredChannelQuality = ChannelQuality.AUTO
-    private val backupJson = kotlinx.serialization.json.Json { prettyPrint = true; encodeDefaults = true; ignoreUnknownKeys = true }
     private val credentialWrites = Mutex()
     private val dnsProbe = DnsProbe()
     val availableDns: List<String> = ProviderServers.addresses.map(ServerAddress::normalize)
@@ -221,19 +223,14 @@ class DesktopController(
                     }
                 } }
                 reloadSavedAccounts()
+                val operation = java.util.UUID.randomUUID().toString()
                 mutable.value = mutable.value.copy(restoring = false, credentials = credentials, account = account,
                     savedCredentials = if (remember) credentials else null, notice = notice, busy = true,
                     connectingServer = null, error = null, categories = emptyList(), channels = emptyList(),
-                    selectedCategory = null, channelsLoaded = false, channelError = null, automaticLogin = false)
+                    selectedCategory = null, channelsLoaded = false, channelError = null, automaticLogin = false,
+                    page = DesktopPage.DASHBOARD, loginSync = newLoginSync(operation))
                 downloads?.bind(credentials)
-                try {
-                    val categories = withContext(Dispatchers.IO) { client.categories(credentials) }
-                    mutable.value = mutable.value.copy(categories = categories, busy = false)
-                } catch (e: CancellationException) { throw e }
-                catch (e: Exception) {
-                    ensureActive()
-                    mutable.value = mutable.value.copy(busy = false, channelError = friendly(e))
-                }
+                synchronizeLoginCategories(credentials, operation)
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 ensureActive()
@@ -241,6 +238,66 @@ class DesktopController(
                     connectingServer = null, error = friendly(e))
             }
         }
+    }
+
+    private fun newLoginSync(operation: String) = AppSyncProgress(accountStatus = AppSyncStatus.Success,
+        operationId = operation, isRunning = true)
+
+    fun retryLoginSync() {
+        val account = mutable.value.credentials ?: return
+        if (mutable.value.busy || connectionJob?.isActive == true) return
+        val operation = java.util.UUID.randomUUID().toString()
+        mutable.value = mutable.value.copy(busy = true, loginSync = newLoginSync(operation))
+        connectionJob = scope.launch { synchronizeLoginCategories(account, operation) }
+    }
+
+    fun continueLoginSync() {
+        val progress = mutable.value.loginSync ?: return
+        if (progress.isRunning) return
+        if (listOf(progress.liveStatus, progress.vodStatus, progress.seriesStatus).none { it is AppSyncStatus.Done }) return
+        mutable.value = mutable.value.copy(loginSync = null, busy = false)
+    }
+
+    private suspend fun synchronizeLoginCategories(account: ServerCredentials, operation: String) {
+        var progress = newLoginSync(operation)
+        suspend fun ensureCurrent() {
+            currentCoroutineContext().ensureActive()
+            if (mutable.value.credentials != account || mutable.value.loginSync?.operationId != operation)
+                throw CancellationException("Login synchronization replaced")
+        }
+        fun stage(type: String, status: AppSyncStatus) {
+            progress = when (type) {
+                "LIVE" -> progress.copy(liveStatus = status)
+                "VOD" -> progress.copy(vodStatus = status)
+                else -> progress.copy(seriesStatus = status)
+            }
+            mutable.value = mutable.value.copy(loginSync = progress)
+        }
+        val errors = mutableListOf<String>()
+        for ((type, label) in listOf("LIVE" to "TV ao vivo", "VOD" to "Filmes", "SERIES" to "Séries")) {
+            ensureCurrent()
+            stage(type, AppSyncStatus.Syncing)
+            try {
+                val categories = withContext(Dispatchers.IO) {
+                    if (type == "LIVE") client.categories(account) else client.catalogCategories(account, type == "SERIES")
+                }
+                ensureCurrent()
+                if (type == "LIVE") mutable.value = mutable.value.copy(categories = categories)
+                else catalog.acceptLoginCategories(account,
+                    if (type == "VOD") CatalogKind.MOVIES else CatalogKind.SERIES, categories)
+                stage(type, AppSyncStatus.Done(categories.size))
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                ensureCurrent()
+                val message = friendly(e)
+                errors += "$label: $message"
+                stage(type, AppSyncStatus.Error(message))
+            }
+        }
+        ensureCurrent()
+        progress = progress.copy(isRunning = false, isComplete = true,
+            error = errors.takeIf { it.isNotEmpty() }?.joinToString("\n"))
+        mutable.value = mutable.value.copy(busy = false, loginSync = if (errors.isEmpty()) null else progress)
     }
 
     fun loadChannels(category: LiveCategory) = loadChannels(category, force = false)
@@ -313,6 +370,8 @@ class DesktopController(
         stopPlayback()
         mutable.value = mutable.value.copy(page = DesktopPage.DASHBOARD)
     }
+
+    fun openAppDns() { mutable.value = mutable.value.copy(page = DesktopPage.APP_DNS) }
 
     fun play(channel: LiveChannel, visibleChannels: List<LiveChannel>, favoriteSource: Boolean = false) {
         val current = mutable.value
@@ -399,7 +458,8 @@ class DesktopController(
 
     fun cancelConnection() {
         connectionJob?.cancel()
-        mutable.value = mutable.value.copy(busy = false, automaticLogin = false, connectingServer = null)
+        mutable.value = mutable.value.copy(busy = false, automaticLogin = false, connectingServer = null,
+            loginSync = mutable.value.loginSync?.copy(isRunning = false, isComplete = true, isCancelled = true))
     }
 
     fun disconnect() {
@@ -424,7 +484,7 @@ class DesktopController(
         mutable.value = mutable.value.copy(restoring = false, busy = false, credentials = null,
             managingAccounts = false, accountError = null,
             account = null, categories = emptyList(), channels = emptyList(), selectedCategory = null,
-            refreshingCatalog = false, catalogSyncError = null,
+            refreshingCatalog = false, catalogSyncError = null, loginSync = null,
             loadingChannels = false, channelsLoaded = false, error = null, channelError = null, notice = null, connectingServer = null,
             savedCredentials = saved, page = DesktopPage.DASHBOARD, automaticLogin = false)
     }
@@ -471,13 +531,12 @@ class DesktopController(
     private fun backupFile(): java.nio.file.Path = java.nio.file.Path.of(
         System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), DesktopBuildInfo.DATA_FOLDER, "squitv-backup.json")
 
-    internal suspend fun exportBackup(preferences: DesktopPreferences, destination: java.nio.file.Path = backupFile()): Boolean = withContext(Dispatchers.IO) {
+    internal suspend fun exportBackup(preferences: DesktopPreferences, destination: java.nio.file.Path = backupFile(),
+        selected: Set<DesktopBackupGroup> = DesktopBackupGroup.entries.toSet()): Boolean = withContext(Dispatchers.IO) {
         try {
-            validateDesktopPreferences(preferences)
+            val payload = DesktopBackupCodec.encode(preferences, selected)
             val file = destination.toAbsolutePath().normalize()
             java.nio.file.Files.createDirectories(file.parent)
-            val payload = backupJson.encodeToString(DesktopPreferences.serializer(), preferences)
-            require(payload.toByteArray(Charsets.UTF_8).size <= 64 * 1024)
             val temp = java.nio.file.Files.createTempFile(file.parent, "backup-", ".tmp")
             try {
                 java.nio.file.Files.writeString(temp, payload)
@@ -491,24 +550,14 @@ class DesktopController(
         catch (_: Exception) { false }
     }
 
-    internal suspend fun importBackup(source: java.nio.file.Path = backupFile()): DesktopPreferences? = withContext(Dispatchers.IO) {
+    internal suspend fun importBackup(source: java.nio.file.Path = backupFile()): DesktopBackupContents? = withContext(Dispatchers.IO) {
         try {
             val file = source.toAbsolutePath().normalize()
             require(java.nio.file.Files.isRegularFile(file))
-            require(java.nio.file.Files.size(file) in 1..64L * 1024)
-            val bytes = java.nio.file.Files.newInputStream(file).use { it.readNBytes(64 * 1024 + 1) }
-            require(bytes.size in 1..64 * 1024)
-            val root = backupJson.parseToJsonElement(bytes.toString(Charsets.UTF_8)) as? kotlinx.serialization.json.JsonObject
-                ?: error("Invalid Windows backup")
-            // Existing Windows exports always include these defaults. Reject unrelated JSON/Android
-            // instead of decoding it as empty preferences and silently resetting the application.
-            require(root["schema"] == kotlinx.serialization.json.JsonPrimitive(1))
-            require("format" !in root && "schemaVersion" !in root)
-            require(setOf("autoPlayEpisodes", "interfaceScale", "volume", "fullscreen", "groupLiveChannels", "preferredChannelQuality")
-                .all(root::containsKey))
-            val restored = backupJson.decodeFromJsonElement(DesktopPreferences.serializer(), root)
-            validateDesktopPreferences(restored)
-            restored
+            require(java.nio.file.Files.size(file) in 1..DesktopBackupCodec.MAX_BYTES.toLong())
+            val bytes = java.nio.file.Files.newInputStream(file).use { it.readNBytes(DesktopBackupCodec.MAX_BYTES + 1) }
+            require(bytes.size in 1..DesktopBackupCodec.MAX_BYTES)
+            DesktopBackupCodec.decode(bytes.toString(Charsets.UTF_8))
         } catch (e: CancellationException) { throw e }
         catch (_: Exception) { null }
     }

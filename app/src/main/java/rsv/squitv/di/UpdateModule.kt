@@ -32,13 +32,14 @@ object UpdateModule {
     @Singleton
     @UpdateOkHttpClient
     fun provideUpdateClient(): OkHttpClient = OkHttpClient.Builder()
+        .dns(rsv.squitv.shared.network.AppDns)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .followSslRedirects(false)
         .addNetworkInterceptor { chain ->
             if (!chain.request().url.isHttps) throw IOException("Updates require HTTPS")
             chain.proceed(chain.request())
-        }.build()
+        }.build().also(rsv.squitv.shared.network.AppDns::register)
 
     @Provides
     @Singleton

@@ -83,10 +83,15 @@ class SyncManager @Inject constructor(
     }
 
     suspend fun checkContentReadiness() {
+        val account = settingsRepository.settingsFlow.first().credentials
+        if (account == null) { _isContentReady.value = false; return }
         val stats = catalogRepository.getStats()
-        val lastSync = settingsRepository.settingsFlow.first().lastSyncTimestamp
-        // Content is ready if local data exists AND lastSyncTimestamp > 0 (ensuring at least one full sync completion)
-        val hasContent = (stats.first > 0 || stats.second > 0 || stats.third > 0) && lastSync > 0
+        val settings = settingsRepository.settingsFlow.first()
+        if (settings.credentials != account) return
+        val lastSync = settings.lastSyncTimestamp
+        // An authenticated, successfully synchronized account may legitimately have no content.
+        val synchronizedEmptyCatalog = settings.isLiveLoaded && settings.isVodLoaded && settings.isSeriesLoaded
+        val hasContent = (stats.first > 0 || stats.second > 0 || stats.third > 0 || synchronizedEmptyCatalog) && lastSync > 0
         _isContentReady.value = hasContent
         Timber.i("SyncManager: Readiness check -> $hasContent (Stats: Live=${stats.first}, VOD=${stats.second}, Series=${stats.third} | LastSync: $lastSync)")
     }

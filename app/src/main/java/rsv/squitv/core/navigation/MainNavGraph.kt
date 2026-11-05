@@ -136,7 +136,7 @@ fun MainNavigation(
         
         when (appState) {
             is AppState.LoginRequired -> {
-                if (currentRoute.contains("Login") == false && currentRoute.contains("Updates") == false && currentRoute.contains("LocalLogin") == false) {
+                if (currentRoute.contains("Login") == false && currentRoute.contains("Updates") == false && currentRoute.contains("LocalLogin") == false && currentRoute.contains("AppDns") == false) {
                     navController.navigate(Route.Login) {
                         popUpTo(0) { inclusive = true }
                     }

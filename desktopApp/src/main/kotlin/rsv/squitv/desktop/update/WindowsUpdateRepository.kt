@@ -19,9 +19,9 @@ internal data class WindowsUpdate(val artifact: UpdateArtifact, val asset: GitHu
 /** Dedicated public GitHub transport. Never shares IPTV headers, credentials, cookies or redirects. */
 internal class WindowsUpdateRepository(private val directory: Path) : AutoCloseable {
     private val json = Json { ignoreUnknownKeys = true }
-    private val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS)
+    private val client = OkHttpClient.Builder().dns(rsv.squitv.shared.network.AppDns).connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS).callTimeout(10, TimeUnit.MINUTES)
-        .followRedirects(false).followSslRedirects(false).build()
+        .followRedirects(false).followSslRedirects(false).build().also(rsv.squitv.shared.network.AppDns::register)
     private val owner = GitHubUpdateConfig.OWNER
     private val repo = GitHubUpdateConfig.PRIMARY_REPO
     private val cdnHosts = setOf("github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "github-releases.githubusercontent.com")

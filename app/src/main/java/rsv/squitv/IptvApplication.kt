@@ -10,7 +10,6 @@ import androidx.media3.common.util.UnstableApi
 import coil.decode.DataSource
 import coil.request.CachePolicy
 import androidx.media3.database.StandaloneDatabaseProvider
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
@@ -60,6 +59,8 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
 
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
+            .okHttpClient { okhttp3.OkHttpClient.Builder().dns(rsv.squitv.shared.network.AppDns)
+                .build().also(rsv.squitv.shared.network.AppDns::register) }
             .components {
                 add(rsv.squitv.core.ui.components.content.ContentImageInterceptor(settingsRepository))
                 add(SvgDecoder.Factory())
@@ -118,9 +119,13 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
     }
 
     val downloadManager by lazy {
-        val dataSourceFactory = DefaultHttpDataSource.Factory()
+        val downloadClient = okhttp3.OkHttpClient.Builder().dns(rsv.squitv.shared.network.AppDns)
+            .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+            .followRedirects(true).followSslRedirects(true)
+            .build().also(rsv.squitv.shared.network.AppDns::register)
+        val dataSourceFactory = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(downloadClient)
             .setUserAgent(rsv.squitv.data.network.RetrofitClient.USER_AGENT)
-            .setAllowCrossProtocolRedirects(true)
         DownloadManager(
             this,
             databaseProvider,
@@ -231,6 +236,10 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
 
     override fun onCreate() {
         super.onCreate()
+        val dnsPreferences = getSharedPreferences("app_dns", MODE_PRIVATE)
+        rsv.squitv.shared.network.AppDns.configure(dnsPreferences.getString("mode", null), persist = { mode ->
+            check(dnsPreferences.edit().putString("mode", mode).commit())
+        })
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
             DebugLogger.init(this)

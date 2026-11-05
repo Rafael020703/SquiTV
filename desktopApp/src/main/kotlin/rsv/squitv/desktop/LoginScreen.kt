@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -37,14 +38,14 @@ import java.net.URI
 @Composable
 internal fun LoginForm(state: DesktopState, controller: DesktopController, modifier: Modifier) {
     val saved = state.savedCredentials ?: state.debugLoginDefaults
-    var address by remember(saved) {
+    var address by rememberSaveable(saved) {
         mutableStateOf(saved?.baseUrl?.takeUnless { it in controller.availableDns }.orEmpty())
     }
-    var username by remember(saved) { mutableStateOf(saved?.username.orEmpty()) }
-    var password by remember(saved) { mutableStateOf(saved?.password.orEmpty()) }
-    var rememberAccount by remember(saved) { mutableStateOf(saved != null) }
+    var username by rememberSaveable(saved) { mutableStateOf(saved?.username.orEmpty()) }
+    var password by rememberSaveable(saved) { mutableStateOf(saved?.password.orEmpty()) }
+    var rememberAccount by rememberSaveable(saved) { mutableStateOf(saved != null) }
     var showPassword by remember { mutableStateOf(false) }
-    var customAddress by remember(saved) { mutableStateOf(address.isNotEmpty()) }
+    var customAddress by rememberSaveable(saved) { mutableStateOf(address.isNotEmpty()) }
     var dnsExpanded by remember { mutableStateOf(false) }
     val windowDragArea = LocalWindowDragArea.current
     val formScroll = rememberScrollState()
@@ -160,6 +161,9 @@ internal fun LoginForm(state: DesktopState, controller: DesktopController, modif
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(rememberAccount, { rememberAccount = it }, enabled = !state.busy)
                         Text("Lembrar minha conta", style = MaterialTheme.typography.bodySmall)
+                    }
+                    OutlinedButton(controller::openAppDns, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Rounded.Dns, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("DNS do aplicativo")
                     }
                     state.error?.let { StatusNotice(it, error = true) }
                     state.notice?.let { StatusNotice(it) }

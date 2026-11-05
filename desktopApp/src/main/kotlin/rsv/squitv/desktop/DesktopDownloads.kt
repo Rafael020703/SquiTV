@@ -69,8 +69,9 @@ internal class DesktopDownloads(directory: Path, private val scope: CoroutineSco
         }) }
         mutableLoaded.value = true
     }
-    private val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS)
+    private val client = OkHttpClient.Builder().dns(rsv.squitv.shared.network.AppDns).connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build()
+        .also(rsv.squitv.shared.network.AppDns::register)
     @Volatile private var boundAccount: String? = null
     @Volatile private var job: Job? = null
     @Volatile private var stopping = false

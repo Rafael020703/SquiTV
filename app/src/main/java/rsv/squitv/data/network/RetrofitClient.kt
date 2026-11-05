@@ -28,6 +28,7 @@ object RetrofitClient {
     }
 
     val okHttpClient = OkHttpClient.Builder()
+        .dns(rsv.squitv.shared.network.AppDns)
         .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
         .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
@@ -49,11 +50,12 @@ object RetrofitClient {
         }.apply {
             level = HttpLoggingInterceptor.Level.BASIC
         })
-        .build()
+        .build().also(rsv.squitv.shared.network.AppDns::register)
 
     private val streamRequestCounter = java.util.concurrent.atomic.AtomicInteger(100)
 
     val playerOkHttpClient = OkHttpClient.Builder()
+        .dns(rsv.squitv.shared.network.AppDns)
         .connectionPool(okhttp3.ConnectionPool(5, 5, java.util.concurrent.TimeUnit.MINUTES))
         .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
@@ -119,7 +121,7 @@ object RetrofitClient {
         })
         .followRedirects(true)
         .followSslRedirects(true)
-        .build()
+        .build().also(rsv.squitv.shared.network.AppDns::register)
 
     fun updateBaseUrl(newUrl: String) {
         var url = newUrl.trim()

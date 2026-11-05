@@ -7,9 +7,9 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.*
 
 class DnsProbe : AutoCloseable {
-    private val client = OkHttpClient.Builder().connectTimeout(2, TimeUnit.SECONDS)
+    private val client = OkHttpClient.Builder().dns(rsv.squitv.shared.network.AppDns).connectTimeout(2, TimeUnit.SECONDS)
         .readTimeout(2, TimeUnit.SECONDS).callTimeout(3, TimeUnit.SECONDS)
-        .followRedirects(false).followSslRedirects(false).build()
+        .followRedirects(false).followSslRedirects(false).build().also(rsv.squitv.shared.network.AppDns::register)
 
     suspend fun latency(url: String): Long {
         val call = client.newCall(Request.Builder().url(url).head().build())

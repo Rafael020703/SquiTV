@@ -16,8 +16,10 @@ import kotlinx.serialization.json.Json
 class ServerProblem(message: String) : IOException(message)
 
 class XtreamClient(private val client: OkHttpClient = OkHttpClient.Builder()
+    .dns(rsv.squitv.shared.network.AppDns)
     .connectTimeout(15, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS)
-    .callTimeout(45, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build()) : AutoCloseable {
+    .callTimeout(45, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build()
+    .also(rsv.squitv.shared.network.AppDns::register)) : AutoCloseable {
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
 
     suspend fun catalogCategories(credentials: ServerCredentials, series: Boolean): List<LiveCategory> =

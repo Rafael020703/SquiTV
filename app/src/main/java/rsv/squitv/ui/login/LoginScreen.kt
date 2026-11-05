@@ -47,6 +47,7 @@ fun LoginScreen(
     onOpenLocalLogin: (() -> Unit)? = null,
     onOpenGallery: (() -> Unit)? = null,
     onOpenUpdates: (() -> Unit)? = null,
+    onOpenAppDns: (() -> Unit)? = null,
     onLoginSuccess: () -> Unit
 ) {
     val username by viewModel.username.collectAsStateWithLifecycle()
@@ -89,6 +90,7 @@ fun LoginScreen(
         onOpenLocalLogin = onOpenLocalLogin,
         onOpenGallery = onOpenGallery,
         onOpenUpdates = onOpenUpdates,
+        onOpenAppDns = onOpenAppDns,
         usernameFocusRequester = usernameFocusRequester,
         passwordFocusRequester = passwordFocusRequester
     )
@@ -111,6 +113,7 @@ fun LoginContent(
     onOpenLocalLogin: (() -> Unit)? = null,
     onOpenGallery: (() -> Unit)? = null,
     onOpenUpdates: (() -> Unit)? = null,
+    onOpenAppDns: (() -> Unit)? = null,
     usernameFocusRequester: FocusRequester,
     passwordFocusRequester: FocusRequester
 ) {
@@ -138,6 +141,7 @@ fun LoginContent(
                 onSelectSavedAccount = onSelectSavedAccount,
                 onRemoveSavedAccount = onRemoveSavedAccount,
                 onOpenLocalLogin = onOpenLocalLogin,
+                onOpenAppDns = onOpenAppDns,
                 usernameFocusRequester = usernameFocusRequester,
                 passwordFocusRequester = passwordFocusRequester
             )
@@ -155,6 +159,7 @@ fun LoginContent(
                 onSelectSavedAccount = onSelectSavedAccount,
                 onRemoveSavedAccount = onRemoveSavedAccount,
                 onOpenLocalLogin = onOpenLocalLogin,
+                onOpenAppDns = onOpenAppDns,
                 usernameFocusRequester = usernameFocusRequester,
                 passwordFocusRequester = passwordFocusRequester
             )
@@ -202,6 +207,7 @@ private fun CompactLoginLayout(
     onSelectSavedAccount: (XtreamCredentials) -> Unit = {},
     onRemoveSavedAccount: (Int) -> Unit = {},
     onOpenLocalLogin: (() -> Unit)? = null,
+    onOpenAppDns: (() -> Unit)? = null,
     usernameFocusRequester: FocusRequester,
     passwordFocusRequester: FocusRequester
 ) {
@@ -449,6 +455,13 @@ private fun CompactLoginLayout(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
+                    if (onOpenAppDns != null) {
+                        AppButton(text = "DNS DO APLICATIVO", onClick = onOpenAppDns,
+                            enabled = !isLoading, useGradient = false, icon = Icons.Rounded.Dns,
+                            modifier = Modifier.fillMaxWidth().height(48.dp))
+                        Spacer(Modifier.height(10.dp))
+                    }
+
                     // BOTÃO ENTRAR CINEMÁTICO COM GRADIENTE E ELEVAÇÃO
                     AppButton(
                         text = if (isLoading) stringResource(R.string.msg_connecting).uppercase() else stringResource(R.string.login_button).uppercase(),
@@ -509,6 +522,7 @@ private fun ExpandedLoginLayout(
     onSelectSavedAccount: (XtreamCredentials) -> Unit = {},
     onRemoveSavedAccount: (Int) -> Unit = {},
     onOpenLocalLogin: (() -> Unit)? = null,
+    onOpenAppDns: (() -> Unit)? = null,
     usernameFocusRequester: FocusRequester,
     passwordFocusRequester: FocusRequester
 ) {
@@ -790,6 +804,13 @@ private fun ExpandedLoginLayout(
                             .fillMaxWidth()
                             .height(buttonHeight)
                     )
+
+                    if (onOpenAppDns != null) {
+                        Spacer(Modifier.height(8.dp))
+                        AppButton(text = "DNS DO APLICATIVO", onClick = onOpenAppDns,
+                            enabled = !isLoading, useGradient = false, icon = Icons.Rounded.Dns,
+                            modifier = Modifier.fillMaxWidth().height(buttonHeight))
+                    }
 
                     if (onOpenLocalLogin != null) {
                         Spacer(modifier = Modifier.height(8.dp))

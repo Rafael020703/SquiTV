@@ -150,6 +150,16 @@ internal class OnDemandController(private val client: XtreamClient, private val 
         }
     }
 
+    internal fun acceptLoginCategories(account: ServerCredentials, kind: CatalogKind, categories: List<LiveCategory>) {
+        if (credentials != account) { reset(); credentials = account }
+        change(kind) { old ->
+            val selected = categories.firstOrNull { it.id == old.category?.id }
+            old.copy(categories = categories, category = selected, loadingCategories = false,
+                categoriesLoaded = true, error = null, items = if (selected == null) emptyList() else old.items,
+                itemsLoaded = selected != null && old.itemsLoaded)
+        }
+    }
+
     fun clearSelection(kind: CatalogKind) {
         if (mutable.value.kind == kind) browseJob?.cancel()
         change(kind) { it.copy(category = null, items = emptyList(), loading = false, itemsLoaded = false, error = null) }
