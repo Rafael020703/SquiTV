@@ -1,6 +1,6 @@
 # DNS do aplicativo — Android e Windows
 
-Implementação local posterior à v1.25, ainda sem nova publicação.
+Disponível na [v1.26](https://github.com/Rafael020703/SquiTV/releases/tag/v1.26), para Android 1.26 e Windows 1.26.0.
 
 ## Acesso e escolhas
 
@@ -48,4 +48,4 @@ Referências: [proxy Windows VLC 3.0.23](https://github.com/videolan/vlc/blob/3.
 
 ## Verificação e limites
 
-Comandos, resultados e hash debug ficam no registro local ignorado `docs/manutencao-windows.md`. Compilação/leitura das fontes não confirmam reprodução real. Não houve execução física Android/TV ou do player Windows nesta implementação, nem confirmação de que DNS era a causa do problema em um aparelho específico. A release instalada do Windows permanece intocada; versões/publicações não são alteradas nesta etapa.
+Na preparação da v1.26 passaram as compilações Android debug/release e do APK instrumentado, lint sem erros e empacotamento Windows. O CI da revisão distribuída também passou nos dois jobs. Assinatura Android, manifesto, checksums e downloads públicos foram conferidos. Isso não confirma reprodução real: não houve execução física Android/TV ou do player Windows nesta implementação, nem confirmação de que DNS era a causa do problema relatado. A release instalada do Windows permaneceu intocada.
