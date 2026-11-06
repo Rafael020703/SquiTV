@@ -2,11 +2,11 @@
 
 ## Estado e plataformas
 
-A versão conjunta [**v1.26**, publicada em 05/11/2026](https://github.com/Rafael020703/SquiTV/releases/tag/v1.26), reúne Android **1.26/code 29** e Windows **1.26.0 x64**, como Latest. Notas: [Android](releases/v1.26-android.md) e [Windows](releases/v1.26-windows.md). As referências estáveis das duas plataformas apontam o manifesto conjunto com changelogs separados. Releases anteriores permanecem no histórico; nenhuma tag ou arquivo anterior foi substituído.
+A versão atual do Windows é [**1.26.1 x64**, publicada em 05/11/2026](https://github.com/Rafael020703/SquiTV/releases/tag/v1.26.1.1), em uma atualização exclusiva dessa plataforma. [Notas Windows](releases/v1.26.1-windows.md). O Android permanece em **1.26/code 29**, na [publicação conjunta v1.26](https://github.com/Rafael020703/SquiTV/releases/tag/v1.26), que continua como Latest. As referências estáveis são independentes: Windows aponta v1.26.1.1; Android preserva v1.26. Nenhuma tag ou arquivo anterior foi substituído.
 
 O Windows aproxima funções e apresentação do Android, mas ainda não tem paridade completa. `:desktopApp` consome Kotlin puro em `:shared` e fontes Compose em `uiCommon`; nunca depende de `:app`. Motores, armazenamento e integrações de sistema permanecem específicos de cada plataforma.
 
-**Candidata preparada, ainda não publicada:** Windows **1.26.1 x64**, com tag prevista `v1.26.1.1`, instalador release compilado e [notas próprias](releases/v1.26.1-windows.md). A preparação é exclusiva do Windows, com `makeLatest=false`; Android e as referências públicas continuam na v1.26. Os três assets previstos são `SquiTV-1.26.1.exe`, seu `.sha256` e `squitv-update.json`. Versão/identidade release, integridade dos payloads e propriedades de upgrade/limpeza do MSI foram conferidas sem executar instalador, MSI ou aplicativo. O manifesto foi validado pela CLI compartilhada. Não houve testes locais nem CI novo nesta preparação; interface, UAC e upgrade real permanecem sem observação em execução pelo agente.
+A release Windows 1.26.1 distribui `SquiTV-1.26.1.exe`, seu `.sha256` e `squitv-update.json`, com notas somente Windows. Identidade release, integridade dos payloads e propriedades de upgrade/limpeza do MSI foram conferidas sem executar instalador, MSI ou aplicativo; o manifesto passou pela CLI compartilhada. O CI e os três downloads públicos foram conferidos antes de ativar a referência Windows. As verificações e seus limites estão registrados abaixo.
 
 O aplicativo não fornece conteúdo ou credenciais. É necessário um servidor compatível com Xtream Codes. Disponibilidade de metadados, EPG, qualidades e transmissões simultâneas depende do provedor e do aparelho.
 
@@ -108,13 +108,13 @@ Servidor sem arte, arquivo inacessível, TLS inválido ou imagem acima dos limit
 
 ## Player e janela
 
-### Ajustes locais posteriores à v1.26
+### Janela e detalhes — Windows 1.26.1
 
 O modo de tela cheia Windows passa a ser **tela cheia em janela**, sem bordas e com os limites do monitor, mantendo o peer AWT em `Floating`; não solicita fullscreen exclusivo nem troca o modo de vídeo. F11 e duplo clique nas áreas não interativas de arraste dos cabeçalhos alternam os modos. O último modo continua salvo por variante e a primeira abertura continua em tela cheia em janela. ESC permanece no fluxo de navegação. No modo janela, o arraste usa as coordenadas de tela do mouse; a proporção 16:9 e o tamanho/posição da sessão são restaurados ao sair da tela cheia, ajustados à área útil do monitor. Em tela cheia, arraste e redimensionamento ficam desativados. Não foi adicionada barra de título ou ação sobre botões/campos.
 
 Detalhes Windows seguem a hierarquia de ações do Android `VodDetailContent`: título, metadados e Assistir/Continuar antes da sinopse. Séries também oferecem acesso ao primeiro episódio da temporada selecionada, reutilizando `OnDemandPlayback`; retomada, temporadas, episódios, favoritos, trailer e downloads permanecem nas regras existentes. A sinopse aparece em um único bloco: Ler mais/Ler menos expande o próprio texto. Direção e elenco ficam em uma seção recolhível. Conteúdos semelhantes continuam disponíveis em cartões horizontais, em seção recolhida ao final, depois dos episódios; não ocupam o espaço anterior à ação de assistir. Capas, espaçamento e largura da coluna de temporadas adaptam-se ao viewport. O foco inicial prioriza a ação principal; ao retornar da reprodução, permanece a restauração do episódio.
 
-Esses ajustes foram compilados e entregues pela debug portátil; não foram publicados na v1.26 nem observados em execução pelo agente. O registro local informa o hash e a entrega atual, sem dados privados no repositório.
+Esses ajustes foram compilados, entregues pela debug portátil e publicados no Windows 1.26.1; não foram observados em execução pelo agente. O registro local informa o hash e a entrega atual, sem dados privados no repositório.
 
 - **Volume por setas, v1.24:** com os controles ocultos, esquerda/direita diminuem/aumentam o volume do app em passos de 5%, entre 0 e 100, com indicador por 1,5 s. Uma ação ao soltar a tecla evita repetições acidentais. Com controles ou menus abertos, as setas navegam e continuam atuando no seek quando a barra está focada. Regra de volume e indicador são compartilhados com Android; o Windows conserva o valor nas preferências existentes. O volume Android atua no player Media3 da sessão, sem configurar o áudio da TV.
 - **Teclado Windows:** setas movem o foco entre componentes; Enter aciona o componente e Esc volta/fecha o menu pelo fluxo existente. A navegação adicional trata somente eventos que editores, sliders, menus e player não consumiram. Inclui diálogos de configurações/downloads e HUDs nativos, sem alterar F11 ou as regras de fullscreen. Diálogos do sistema continuam usando a navegação do Windows. Compilação não comprova alcance de todos os controles ou geometria do foco em execução.
@@ -161,7 +161,7 @@ A imagem debug contém Java e VLC; mova a pasta inteira, não apenas o EXE. Dado
 
 ## Instalação e atualizações
 
-**Instalador em desenvolvimento após v1.26:** apresentação escura com marca, versão, pasta de destino, etapas separadas de componentes/aplicativo, progresso e conclusão. A pasta pode ser escolhida na própria tela para uma instalação nova; upgrades mostram o destino registrado, sem permitir trocá-lo. A elevação recebe somente o modo fixo e uma pasta local validada; a instalação existente tem prioridade. O MSI é aplicado sem um segundo assistente, mantendo UAC, UUIDs/contextos de upgrade, verificação de componentes, política de limpeza e abertura final sem elevar o aplicativo. O percentual identifica somente a etapa de componentes; a aplicação do MSI usa indicador indeterminado, sem inventar percentual global. Não há WebView, dependência de interface adicional ou novos downloads para desenhar o instalador. Manifesto DPI e rolagem em áreas úteis menores foram incluídos. O EXE debug compilou e o painel foi renderizado fora da tela para conferir contraste/organização; não houve execução do instalador, MSI ou upgrade real. A release instalada permanece intocada. A distribuição pública v1.26 ainda usa o instalador anterior.
+**Instalador Windows 1.26.1:** apresentação escura com marca, versão, pasta de destino, etapas separadas de componentes/aplicativo, progresso e conclusão. A pasta pode ser escolhida na própria tela para uma instalação nova; upgrades mostram o destino registrado, sem permitir trocá-lo. A elevação recebe somente o modo fixo e uma pasta local validada; a instalação existente tem prioridade. O MSI é aplicado sem um segundo assistente, mantendo UAC, UUIDs/contextos de upgrade, verificação de componentes, política de limpeza e abertura final sem elevar o aplicativo. O percentual identifica somente a etapa de componentes; a aplicação do MSI usa indicador indeterminado, sem inventar percentual global. Não há WebView, dependência de interface adicional ou novos downloads para desenhar o instalador. Manifesto DPI e rolagem em áreas úteis menores foram incluídos. O EXE debug compilou e o painel foi renderizado fora da tela para conferir contraste/organização; não houve execução do instalador, MSI ou upgrade real. A release instalada permanece intocada. O instalador novo é distribuído no Windows 1.26.1; os assets anteriores permanecem preservados.
 
 - O usuário executa apenas `SquiTV-<versão>.exe`. Java está incluído. O instalador online valida/reutiliza o VLC fixado por hash e baixa/prepara automaticamente somente quando necessário; não carrega VLC arbitrário do sistema.
 - Nova instalação por máquina: `C:\Program Files\Squi TV`, com UAC e escolha de pasta. Upgrade preserva destino/contexto existente, inclusive legado por usuário.
@@ -178,6 +178,12 @@ Preferências, favoritos e organização têm escopo por conta/tipo. Histórico 
 O `.gitignore` conserva planos, auditorias, registros de manutenção, dados privados, caches e builds localmente. Documentação pública permanente e notas de versões são versionadas; binários/checksums/manifesto são assets da release. Não publicar diretórios inteiros de staging nem relatórios contendo caminhos/dados pessoais.
 
 ## Evidências e limites
+
+### Revisão Windows 1.26.1
+
+O instalador release x64 1.26.1 foi compilado com JDK 21/jpackage, e o manifesto exclusivo Windows passou pela CLI compartilhada. Os payloads MSI/MST embutidos conferem com os hashes e tamanhos registrados; UUID de upgrade, instalação por máquina e condição de limpeza somente na desinstalação normal foram inspecionados sem executar MSI. O JAR compilado declara DEBUG=false e identidade SquiTV. As fontes distribuídas correspondem à revisão `063b974ef43152c75dfb236d95736233ddd21f63`.
+
+O [CI da revisão distribuída](https://github.com/Rafael020703/SquiTV/actions/runs/42133833684) passou nos dois jobs. Não foram acrescentados nem executados testes locais nesta publicação. Os três downloads públicos conferem por SHA-256/tamanho; EXE de 72.166.400 bytes. A referência Windows só avançou após essa conferência, e Android/Latest v1.26 foram preservados. A prévia do painel do instalador foi renderizada fora da tela na etapa debug. Isso não comprova janela, detalhes, reprodução, UAC, instalação ou upgrade em execução; a release instalada neste PC, seus processos e dados permaneceram intocados.
 
 ### Revisão v1.26
 
