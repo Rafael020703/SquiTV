@@ -3,6 +3,7 @@ package rsv.squitv.desktop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowState
 import java.awt.Dimension
@@ -16,7 +17,8 @@ import kotlin.math.roundToInt
 
 /** Constrains only the floating window; fullscreen uses the monitor's native bounds. */
 @Composable
-internal fun MaintainWindowAspectRatio(window: Window, state: WindowState) {
+internal fun MaintainWindowAspectRatio(window: Window, state: WindowState, fullscreen: Boolean) {
+    val fullscreenNow = rememberUpdatedState(fullscreen)
     LaunchedEffect(state.placement) {
         // Maximizing to the work area would break 16:9 on non-16:9 desktops.
         // F11 is the explicit way to occupy the entire display.
@@ -33,7 +35,7 @@ internal fun MaintainWindowAspectRatio(window: Window, state: WindowState) {
         var previous = Dimension(window.size)
         val listener = object : ComponentAdapter() {
             override fun componentResized(event: ComponentEvent) {
-                if (state.placement != WindowPlacement.Floating || !window.isDisplayable) return
+                if (fullscreenNow.value || state.placement != WindowPlacement.Floating || !window.isDisplayable) return
                 val current = window.size
                 if (current.width <= 0 || current.height <= 0) return
                 if (current.width * 9L == current.height * 16L) {

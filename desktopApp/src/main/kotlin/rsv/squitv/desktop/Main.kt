@@ -1,6 +1,5 @@
 package rsv.squitv.desktop
 
-import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import rsv.squitv.core.ui.components.ExitConfirmationCard
@@ -70,29 +69,18 @@ private fun runApplication() {
             if (preferencesLoaded) controller.configureLiveChannels(settings.groupLiveChannels,
                 rsv.squitv.domain.model.ChannelQuality.fromPreference(settings.preferredChannelQuality))
         }
-        // Initialize the peer before entering fullscreen; restore from a native show event.
+        // The AWT peer stays Floating in both modes; fullscreen only changes its borderless bounds.
         val windowState = rememberWindowState(placement = WindowPlacement.Floating, width = 1120.dp, height = 630.dp)
         var requestedFullscreen by remember { mutableStateOf<Boolean?>(null) }
         var windowShowing by remember { mutableStateOf(false) }
-        var windowModeRestored by remember { mutableStateOf(false) }
         var closing by remember { mutableStateOf(false) }
         LaunchedEffect(preferencesLoaded) {
             if (preferencesLoaded && requestedFullscreen == null) requestedFullscreen = settings.fullscreen
         }
-        LaunchedEffect(windowShowing, requestedFullscreen) {
-            val fullscreen = requestedFullscreen
-            if (windowShowing && fullscreen != null && !windowModeRestored) {
-                withFrameNanos { }
-                if (windowModeRestored || closing) return@LaunchedEffect
-                windowState.placement = if (fullscreen) WindowPlacement.Fullscreen else WindowPlacement.Floating
-                windowModeRestored = true
-            }
-        }
+        val fullscreen = requestedFullscreen == true
         val toggleFullscreen: () -> Unit = {
-            windowModeRestored = true // Explicit input wins over pending startup restoration.
             val fullscreen = !(requestedFullscreen ?: settings.fullscreen)
             requestedFullscreen = fullscreen
-            windowState.placement = if (fullscreen) WindowPlacement.Fullscreen else WindowPlacement.Floating
             preferences.update { it.copy(fullscreen = fullscreen) }
         }
         var showExitDialog by remember { mutableStateOf(false) }
@@ -119,7 +107,7 @@ private fun runApplication() {
         Window(onCloseRequest = closeApplication, title = DesktopBuildInfo.APP_NAME,
             visible = preferencesLoaded && requestedFullscreen != null,
             icon = brandPainter(), state = windowState, undecorated = true,
-            resizable = windowState.placement != WindowPlacement.Fullscreen,
+            resizable = !fullscreen,
             onPreviewKeyEvent = { event ->
                 val current = controller.state.value
                 val catalog = controller.catalog.state.value
@@ -165,7 +153,8 @@ private fun runApplication() {
                     else -> false
                 }
             }, onKeyEvent = { navigationInput?.invoke(it) ?: false }) {
-            MaintainWindowAspectRatio(window, windowState)
+            MaintainWindowAspectRatio(window, windowState, fullscreen)
+            MaintainBorderlessWindow(window, fullscreen, windowShowing)
             MouseBackNavigation(window)
             DisposableEffect(window) {
                 val listener = object : java.awt.event.ComponentAdapter() {
@@ -202,10 +191,9 @@ private fun runApplication() {
                         CompositionLocalProvider(LocalDesktopWindow provides window, LocalDesktopUpdates provides updates,
                             LocalDensity provides Density(density.density * settings.interfaceScale, density.fontScale),
                             LocalWindowDragArea provides { modifier, content ->
-                            if (windowState.placement == WindowPlacement.Fullscreen) Box(modifier) { content() }
-                            else WindowDraggableArea(modifier) { content() }
+                            WindowDragArea(window, !fullscreen, modifier, toggleFullscreen, content)
                         }) {
-                            DesktopScreen(state, controller, preferences, windowState.placement == WindowPlacement.Fullscreen,
+                            DesktopScreen(state, controller, preferences, fullscreen,
                                 toggleFullscreen, { activePlayer = it }, { livePlayerInput = it }, installUpdate = { updates.install(closeApplication) })
                             if (!showExitDialog && updateState.prompt && state.account != null && dashboardActive)
                                 updateState.info?.let { info -> DesktopUpdateNotice(updates, info) { updates.dismissPrompt(); controller.openUpdates() } }

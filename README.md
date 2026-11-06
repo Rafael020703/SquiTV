@@ -180,4 +180,6 @@ A publicação conjunta [v1.25](https://github.com/Rafael020703/SquiTV/releases/
 
 A release conjunta atual é a [v1.26](https://github.com/Rafael020703/SquiTV/releases/tag/v1.26), com Android **1.26/code 29** e Windows **1.26.0**. Inclui DNS somente no aplicativo e ajustes na sincronização ao entrar na conta; o Windows também recebe backup seletivo com prévia de importação. Notas: [Android](docs/releases/v1.26-android.md) e [Windows](docs/releases/v1.26-windows.md). Atualizações usam o manifesto conjunto e notas próprias de cada plataforma.
 
+A candidata Windows **1.26.1**, ainda não publicada, prepara ajustes de janela, detalhes dos conteúdos e apresentação do instalador. [Notas Windows](docs/releases/v1.26.1-windows.md). Será uma publicação exclusiva dessa plataforma; o Android e os downloads públicos acima permanecem na v1.26 até uma nova publicação efetiva.
+
 `tools/prepare_release.py` prepara APK/EXE, checksums, manifesto com changelogs separados, plano de release e candidatos de referência por plataforma. Não publica. Correções exclusivas podem manter o mesmo número nos dois apps; as tags únicas e a proteção de Latest estão descritas no [contrato](docs/contrato-atualizacoes.md). Os arquivos de [referência](updates/README.md) só são avançados depois de uma publicação autorizada e conferida.

@@ -3,6 +3,7 @@ package rsv.squitv.desktop
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.*
@@ -473,6 +474,12 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     val trailerUrl = rsv.squitv.shared.catalog.ContentDiscovery.trailerUrl(movie?.youtubeTrailer ?: metadata?.youtubeTrailer)
     val related = detail.related.filter { it.categoryId !in preferences.hiddenCategories(accountScope.orEmpty(), detail.kind) }
+    val plot = movie?.plot?.takeIf(String::isNotBlank) ?: metadata?.plot?.takeIf(String::isNotBlank)
+        ?: "Sinopse não informada pelo servidor."
+    var showInformation by rememberSaveable(detail.kind, detail.item.id) { mutableStateOf(false) }
+    var showFullPlot by rememberSaveable(detail.kind, detail.item.id) { mutableStateOf(false) }
+    var plotOverflows by remember(detail.kind, detail.item.id, plot) { mutableStateOf(false) }
+    var showRelated by rememberSaveable(detail.kind, detail.item.id) { mutableStateOf(false) }
     person?.let { name ->
         var works by remember(name) { mutableStateOf<List<Pair<CatalogKind, CatalogItem>>?>(null) }
         LaunchedEffect(name, detail.loading, preferences.hiddenCatalogCategoriesByScope) {
@@ -497,6 +504,8 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
     val scope = rememberCoroutineScope()
     val seasonsFocus = remember { FocusRequester() }
     val episodesFocus = remember { FocusRequester() }
+    val playFocus = remember { FocusRequester() }
+    var initialFocusPlaced by rememberSaveable(detail.kind, detail.item.id) { mutableStateOf(false) }
     var focusedEpisode by rememberSaveable(detail.item.id) { mutableStateOf<String?>(null) }
     val useFocus = LocalInputModeManager.current.inputMode == InputMode.Keyboard
     val episodeFocusIndex = episodes.indexOfFirst { it.id == (detail.lastPlayedEpisodeId ?: focusedEpisode) }
@@ -508,17 +517,25 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
             if (seasonScroll.layoutInfo.visibleItemsInfo.none { it.index == index }) seasonScroll.scrollToItem(index)
         }
     }
-    LaunchedEffect(selectedSeason, episodes, detail.lastPlayedEpisodeId) {
-        if (!detail.loading && episodes.isNotEmpty() && useFocus) {
+    LaunchedEffect(detail.loading, selectedSeason, episodes, detail.lastPlayedEpisodeId) {
+        if (!detail.loading && useFocus && detail.lastPlayedEpisodeId != null && episodes.isNotEmpty()) {
             val index = episodeFocusIndex + 2 // Metadata and season heading precede episode rows.
             withFrameNanos { }
             if (scroll.layoutInfo.visibleItemsInfo.none { it.index == index }) scroll.scrollToItem(index)
             withFrameNanos { }
             runCatching { episodesFocus.requestFocus() }
+        } else if (!detail.loading && useFocus && !initialFocusPlaced &&
+            (detail.kind == CatalogKind.MOVIES || episodes.isNotEmpty())) {
+            initialFocusPlaced = true
+            scroll.scrollToItem(0)
+            withFrameNanos { }
+            runCatching { playFocus.requestFocus() }
         }
     }
+    BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp)) {
+    val compact = maxWidth < 1000.dp || maxHeight < 620.dp
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        DesktopPageHeading(detail.kind.title, detail.item.name) {
+        DesktopPageHeading(detail.kind.title, "Detalhes") {
             DesktopCatalogFavoriteButton(detail.item.name, isFavorite, preferencesLoaded && accountScope != null, {
                 accountScope?.let { account -> store.update { it.toggleCatalogFavorite(account, detail.kind, detail.item.id) } }
             })
@@ -539,9 +556,9 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
             Text("Carregando temporadas e episódios…", color = palette.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall)
         }
-        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(if (compact) 16.dp else 24.dp)) {
             if (detail.kind == CatalogKind.SERIES && seasons.isNotEmpty()) {
-                Surface(Modifier.width(220.dp).fillMaxHeight(), color = palette.surface.copy(alpha = .55f),
+                Surface(Modifier.width(if (compact) 160.dp else 208.dp).fillMaxHeight(), color = palette.surface.copy(alpha = .55f),
                     shape = RoundedCornerShape(18.dp)) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("TEMPORADAS", Modifier.padding(8.dp), color = palette.primary,
@@ -558,7 +575,13 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
                                             .focusProperties { right = episodesFocus },
                                         onClick = {
                                             season = number
-                                            scope.launch { scroll.scrollToItem(1) }
+                                            scope.launch {
+                                                scroll.scrollToItem(1)
+                                                if (useFocus) {
+                                                    withFrameNanos { }
+                                                    runCatching { episodesFocus.requestFocus() }
+                                                }
+                                            }
                                         }
                                     )
                                 }
@@ -574,68 +597,75 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
                 LazyColumn(state = scroll, modifier = Modifier.fillMaxSize().padding(end = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp)) {
                     item(key = "metadata") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(if (compact) 20.dp else 28.dp)) {
                         Surface(shape = RoundedCornerShape(18.dp), color = palette.surfaceVariant) {
                             CatalogImage(movie?.movieImage, images,
-                                Modifier.width(if (detail.kind == CatalogKind.SERIES) 112.dp else 180.dp).aspectRatio(2f / 3f),
+                                Modifier.width(if (detail.kind == CatalogKind.SERIES) 104.dp else if (compact) 152.dp else 216.dp).aspectRatio(2f / 3f),
                                 fallbacks = listOf(metadata?.cover, detail.item.cover))
                         }
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            Text(detail.item.name, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(detail.item.name, style = if (compact) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineLarge,
+                                fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             val facts = listOfNotNull(movie?.releaseDate ?: metadata?.releaseDate,
-                                movie?.genre ?: metadata?.genre, movie?.duration ?: metadata?.episodeRunTime,
+                                movie?.duration ?: metadata?.episodeRunTime,
                                 (movie?.rating ?: metadata?.rating ?: detail.item.rating)?.let { "★ $it" })
                             if (facts.isNotEmpty()) {
                                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     facts.forEach { fact -> DesktopMetadataBadge(fact) }
                                 }
                             }
-                            if (detail.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                            Text(movie?.plot?.takeIf(String::isNotBlank) ?: metadata?.plot?.takeIf(String::isNotBlank)
-                                ?: "Sinopse não informada pelo servidor.", color = palette.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodyMedium)
-                            rsv.squitv.shared.catalog.ContentDiscovery.people(movie?.director ?: metadata?.director).forEach { name ->
-                                TextButton({ person = name }) { Text("Direção: $name") }
-                            }
-                            val cast = rsv.squitv.shared.catalog.ContentDiscovery.people(movie?.cast ?: metadata?.cast)
-                            if (cast.isNotEmpty()) {
-                                Text("ELENCO", style = MaterialTheme.typography.labelSmall, color = palette.onSurfaceVariant)
-                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    cast.forEach { name -> AssistChip({ person = name }, { Text(name) }) }
+                            // Same action-first hierarchy as Android VodDetailContent: the
+                            // synopsis, cast and recommendations never precede the play action.
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                val firstEpisode = episodes.firstOrNull()
+                                Button(onClick = {
+                                    when {
+                                        saved != null -> controller.catalog.resumePlayback()
+                                        detail.kind == CatalogKind.MOVIES -> controller.catalog.playMovie()
+                                        selectedSeason != null && firstEpisode != null -> controller.catalog.playEpisode(selectedSeason, firstEpisode)
+                                    }
+                                }, enabled = if (saved != null) !detail.loading &&
+                                    (detail.kind == CatalogKind.MOVIES || detail.series != null)
+                                    else detail.kind == CatalogKind.MOVIES || !detail.loading && detail.series != null && firstEpisode != null,
+                                    modifier = Modifier.heightIn(min = 48.dp).focusRequester(playFocus)) {
+                                    Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(8.dp))
+                                    Text(if (saved != null) "CONTINUAR · ${watchTime(saved.positionMs)}"
+                                        else if (detail.kind == CatalogKind.SERIES && firstEpisode != null)
+                                            "ASSISTIR · T${selectedSeason} E${firstEpisode.episodeNum ?: 1}"
+                                        else "ASSISTIR", maxLines = 1)
                                 }
-                            }
-                            trailerUrl?.let { url ->
-                                OutlinedButton({ runCatching { uriHandler.openUri(url) }.onFailure {
-                                    trailerError = "Não foi possível abrir o trailer no navegador."
-                                } }) { Icon(Icons.Rounded.PlayCircle, null); Spacer(Modifier.width(8.dp)); Text("Trailer") }
-                            }
-                            trailerError?.let { Text(it, color = palette.error) }
-                            detail.relatedError?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall) }
-                            if (related.isNotEmpty()) {
-                                Text("CONTEÚDOS SEMELHANTES", style = MaterialTheme.typography.labelSmall, color = palette.primary)
-                                related.forEach { item ->
-                                    TextButton({ controller.catalog.openRelated(detail.kind, item) }) { Text(item.name) }
+                                trailerUrl?.let { url ->
+                                    OutlinedButton({ runCatching { uriHandler.openUri(url) }.onFailure {
+                                        trailerError = "Não foi possível abrir o trailer no navegador."
+                                    } }, Modifier.heightIn(min = 48.dp)) {
+                                        Icon(Icons.Rounded.PlayCircle, null); Spacer(Modifier.width(8.dp)); Text("Trailer")
+                                    }
                                 }
-                            }
-                            historyError?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall) }
-                            if (saved != null) Button(controller.catalog::resumePlayback,
-                                enabled = !detail.loading && (detail.kind == CatalogKind.MOVIES || detail.series != null)) {
-                                Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(8.dp))
-                                Text("CONTINUAR · ${watchTime(saved.positionMs)}")
-                            }
-                            if (detail.kind == CatalogKind.MOVIES && saved == null) Button(controller.catalog::playMovie) {
-                                Icon(Icons.Rounded.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("ASSISTIR")
-                            }
-                            if (detail.kind == CatalogKind.MOVIES && downloads != null) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    OutlinedButton(controller::downloadMovie,
+                                if (detail.kind == CatalogKind.MOVIES && downloads != null) {
+                                    OutlinedButton(controller::downloadMovie, Modifier.heightIn(min = 48.dp),
                                         enabled = !detail.loading && downloadProgress == null && downloaded?.status != DesktopDownloadStatus.COMPLETED) {
                                         Icon(Icons.Rounded.Download, null); Spacer(Modifier.width(8.dp))
                                         Text(if (downloadProgress?.key == downloaded?.key && downloadProgress != null) "BAIXANDO…"
                                             else if (downloaded?.status == DesktopDownloadStatus.COMPLETED) "BAIXADO" else "BAIXAR")
                                     }
-                                    TextButton(controller::openDownloads) { Text("Ver downloads") }
                                 }
+                            }
+                            if (detail.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                            Text(plot, color = palette.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium,
+                                maxLines = if (showFullPlot) Int.MAX_VALUE else if (compact) 3 else 4,
+                                overflow = TextOverflow.Ellipsis,
+                                onTextLayout = { if (!showFullPlot) plotOverflows = it.hasVisualOverflow })
+                            if (plotOverflows || showFullPlot) TextButton({ showFullPlot = !showFullPlot }) {
+                                Text(if (showFullPlot) "Ler menos" else "Ler mais")
+                            }
+                            (movie?.genre ?: metadata?.genre)?.takeIf(String::isNotBlank)?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            trailerError?.let { Text(it, color = palette.error) }
+                            historyError?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall) }
+                            if (detail.kind == CatalogKind.MOVIES && downloads != null) {
+                                TextButton(controller::openDownloads) { Text("Ver downloads") }
                                 downloadError?.let { StatusNotice(it, error = true) }
                                 downloadNotice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant) }
                             }
@@ -723,10 +753,50 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
                             }
                         }
                     }
+                    val directors = rsv.squitv.shared.catalog.ContentDiscovery.people(movie?.director ?: metadata?.director)
+                    val cast = rsv.squitv.shared.catalog.ContentDiscovery.people(movie?.cast ?: metadata?.cast)
+                    if (directors.isNotEmpty() || cast.isNotEmpty()) item(key = "additional-information") {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            TextButton({ showInformation = !showInformation }) {
+                                Icon(if (showInformation) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null)
+                                Spacer(Modifier.width(8.dp)); Text(if (showInformation) "Recolher direção e elenco" else "Direção e elenco")
+                            }
+                            if (showInformation) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    directors.forEach { name ->
+                                        AssistChip({ person = name }, { Text("Direção: $name") })
+                                    }
+                                    cast.forEach { name ->
+                                        AssistChip({ person = name }, { Text(name) })
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (related.isNotEmpty() || detail.relatedError != null) item(key = "related-content") {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            HorizontalDivider(color = palette.outline.copy(alpha = .3f))
+                            TextButton({ showRelated = !showRelated }) {
+                                Icon(if (showRelated) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null)
+                                Spacer(Modifier.width(8.dp)); Text("Conteúdos semelhantes${if (related.isNotEmpty()) " · ${related.size}" else ""}")
+                            }
+                            if (showRelated) {
+                                detail.relatedError?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall) }
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(4.dp)) {
+                                    items(related, key = { it.id }) { item ->
+                                        CatalogPoster(item, images, Modifier.width(if (compact) 116.dp else 144.dp)) {
+                                            controller.catalog.openRelated(detail.kind, item)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 if (scroll.canScrollBackward || scroll.canScrollForward)
                     VerticalScrollbar(rememberScrollbarAdapter(scroll), Modifier.align(Alignment.CenterEnd), style = desktopScrollbarStyle())
             }
         }
     }
+}
 }
