@@ -108,6 +108,16 @@ Servidor sem arte, arquivo inacessível, TLS inválido ou imagem acima dos limit
 
 ## Player e janela
 
+### Diagnóstico de canais ao vivo — alteração local
+
+O texto “Sem programação informada pelo servidor” indica somente a ausência de EPG. A consulta da programação é separada do fluxo de vídeo. No LibVLC 3.0.23, a conclusão da thread de entrada pode substituir o estado de falha por `Ended`. A consulta periódica sozinha não distinguia essa situação e o aviso anterior atribuía o encerramento ao servidor. O Windows passa a preservar o evento de falha do LibVLC e a diferenciar falha de encerramento, sem afirmar a causa remota. Referência: [transições do player no LibVLC 3.0.23](https://github.com/videolan/vlc/blob/3.0.23/lib/media_player.c).
+
+Uma falha ou encerramento inesperado em TV ao vivo ou Multi-view permite uma única reconexão automática, após 1,2 s, usando o mesmo canal, formato e configuração de rede. Fechar ou trocar de canal invalida essa tentativa. O botão de nova tentativa permanece disponível quando a reconexão não resolve. A regra não é aplicada a filmes ou séries.
+
+**Notificações → Diagnóstico de reprodução ao vivo** mostra o horário, a identificação numérica do canal, o identificador da sessão/tentativa, o tempo decorrido, os estados do player, a reconexão e o DNS configurado. Em caso de erro, **Ver diagnóstico** também leva à tela. **Copiar diagnóstico** copia o relatório para a área de transferência; **Limpar** remove o histórico local. O app guarda até 200 eventos das últimas 72 horas, por variante, e não envia o relatório automaticamente.
+
+O registro contém eventos estruturados. Avisos e erros nativos são classificados pelo modelo de mensagem, sem gravar nem formatar seu conteúdo bruto. Pode indicar HTTP, DNS, TLS, tempo limite, conexão ou decodificação; os indícios não são uma confirmação da causa e não incluem o código HTTP exato. Não registra URLs, IPs, credenciais, cabeçalhos, nomes de conta ou dados brutos de servidor. A captura de um único caso não comprova recusa do provedor, limite de conexões, falha no caminho da rede ou incompatibilidade de decodificação.
+
 ### Janela e detalhes — Windows 1.26.1
 
 O modo de tela cheia Windows passa a ser **tela cheia em janela**, sem bordas e com os limites do monitor, mantendo o peer AWT em `Floating`; não solicita fullscreen exclusivo nem troca o modo de vídeo. F11 e duplo clique nas áreas não interativas de arraste dos cabeçalhos alternam os modos. O último modo continua salvo por variante e a primeira abertura continua em tela cheia em janela. ESC permanece no fluxo de navegação. No modo janela, o arraste usa as coordenadas de tela do mouse; a proporção 16:9 e o tamanho/posição da sessão são restaurados ao sair da tela cheia, ajustados à área útil do monitor. Em tela cheia, arraste e redimensionamento ficam desativados. Não foi adicionada barra de título ou ação sobre botões/campos.

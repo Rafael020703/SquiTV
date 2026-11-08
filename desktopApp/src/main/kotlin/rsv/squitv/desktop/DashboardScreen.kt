@@ -128,7 +128,7 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         DashboardAction(Icons.Rounded.Search, "Buscar", controller::openSearch, modifier = Modifier.focusRequester(headerFocus[0])
                             .focusProperties { down = firstCardFocus })
-                        if (!narrow) DashboardAction(Icons.Rounded.Notifications, "Notificações",
+                        DashboardAction(Icons.Rounded.Notifications, "Notificações", controller::openNotifications,
                             modifier = Modifier.focusRequester(headerFocus[1]).focusProperties { down = cardFocus.getOrElse(1) { firstCardFocus } })
                         DashboardAction(Icons.Rounded.Settings, "Configurações", controller::openSettings,
                             Modifier.focusRequester(headerFocus[2]).focusProperties { down = cardFocus.getOrElse(2) { firstCardFocus } })
@@ -159,7 +159,7 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
                                         .focusProperties {
                                             left = if (focusIndex > 0) cardFocus[focusIndex - 1] else FocusRequester.Cancel
                                             right = if (focusIndex < main.size - 1) cardFocus[focusIndex + 1] else FocusRequester.Cancel
-                                            up = headerFocus[if (narrow && focusIndex == 1) 0 else focusIndex.coerceIn(0, 2)]
+                                            up = headerFocus[focusIndex.coerceIn(0, 2)]
                                             down = if (secondary.isNotEmpty()) cardFocus[(main.size + focusIndex).coerceAtMost(visibleTilesCount - 1)]
                                                 else FocusRequester.Cancel
                                         }

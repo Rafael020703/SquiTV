@@ -97,7 +97,7 @@ internal fun DesktopMultiViewScreen(controller: DesktopController, store: Deskto
                             }
                             MultiViewVideo(channel, credentials, scaleMode,
                                 if (preferences.muted) 0 else (MultiViewPolicy.audioVolume(index, state.focused) * preferences.volume).toInt(),
-                                preferences.preferredAudioLanguage, preferences.preferredSubtitleLanguage,
+                                preferences.preferredAudioLanguage, preferences.preferredSubtitleLanguage, controller.liveDiagnostics,
                                 { controller.multiView.focus(index); runCatching { focuses[index].requestFocus() } }, Modifier.weight(1f).fillMaxWidth())
                         }
                     }
@@ -113,21 +113,27 @@ internal fun DesktopMultiViewScreen(controller: DesktopController, store: Deskto
 
 @Composable
 private fun MultiViewVideo(channel: LiveChannel, credentials: ServerCredentials, scaleMode: VideoScaleMode, volume: Int,
-    audioLanguage: String?, subtitleLanguage: String?,
+    audioLanguage: String?, subtitleLanguage: String?, diagnostics: LivePlaybackDiagnostics?,
     focus: () -> Unit, modifier: Modifier) {
-    val engine = remember { WindowsLivePlayer().apply { setVolume(0) } }
+    val engine = remember { WindowsLivePlayer(diagnostics = diagnostics, liveOrigin = LivePlaybackOrigin.MULTIVIEW).apply { setVolume(0) } }
     val state by engine.state.collectAsState()
     var retry by remember { mutableIntStateOf(0) }
+    var previousOpening by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     DisposableEffect(engine) { onDispose { engine.close() } }
     LaunchedEffect(channel.id, credentials, retry) {
         engine.setVolume(volume)
+        val manual = previousOpening?.let { it.first == channel.id && it.second != retry } == true
+        previousOpening = channel.id to retry
         engine.play(LiveStreamAddress.build(credentials.baseUrl, credentials.username, credentials.password, channel.id), channel.id,
-            audioLanguage = audioLanguage, subtitleLanguage = subtitleLanguage)
+            audioLanguage = audioLanguage, subtitleLanguage = subtitleLanguage, manualRetry = manual)
     }
     LaunchedEffect(volume) { engine.setVolume(volume) }
     LaunchedEffect(scaleMode) { engine.setScaleMode(scaleMode) }
     Column(modifier) {
         NativeVideoSurface(engine, Modifier.weight(1f).fillMaxWidth(), onClick = focus)
+        if (state.reconnecting) Text("Reconectando ao canal…",
+            Modifier.fillMaxWidth().background(palette.surface).padding(horizontal = 8.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall, color = palette.primary)
         if (state.error != null) Row(Modifier.fillMaxWidth().background(palette.surface).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text(state.error.orEmpty(), Modifier.weight(1f), maxLines = 2, style = MaterialTheme.typography.labelSmall, color = palette.error)

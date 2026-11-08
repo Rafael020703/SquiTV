@@ -11,7 +11,7 @@ import rsv.squitv.domain.model.ChannelQuality
 import rsv.squitv.core.domain.state.AppSyncProgress
 import rsv.squitv.core.domain.state.AppSyncStatus
 
-enum class DesktopPage { DASHBOARD, LIVE, MOVIES, SERIES, SETTINGS, UPDATES, SEARCH, FAVORITES, MULTIVIEW, DOWNLOADS, APP_DNS }
+enum class DesktopPage { DASHBOARD, LIVE, MOVIES, SERIES, SETTINGS, UPDATES, SEARCH, FAVORITES, MULTIVIEW, DOWNLOADS, APP_DNS, NOTIFICATIONS }
 internal val ALL_LIVE_CATEGORY = LiveCategory("ALL", "Todos")
 internal val RECENT_LIVE_CATEGORY = LiveCategory("RECENTS", "Adicionados recentemente")
 data class LiveSession(val sourceName: String, val channels: List<LiveChannel>, val index: Int,
@@ -50,6 +50,7 @@ class DesktopController(
     val state = mutable.asStateFlow()
     internal var watchHistory: DesktopWatchHistory? = null
     internal var downloads: DesktopDownloads? = null
+    internal var liveDiagnostics: LivePlaybackDiagnostics? = null
     internal val catalog = OnDemandController(client, scope) { watchHistory }
     internal val search = DesktopSearchController(client, scope)
     internal val favorites = DesktopFavoritesController(client, scope)
@@ -372,6 +373,11 @@ class DesktopController(
     }
 
     fun openAppDns() { mutable.value = mutable.value.copy(page = DesktopPage.APP_DNS) }
+
+    fun openNotifications() {
+        if (mutable.value.playback != null) stopPlayback()
+        mutable.value = mutable.value.copy(page = DesktopPage.NOTIFICATIONS)
+    }
 
     fun play(channel: LiveChannel, visibleChannels: List<LiveChannel>, favoriteSource: Boolean = false) {
         val current = mutable.value

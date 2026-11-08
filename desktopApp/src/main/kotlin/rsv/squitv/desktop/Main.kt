@@ -52,12 +52,14 @@ private fun runApplication() {
         val history = remember { DesktopWatchHistory(directory, scope) }
         remember(directory) { initializeDesktopAppDns(directory) }
         val downloads = remember { DesktopDownloads(directory, scope) }
+        val liveDiagnostics = remember { LivePlaybackDiagnostics(directory, scope) }
         val controller = remember { DesktopController(XtreamClient(),
             WindowsCredentialStore(directory, useDebugDefaults = DesktopBuildInfo.DEBUG,
                 debugDefaultsFile = if (DesktopBuildInfo.DEBUG)
                     System.getProperty("squitv.debug.defaultsFile")?.let(Path::of) ?: directory.resolve("debug-login.dpapi")
                 else directory.resolve("debug-login.dpapi")), scope).also {
                     it.watchHistory = history; it.downloads = downloads; it.catalog.attachMetadata(directory)
+                    it.liveDiagnostics = liveDiagnostics
                 } }
         val preferences = remember { DesktopPreferencesStore(directory, scope) }
         val updates = remember { DesktopUpdateController(directory.resolve("updates"), preferences, scope) }
@@ -96,6 +98,7 @@ private fun runApplication() {
                         preferences.flushCatalogPosition()
                         preferences.updateAndAwait { it.copy(fullscreen =
                             requestedFullscreen ?: it.fullscreen) }
+                        liveDiagnostics.flush()
                     }
                     finally { exitApplication() }
                 }
@@ -294,6 +297,8 @@ private fun DesktopScreenContent(state: DesktopState, controller: DesktopControl
             DesktopUpdatesScreen(installUpdate)
         } else if (state.page == DesktopPage.SETTINGS) {
             screens.SaveableStateProvider("settings") { DesktopSettingsScreen(state, controller, preferences) }
+        } else if (state.page == DesktopPage.NOTIFICATIONS) {
+            controller.liveDiagnostics?.let { DesktopLiveNotifications(it) }
         } else if (catalog.detail != null) {
             val detail = requireNotNull(catalog.detail)
             screens.SaveableStateProvider("detail-${detail.kind}-${detail.item.id}") {

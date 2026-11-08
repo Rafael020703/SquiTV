@@ -47,7 +47,7 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
     var sleepMinutes by remember { mutableStateOf<Int?>(null) }
     var holdingControls by remember { mutableStateOf(false) }
     val controlsFocus = remember { FocusRequester() }
-    val engine = remember { WindowsLivePlayer() }
+    val engine = remember { WindowsLivePlayer(diagnostics = controller.liveDiagnostics) }
     val status by engine.state.collectAsState()
     val preferences by settings.state.collectAsState()
     val preferencesLoaded by settings.loaded.collectAsState()
@@ -126,9 +126,13 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
         registerPlayer(engine); registerInput { currentInput(it) }
         onDispose { registerInput(null); registerPlayer(null); overlay.hideOverlayImmediately(); engine.close() }
     }
+    var previousOpening by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     LaunchedEffect(session.channel.id, credentials, retry) {
         hideControls(); menu = null; banner = true
-        engine.play(LiveStreamAddress.build(credentials.baseUrl, credentials.username, credentials.password, session.channel.id), session.channel.id, preferences.preferredAudioLanguage, preferences.preferredSubtitleLanguage)
+        val manual = previousOpening?.let { it.first == session.channel.id && it.second != retry } == true
+        previousOpening = session.channel.id to retry
+        engine.play(LiveStreamAddress.build(credentials.baseUrl, credentials.username, credentials.password, session.channel.id),
+            session.channel.id, preferences.preferredAudioLanguage, preferences.preferredSubtitleLanguage, manualRetry = manual)
         delay(3000); banner = false
     }
     LaunchedEffect(preferences.volume, preferences.muted) {
@@ -166,7 +170,15 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
         heightDp = 76, widthDp = 168, interactive = false) {
         volumeNotice?.let { PlayerVolumeNotice(it) }
     }
-    NativePlayerLayer(banner && !controls && menu == null, PlayerLayerPlacement.TOP_START,
+    NativePlayerLayer(status.reconnecting && !controls && menu == null, PlayerLayerPlacement.TOP_START,
+        heightDp = 54, widthDp = 340, interactive = false) {
+        Surface(Modifier.fillMaxSize(), color = palette.surface, shape = RoundedCornerShape(12.dp)) {
+            Box(Modifier.padding(horizontal = 16.dp), contentAlignment = Alignment.CenterStart) {
+                Text("Reconectando ao canal…", color = palette.primary, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+    NativePlayerLayer(banner && !status.reconnecting && !controls && menu == null, PlayerLayerPlacement.TOP_START,
         heightDp = if (programme != null) 84 else 68, widthDp = 360, interactive = false) {
         CompactChannelBanner(session.channel.name, null, programme?.title, progress, true,
             palette.background, palette.primary, palette.onSurface, palette.onSurfaceVariant,
@@ -220,8 +232,13 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
                 }
                 status.error?.let {
                     Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall, maxLines = 2)
-                    TextButton({ retry++; interaction() }) { Text("Tentar novamente") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton({ retry++; interaction() }) { Text("Tentar novamente") }
+                        if (controller.liveDiagnostics != null)
+                            TextButton(controller::openNotifications) { Text("Ver diagnóstico") }
+                    }
                 }
+                if (status.reconnecting) Text("Reconectando ao canal…", color = palette.primary, style = MaterialTheme.typography.bodySmall)
                 preferencesError?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall, maxLines = 2) }
             })
     }
