@@ -2,7 +2,7 @@
 
 ## Estado e plataformas
 
-A versão atual do Windows é [**1.26.1 x64**, publicada em 05/11/2026](https://github.com/Rafael020703/SquiTV/releases/tag/v1.26.1.1), em uma atualização exclusiva dessa plataforma. [Notas Windows](releases/v1.26.1-windows.md). O Android permanece em **1.26/code 29**, na [publicação conjunta v1.26](https://github.com/Rafael020703/SquiTV/releases/tag/v1.26), que continua como Latest. As referências estáveis são independentes: Windows aponta v1.26.1.1; Android preserva v1.26. Nenhuma tag ou arquivo anterior foi substituído.
+A versão atual do Windows é [**1.26.2 x64**, publicada em 08/11/2026](https://github.com/Rafael020703/SquiTV/releases/tag/v1.26.2.1), em uma atualização exclusiva dessa plataforma. [Notas Windows](releases/v1.26.2-windows.md). O Android permanece em **1.26/code 29**, na [publicação conjunta v1.26](https://github.com/Rafael020703/SquiTV/releases/tag/v1.26), que continua como Latest. As referências estáveis são independentes: Windows aponta v1.26.2.1; Android preserva v1.26. Nenhuma tag ou arquivo anterior foi substituído.
 
 O Windows aproxima funções e apresentação do Android, mas ainda não tem paridade completa. `:desktopApp` consome Kotlin puro em `:shared` e fontes Compose em `uiCommon`; nunca depende de `:app`. Motores, armazenamento e integrações de sistema permanecem específicos de cada plataforma.
 
@@ -108,7 +108,7 @@ Servidor sem arte, arquivo inacessível, TLS inválido ou imagem acima dos limit
 
 ## Player e janela
 
-### Diagnóstico de canais ao vivo — alteração local
+### Diagnóstico de canais ao vivo — Windows 1.26.2
 
 O texto “Sem programação informada pelo servidor” indica somente a ausência de EPG. A consulta da programação é separada do fluxo de vídeo. No LibVLC 3.0.23, a conclusão da thread de entrada pode substituir o estado de falha por `Ended`. A consulta periódica sozinha não distinguia essa situação e o aviso anterior atribuía o encerramento ao servidor. O Windows passa a preservar o evento de falha do LibVLC e a diferenciar falha de encerramento, sem afirmar a causa remota. Referência: [transições do player no LibVLC 3.0.23](https://github.com/videolan/vlc/blob/3.0.23/lib/media_player.c).
 
@@ -188,6 +188,10 @@ Preferências, favoritos e organização têm escopo por conta/tipo. Histórico 
 O `.gitignore` conserva planos, auditorias, registros de manutenção, dados privados, caches e builds localmente. Documentação pública permanente e notas de versões são versionadas; binários/checksums/manifesto são assets da release. Não publicar diretórios inteiros de staging nem relatórios contendo caminhos/dados pessoais.
 
 ## Evidências e limites
+
+### Revisão Windows 1.26.2
+
+O instalador release x64 1.26.2 foi compilado com JDK 21/jpackage. O manifesto exclusivo Windows passou pela CLI compartilhada. Os hashes dos payloads embutidos e as propriedades de upgrade/limpeza do MSI foram conferidos sem executar o instalador. O [CI da revisão distribuída](https://github.com/Rafael020703/SquiTV/actions/runs/42483841947) passou nos dois jobs. Os três downloads públicos conferem por SHA-256/tamanho; EXE de 72.244.224 bytes. A referência Windows foi atualizada após essa conferência, preservando Android e Latest v1.26. A compilação, o CI e a integridade dos downloads não comprovam o cenário de reprodução relatado, nem instalação ou upgrade em execução. A release instalada, seus processos e dados ficaram intactos.
 
 ### Revisão Windows 1.26.1
 
