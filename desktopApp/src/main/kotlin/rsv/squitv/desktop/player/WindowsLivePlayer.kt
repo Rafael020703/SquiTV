@@ -54,7 +54,8 @@ class WindowsLivePlayer internal constructor(
     private var viewportHeight = 0
     private var appliedGeometry: VlcVideoGeometry? = null
     private data class PendingMedia(val address: String, val generation: Long,
-        val audioLanguage: String?, val subtitleLanguage: String?, val attempt: LivePlaybackAttempt?)
+        val audioLanguage: String?, val subtitleLanguage: String?, val attempt: LivePlaybackAttempt?,
+        val queuedAt: Long = System.nanoTime())
     private var pendingMedia: PendingMedia? = null
     private var activeRequest: PendingMedia? = null
     private var retryTask: ScheduledFuture<*>? = null
@@ -107,6 +108,11 @@ class WindowsLivePlayer internal constructor(
 
     init {
         worker.scheduleWithFixedDelay({ guarded {
+            val pending = pendingMedia
+            if (surface == null && pending != null && pending.generation == generation.get() &&
+                System.nanoTime() - pending.queuedAt >= TimeUnit.SECONDS.toNanos(3)) {
+                pending.attempt?.record(LiveDiagnosticEvent.WAITING_FOR_SURFACE)
+            }
             val p = player ?: return@guarded
             if (!active || activeGeneration != generation.get()) return@guarded
             val polledGeneration = activeGeneration
@@ -183,6 +189,21 @@ class WindowsLivePlayer internal constructor(
         }
     }
 
+    fun localMediaUnavailable(sourceId: Int) {
+        check(onDemand)
+        if (closed.get()) return
+        val token = generation.incrementAndGet()
+        mutable.update { it.copy(phase = "Arquivo indisponível", paused = false,
+            error = "O arquivo salvo está ausente ou incompleto. Volte aos Downloads para baixar novamente.",
+            timeMs = 0, durationMs = 0, seekable = false, ended = false, sourceId = sourceId,
+            playbackGeneration = token, audioTracks = emptyList(), subtitleTracks = emptyList(), optionError = null) }
+        submit(mediaScoped = true) {
+            active = false
+            pendingMedia = null
+            player?.let { api!!.libvlc_media_player_stop(it) }
+        }
+    }
+
     private fun scheduleLiveRetry(request: PendingMedia) {
         request.attempt?.record(LiveDiagnosticEvent.RETRY_SCHEDULED)
         mutable.update { if (request.generation == generation.get())
@@ -192,7 +213,7 @@ class WindowsLivePlayer internal constructor(
             if (closed.get() || request.generation != generation.get()) return@guarded
             val next = request.attempt?.next() ?: return@guarded
             next.record(LiveDiagnosticEvent.RETRY_STARTED)
-            pendingMedia = request.copy(attempt = next)
+            pendingMedia = request.copy(attempt = next, queuedAt = System.nanoTime())
             startPending()
         } }, 1200, TimeUnit.MILLISECONDS)
     }

@@ -264,7 +264,7 @@ private fun DesktopScreenContent(state: DesktopState, controller: DesktopControl
         return
     }
     val vod = catalog.playback
-    val vodAccount = state.credentials ?: state.savedCredentials?.takeIf { vod?.localMediaUri != null }
+    val vodAccount = state.credentials ?: state.savedCredentials?.takeIf { vod?.localDownloadKey != null }
     if (vod != null && vodAccount != null) {
         VodPlayerScreen(vod, vodAccount, controller, preferences, fullscreen, toggleFullscreen, registerPlayer, registerLiveInput)
         return

@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.launch
 import rsv.squitv.core.ui.components.player.*
 import rsv.squitv.desktop.player.WindowsLivePlayer
 import rsv.squitv.shared.xtream.OnDemandPlayback
@@ -65,10 +64,10 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
     var seekFocused by remember { mutableStateOf(false) }
     var seekRevision by remember { mutableIntStateOf(0) }
     var retry by remember { mutableIntStateOf(0) }
-    var resumeTarget by remember(session.id, session.series, retry) { mutableStateOf<Long?>(null) }
-    var confirmingResume by remember(session.id, session.series, retry) { mutableStateOf<Long?>(null) }
-    var resumeWarning by remember(session.id, session.series, retry) { mutableStateOf<String?>(null) }
-    var expectedGeneration by remember(session.id, session.series, retry) { mutableLongStateOf(-1) }
+    var resumeTarget by remember(session, account, retry) { mutableStateOf<Long?>(null) }
+    var confirmingResume by remember(session, account, retry) { mutableStateOf<Long?>(null) }
+    var resumeWarning by remember(session, account, retry) { mutableStateOf<String?>(null) }
+    var expectedGeneration by remember(session, account, retry) { mutableLongStateOf(-1) }
     var sleepMinutes by remember { mutableStateOf<Int?>(null) }
     val pauseFocus = remember { FocusRequester() }
     val showControls: () -> Unit = { overlay.showOverlayWithTimer(scope) { controls = it } }
@@ -157,16 +156,25 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
             registerInput(null); registerPlayer(null); overlay.hideOverlayImmediately(); engine.close()
         }
     }
-    LaunchedEffect(session.id, session.series, session.localMediaUri, account, retry) {
-        val saved = liveCategoryScope(account)?.let { controller.watchHistory?.resume(it, session) }
+    LaunchedEffect(session, account, retry) {
         menu = null; seek.cancelSeek(); dragging = null; showControls()
-        engine.play(session.localMediaUri ?: OnDemandPlayback.address(account, session.series, session.id, session.extension), session.id, preferences.preferredAudioLanguage, preferences.preferredSubtitleLanguage)
-        expectedGeneration = engine.state.value.playbackGeneration
+        controller.awaitWatchSave()
+        val saved = accountScope?.let { controller.watchHistory?.resume(it, session) }
+        val address = if (session.localDownloadKey != null) {
+            val file = accountScope?.let { controller.downloads?.localFile(session.localDownloadKey, it) }
+            if (file == null) {
+                engine.localMediaUnavailable(session.id)
+                return@LaunchedEffect
+            }
+            file.toUri().toString()
+        } else OnDemandPlayback.address(account, session.series, session.id, session.extension)
         resumeTarget = saved?.positionMs
+        engine.play(address, session.id, preferences.preferredAudioLanguage, preferences.preferredSubtitleLanguage)
+        expectedGeneration = engine.state.value.playbackGeneration
     }
-    LaunchedEffect(session.id, session.series, account, engine) {
+    LaunchedEffect(session, account, engine) {
         engine.state.collect { latest ->
-            if (currentSession.id == session.id && currentSession.series == session.series && currentAccount == account &&
+            if (currentSession == session && currentAccount == account &&
                 currentExpectedGeneration >= 0 && latest.playbackGeneration == currentExpectedGeneration &&
                 (latest.ended || currentResumeTarget == null && currentConfirmingResume == null &&
                     currentSeek.pendingConfirmedSeek == null && currentSeek.seekTarget == null))
@@ -325,11 +333,8 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
                         onValueChangeFinished = { settings.update { it.copy(volume = volume.toInt()) } }, modifier = Modifier.width(120.dp))
                     Spacer(Modifier.weight(1f))
                     PlayerIcon(Icons.Rounded.Refresh, "Tentar novamente", {
-                        scope.launch {
-                            controller.catalog.beforePlaybackChange?.invoke()
-                            controller.awaitWatchSave()
-                            retry++; interaction()
-                        }
+                        controller.catalog.beforePlaybackChange?.invoke()
+                        retry++; interaction()
                     })
                     if (session.series) PlayerIcon(Icons.Rounded.VideoLibrary, "Episódios", { openMenu(VodMenu.EPISODES) })
                     PlayerIcon(if (fullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen, "Alternar tela cheia (F11)", toggleFullscreen)

@@ -33,7 +33,7 @@ internal fun DesktopDownloadsScreen(controller: DesktopController) {
     val scroll = rememberLazyListState()
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         DesktopPageHeading("DOWNLOADS", "Filmes e episódios salvos neste computador")
-        Text("Um arquivo por vez. Temporadas entram na fila. Fechar o app, cancelar a fila ou sair da conta interrompe os pendentes; Reiniciar começa do zero.",
+        Text("Um arquivo por vez. Fechar o app, cancelar a fila ou sair da conta interrompe os pendentes. Reiniciar começa do zero.",
             style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant)
         error?.let { StatusNotice(it, error = true) }
         notice?.let { StatusNotice(it) }
@@ -44,26 +44,28 @@ internal fun DesktopDownloadsScreen(controller: DesktopController) {
                 LazyColumn(state = scroll, modifier = Modifier.fillMaxSize().padding(end = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(entries, key = { it.key }) { entry ->
-                        val active = progress?.takeIf { it.key == entry.key }
+                        val active = progress?.takeIf { it.key == entry.key && entry.status == DesktopDownloadStatus.DOWNLOADING }
                         val bytes = active?.bytes ?: entry.bytes
                         val total = active?.total ?: entry.total
                         val complete = entry.status == DesktopDownloadStatus.COMPLETED
                         val label = when {
-                            active != null -> "Baixando"
+                            entry.status == DesktopDownloadStatus.DOWNLOADING -> "Baixando"
                             complete -> "Concluído"
                             entry.status == DesktopDownloadStatus.QUEUED -> "Na fila"
                             entry.status == DesktopDownloadStatus.FAILED -> "Falhou"
                             else -> "Interrompido"
                         }
                         val sizes = DownloadPresentation.fileSize(bytes) + if (total > 0 && !complete) " / ${DownloadPresentation.fileSize(total)}" else ""
+                        val subtitle = "$label · ${entry.failure ?: sizes}"
                         val interaction = rememberVisualInteraction()
                         Surface(onClick = { if (complete) controller.playDownload(entry.key) }, enabled = complete,
                             interactionSource = interaction.source, modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(16.dp), color = palette.surface,
                             border = BorderStroke(1.dp, if (interaction.emphasized) palette.primary else palette.outline)) {
-                            DownloadItemContent(entry.title.uppercase(), "$label · $sizes",
+                            DownloadItemContent(entry.title.uppercase(), subtitle,
                                 MaterialTheme.typography.titleMedium, MaterialTheme.typography.bodySmall,
-                                palette.onSurface, palette.onSurfaceVariant, 16.dp, 20.dp,
+                            palette.onSurface, if (entry.status == DesktopDownloadStatus.FAILED) palette.error else palette.onSurfaceVariant,
+                            16.dp, 20.dp,
                                 thumbnail = {
                                     Surface(Modifier.width(120.dp).aspectRatio(1.77f), shape = RoundedCornerShape(8.dp),
                                         color = palette.surfaceVariant) {
@@ -76,10 +78,10 @@ internal fun DesktopDownloadsScreen(controller: DesktopController) {
                                         }
                                     }
                                 }, actions = {
-                                    if (active != null) IconButton(downloads::interrupt) { Icon(Icons.Rounded.Close, "Cancelar fila de downloads") }
+                                    if (entry.status == DesktopDownloadStatus.DOWNLOADING) IconButton(downloads::interrupt) { Icon(Icons.Rounded.Close, "Cancelar fila de downloads") }
                                     else if (entry.status == DesktopDownloadStatus.QUEUED) Text("Na fila", style = MaterialTheme.typography.labelSmall)
                                     else if (complete) IconButton({ controller.playDownload(entry.key) }) { Icon(Icons.Rounded.PlayArrow, "Reproduzir arquivo salvo") }
-                                    else TextButton({ controller.retryDownload(entry.key) }, enabled = progress == null) { Text("Reiniciar") }
+                                    else TextButton({ controller.retryDownload(entry.key) }) { Text("Reiniciar") }
                                     IconButton({ deleting = entry }) { Icon(Icons.Rounded.Delete, "Excluir download", tint = palette.error) }
                                 })
                         }

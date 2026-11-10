@@ -610,21 +610,17 @@ class DesktopController(
     }
 
     internal fun playDownload(key: String) {
-        val account = mutable.value.credentials ?: mutable.value.savedCredentials ?: return
+        val current = mutable.value
+        if (current.page != DesktopPage.DOWNLOADS) return
+        val account = current.credentials ?: current.savedCredentials ?: return
         val accountKey = liveCategoryScope(account) ?: return
-        scope.launch {
-            val (entry, file) = downloads?.localFile(key, accountKey) ?: return@launch
-            val current = mutable.value
-            if (current.page != DesktopPage.DOWNLOADS || liveCategoryScope(current.credentials ?: current.savedCredentials) != accountKey) return@launch
-            if (entry.kind == DesktopDownloadKind.EPISODE) {
-                val available = downloads?.state?.value?.entries.orEmpty().filter { it.account == accountKey &&
-                    it.kind == DesktopDownloadKind.EPISODE && it.seriesId == entry.seriesId && it.status == DesktopDownloadStatus.COMPLETED }
-                val local = available.mapNotNull { downloads?.localFile(it.key, accountKey) }
-                if (mutable.value.page != DesktopPage.DOWNLOADS || liveCategoryScope(mutable.value.credentials ?: mutable.value.savedCredentials) != accountKey) return@launch
-                catalog.playDownloadedEpisodes(account, entry, local)
-            } else catalog.playDownloadedMovie(account, CatalogItem(entry.streamId, entry.title, null, null,
-                extension = entry.extension), file.toUri().toString())
-        }
+        val completed = downloads?.state?.value?.entries.orEmpty()
+            .filter { it.account == accountKey && it.status == DesktopDownloadStatus.COMPLETED }
+        val entry = completed.firstOrNull { it.key == key } ?: return
+        val episodes = if (entry.kind == DesktopDownloadKind.EPISODE) completed.filter {
+            it.kind == DesktopDownloadKind.EPISODE && it.seriesId == entry.seriesId
+        } else emptyList()
+        catalog.playDownload(account, entry, episodes)
     }
 
     internal fun openCatalog(kind: CatalogKind) {

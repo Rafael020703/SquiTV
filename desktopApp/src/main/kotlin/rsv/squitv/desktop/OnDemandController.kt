@@ -35,7 +35,7 @@ internal data class CatalogDetail(val kind: CatalogKind, val item: CatalogItem,
 internal data class VodSession(val id: Int, val title: String, val extension: String?, val series: Boolean,
     val cover: String?, val episodes: List<XtreamEpisode> = emptyList(), val episodeIndex: Int = -1,
     val catalogId: Int = id, val catalogTitle: String = title, val catalogCover: String? = cover,
-    val localMediaUri: String? = null, val localEpisodeUris: Map<Int, String> = emptyMap())
+    val localDownloadKey: String? = null, val localEpisodeKeys: Map<Int, String> = emptyMap())
 internal data class OnDemandState(val kind: CatalogKind = CatalogKind.MOVIES,
     val browse: Map<CatalogKind, CatalogBrowse> = emptyMap(), val detail: CatalogDetail? = null,
     val playback: VodSession? = null) {
@@ -308,28 +308,24 @@ internal class OnDemandController(private val client: XtreamClient, private val 
         }
     }
 
-    internal fun playDownloadedMovie(account: ServerCredentials, item: CatalogItem, uri: String) {
-        require(java.net.URI(uri).scheme == "file")
+    internal fun playDownload(account: ServerCredentials, entry: DesktopDownload, local: List<DesktopDownload>) {
+        val session = if (entry.kind == DesktopDownloadKind.MOVIE) {
+            VodSession(entry.streamId, entry.title, entry.extension, false, null, localDownloadKey = entry.key)
+        } else {
+            val episodes = local.map { download -> XtreamEpisode(id = download.streamId.toString(),
+                episodeNum = download.episodeNumber, title = download.title, container_extension = download.extension,
+                season = download.seasonNumber) }
+            val info = XtreamSeriesInfo(episodes = episodes.groupBy { it.season.toString() })
+            val ordered = OnDemandPlayback.seasons(info).flatMap { (season, _) -> OnDemandPlayback.episodes(info, season) }
+            val index = ordered.indexOfFirst { it.id?.toIntOrNull() == entry.streamId }
+            if (index < 0) return
+            VodSession(entry.streamId, entry.title, entry.extension, true, null, ordered, index,
+                catalogId = requireNotNull(entry.seriesId), catalogTitle = requireNotNull(entry.seriesTitle),
+                localDownloadKey = entry.key, localEpisodeKeys = local.associate { it.streamId to it.key })
+        }
         if (credentials != account) { reset(); credentials = account } else leave()
-        mutable.update { it.copy(kind = CatalogKind.MOVIES, detail = null,
-            playback = VodSession(item.id, item.name, item.extension, false, item.cover, localMediaUri = uri)) }
-    }
-
-    internal fun playDownloadedEpisodes(account: ServerCredentials, entry: DesktopDownload,
-        local: List<Pair<DesktopDownload, Path>>) {
-        val episodes = local.map { (download, _) -> XtreamEpisode(id = download.streamId.toString(),
-            episodeNum = download.episodeNumber, title = download.title, container_extension = download.extension,
-            season = download.seasonNumber) }
-        val info = XtreamSeriesInfo(episodes = episodes.groupBy { it.season.toString() })
-        val ordered = OnDemandPlayback.seasons(info).flatMap { (season, _) -> OnDemandPlayback.episodes(info, season) }
-        val index = ordered.indexOfFirst { it.id?.toIntOrNull() == entry.streamId }
-        if (index < 0) return
-        val uris = local.associate { (download, file) -> download.streamId to file.toUri().toString() }
-        if (credentials != account) { reset(); credentials = account } else leave()
-        mutable.update { it.copy(kind = CatalogKind.SERIES, detail = null, playback = VodSession(
-            entry.streamId, entry.title, entry.extension, true, null, ordered, index,
-            catalogId = requireNotNull(entry.seriesId), catalogTitle = requireNotNull(entry.seriesTitle),
-            localMediaUri = uris.getValue(entry.streamId), localEpisodeUris = uris)) }
+        mutable.update { it.copy(kind = if (session.series) CatalogKind.SERIES else CatalogKind.MOVIES,
+            detail = null, playback = session) }
     }
 
     fun playMovie() {
@@ -366,13 +362,13 @@ internal class OnDemandController(private val client: XtreamClient, private val 
         val session = mutable.value.playback?.takeIf { it.series } ?: return
         val index = session.episodes.indexOfFirst { it.id == id }
         if (index < 0) return
-        if (session.localMediaUri != null) {
+        if (session.localDownloadKey != null) {
             val streamId = id.toIntOrNull() ?: return
-            val uri = session.localEpisodeUris[streamId] ?: return
+            val key = session.localEpisodeKeys[streamId] ?: return
             val episode = session.episodes[index]
             beforePlaybackChange?.invoke()
             mutable.update { it.copy(playback = session.copy(id = streamId, title = episode.title ?: session.catalogTitle,
-                extension = episode.container_extension, episodeIndex = index, localMediaUri = uri)) }
+                extension = episode.container_extension, episodeIndex = index, localDownloadKey = key)) }
             return
         }
         val detail = mutable.value.detail ?: return

@@ -13,7 +13,7 @@ val isDebug = variant == "debug"
 val installerMode = providers.gradleProperty("desktopInstaller").orElse(if (isDebug) "offline" else "online").get()
 require(installerMode in setOf("online", "offline")) { "desktopInstaller must be online or offline" }
 val onlineInstaller = installerMode == "online"
-val desktopVersion = "1.26.2"
+val desktopVersion = "1.26.3"
 val appName = if (isDebug) "Squi TV Debug" else "Squi TV"
 val dataFolder = if (isDebug) "SquiTVDebug" else "SquiTV"
 layout.buildDirectory.set(layout.projectDirectory.dir("build/$variant"))

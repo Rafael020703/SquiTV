@@ -12,6 +12,7 @@ import rsv.squitv.shared.xtream.OnDemandPlayback
 import rsv.squitv.shared.xtream.ServerCredentials
 import java.io.IOException
 import java.nio.file.*
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -29,7 +30,8 @@ internal data class DesktopDownload(val key: String, val account: String, val st
     val title: String, val extension: String, val status: DesktopDownloadStatus,
     val bytes: Long = 0, val total: Long = -1, val createdAt: Long = System.currentTimeMillis(),
     val kind: DesktopDownloadKind = DesktopDownloadKind.MOVIE, val seriesId: Int? = null,
-    val seriesTitle: String? = null, val seasonNumber: Int? = null, val episodeNumber: String? = null)
+    val seriesTitle: String? = null, val seasonNumber: Int? = null, val episodeNumber: String? = null,
+    val failure: String? = null)
 
 @Serializable
 internal data class DesktopDownloadData(val schema: Int = 1, val entries: List<DesktopDownload> = emptyList())
@@ -37,6 +39,12 @@ internal data class DesktopDownloadProgress(val key: String, val bytes: Long, va
 
 /** Direct media only; a user-requested season queues episodes, one transfer at a time. */
 internal class DesktopDownloads(directory: Path, private val scope: CoroutineScope) : AutoCloseable {
+    private companion object {
+        val fileKeyPattern = Regex("[a-f0-9-]{36}")
+        val accountPattern = Regex("[a-f0-9]{64}")
+        val extensionPattern = Regex("[a-z0-9]{1,10}")
+    }
+
     private val root = directory.resolve("downloads").toAbsolutePath().normalize()
     private val files = root.resolve("files")
     private val store = DesktopJsonFile(root.resolve("index.json"), DesktopDownloadData(),
@@ -44,9 +52,9 @@ internal class DesktopDownloads(directory: Path, private val scope: CoroutineSco
         require(data.schema == 1 && data.entries.size <= 1000 && data.entries.distinctBy { it.key }.size == data.entries.size)
         require(data.entries.distinctBy { Triple(it.account, it.kind, it.streamId) }.size == data.entries.size)
         require(data.entries.all {
-            it.key.matches(Regex("[a-f0-9-]{36}")) && it.account.matches(Regex("[a-f0-9]{64}")) &&
-                it.streamId > 0 && it.title.length in 1..1024 && it.extension.matches(Regex("[a-z0-9]{1,10}")) &&
-                it.bytes >= 0 && it.total >= -1 && it.createdAt > 0 &&
+            it.key.matches(fileKeyPattern) && it.account.matches(accountPattern) &&
+                it.streamId > 0 && it.title.length in 1..1024 && it.extension.matches(extensionPattern) &&
+                it.bytes >= 0 && it.total >= -1 && it.createdAt > 0 && (it.failure?.length ?: 0) <= 160 &&
                 (it.status != DesktopDownloadStatus.COMPLETED || it.bytes > 0 && it.total == it.bytes) &&
                 (if (it.kind == DesktopDownloadKind.MOVIE) it.seriesId == null && it.seriesTitle == null && it.seasonNumber == null && it.episodeNumber == null
                  else it.seriesId != null && it.seriesId > 0 && !it.seriesTitle.isNullOrBlank() && it.seriesTitle.length <= 1024 &&
@@ -65,7 +73,8 @@ internal class DesktopDownloads(directory: Path, private val scope: CoroutineSco
     private val ready = scope.async {
         store.load()
         store.update { data -> data.copy(entries = data.entries.map {
-            if (it.status in setOf(DesktopDownloadStatus.DOWNLOADING, DesktopDownloadStatus.QUEUED)) it.copy(status = DesktopDownloadStatus.INTERRUPTED) else it
+            if (it.status == DesktopDownloadStatus.DOWNLOADING || it.status == DesktopDownloadStatus.QUEUED)
+                it.copy(status = DesktopDownloadStatus.INTERRUPTED) else it
         }) }
         mutableLoaded.value = true
     }
@@ -75,6 +84,7 @@ internal class DesktopDownloads(directory: Path, private val scope: CoroutineSco
     @Volatile private var boundAccount: String? = null
     @Volatile private var job: Job? = null
     @Volatile private var stopping = false
+    private var activeTransfer: Pair<String, Job>? = null
 
     fun bind(account: ServerCredentials?) {
         val key = liveCategoryScope(account)
@@ -112,7 +122,7 @@ internal class DesktopDownloads(directory: Path, private val scope: CoroutineSco
     }
 
     private fun extension(raw: String?): String = raw?.trim()?.trimStart('.')?.lowercase(java.util.Locale.ROOT)
-        ?.takeIf { it.matches(Regex("[a-z0-9]{1,10}")) } ?: "mp4"
+        ?.takeIf { it.matches(extensionPattern) } ?: "mp4"
 
     private fun enqueue(account: ServerCredentials, requests: List<DesktopDownload>) {
         val accountKey = liveCategoryScope(account) ?: return
@@ -122,21 +132,33 @@ internal class DesktopDownloads(directory: Path, private val scope: CoroutineSco
                 ready.await()
                 if (stopping || boundAccount != accountKey) return@withLock
                 if (job?.isCancelled == true) job?.join()
-                val entries = state.value.entries.toMutableList()
                 var added = 0
                 var unsupported = 0
-                for (request in requests) {
-                    if (request.extension in setOf("m3u8", "mpd")) { unsupported++; continue }
-                    val previous = entries.firstOrNull { it.account == accountKey && it.kind == request.kind && it.streamId == request.streamId }
-                    if (previous?.status in setOf(DesktopDownloadStatus.QUEUED, DesktopDownloadStatus.DOWNLOADING) && job?.isCompleted == false) continue
-                    if (previous?.status == DesktopDownloadStatus.COMPLETED && withContext(Dispatchers.IO) { completedFile(previous) } != null) continue
-                    entries.removeAll { it.key == previous?.key }
-                    entries.add(request.copy(key = previous?.key ?: request.key))
-                    added++
+                var limitReached = false
+                val saved = withContext(Dispatchers.IO) {
+                    store.update { data ->
+                        if (boundAccount != accountKey || stopping) return@update data
+                        val entries = data.entries.associateByTo(linkedMapOf()) { Triple(it.account, it.kind, it.streamId) }
+                        for (request in requests) {
+                            if (request.extension == "m3u8" || request.extension == "mpd") { unsupported++; continue }
+                            val identity = Triple(accountKey, request.kind, request.streamId)
+                            val previous = entries[identity]
+                            if ((previous?.status == DesktopDownloadStatus.QUEUED || previous?.status == DesktopDownloadStatus.DOWNLOADING) &&
+                                job?.isCompleted == false) continue
+                            if (previous != null && completedFile(previous) != null) continue
+                            entries.remove(identity)
+                            entries[identity] = request.copy(key = previous?.key ?: request.key, failure = null)
+                            added++
+                        }
+                        limitReached = entries.size > 1000
+                        if (limitReached) data else data.copy(entries = entries.values.toList())
+                    }
                 }
-                if (entries.size > 1000) { mutableNotice.value = "O limite de 1.000 downloads foi atingido. Exclua itens antes de adicionar esta seleção."; return@withLock }
-                if (boundAccount != accountKey || stopping) return@withLock
-                if (added > 0 && !store.update { it.copy(entries = entries) }) return@withLock
+                if (!saved || boundAccount != accountKey || stopping) return@withLock
+                if (limitReached) {
+                    mutableNotice.value = "O limite de 1.000 downloads foi atingido. Exclua itens antes de adicionar esta seleção."
+                    return@withLock
+                }
                 mutableNotice.value = when {
                     unsupported > 0 -> "${if (added > 0) "$added adicionado(s). " else ""}Formatos HLS/DASH não são suportados para download no Windows."
                     added == 0 -> "O conteúdo já está salvo ou na fila de downloads."
@@ -151,20 +173,29 @@ internal class DesktopDownloads(directory: Path, private val scope: CoroutineSco
     private fun startWorker(account: ServerCredentials, accountKey: String) {
         job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
             var drained = false
+            val worker = this
             try {
                 while (isActive && !stopping && boundAccount == accountKey) {
-                    val entry = commands.withLock {
+                    val (entry, transfer) = commands.withLock {
                         if (stopping || boundAccount != accountKey) return@withLock null
                         val next = state.value.entries.firstOrNull { it.account == accountKey && it.status == DesktopDownloadStatus.QUEUED }
-                        if (next == null) { drained = true; job = null; return@withLock null }
+                        if (next == null) {
+                            activeTransfer = null
+                            drained = true
+                            job = null
+                            return@withLock null
+                        }
                         if (!store.update { data -> data.copy(entries = data.entries.map {
                             if (it.key == next.key) it.copy(status = DesktopDownloadStatus.DOWNLOADING) else it
                         }) }) return@withLock null
-                        mutableProgress.value = DesktopDownloadProgress(next.key, 0, -1)
-                        next
+                        // Start cleanup ownership before cancellation can leave this item marked DOWNLOADING.
+                        val transfer = worker.async(start = CoroutineStart.UNDISPATCHED) { download(account, next) }
+                        activeTransfer = next.key to transfer
+                        next to transfer
                     } ?: break
-                    download(account, entry)
-                    if (state.value.entries.firstOrNull { it.key == entry.key }?.status != DesktopDownloadStatus.COMPLETED) break
+                    try { transfer.await() }
+                    catch (_: CancellationException) { ensureActive() } // Removing one item cancels only its transfer.
+                    if (state.value.entries.any { it.key == entry.key && it.status == DesktopDownloadStatus.DOWNLOADING }) break
                 }
             } finally { if (!drained) withContext(NonCancellable) { interruptQueued(accountKey) } }
         }
@@ -185,7 +216,7 @@ internal class DesktopDownloads(directory: Path, private val scope: CoroutineSco
             commands.withLock {
                 ready.await()
                 val entry = state.value.entries.firstOrNull { it.key == key && it.account == boundAccount } ?: return@withLock
-                if (mutableProgress.value?.key == key) { job?.cancelAndJoin() }
+                activeTransfer?.takeIf { it.first == key }?.second?.cancelAndJoin()
                 try {
                     withContext(Dispatchers.IO) {
                         Files.deleteIfExists(path(entry, true)); Files.deleteIfExists(path(entry, false))
@@ -198,18 +229,20 @@ internal class DesktopDownloads(directory: Path, private val scope: CoroutineSco
         }
     }
 
-    suspend fun localFile(key: String, account: String): Pair<DesktopDownload, Path>? = withContext(Dispatchers.IO) {
+    suspend fun localFile(key: String, account: String): Path? = withContext(Dispatchers.IO) {
         ready.await()
-        val entry = state.value.entries.firstOrNull { it.key == key && it.account == account } ?: return@withContext null
-        if (entry.status != DesktopDownloadStatus.COMPLETED) return@withContext null
-        val file = completedFile(entry)
-        if (file == null) {
-            store.update { data -> data.copy(entries = data.entries.map {
-                if (it.key == entry.key) it.copy(status = DesktopDownloadStatus.FAILED) else it
-            }) }
-            mutableNotice.value = "O arquivo salvo não está disponível ou está incompleto. Reinicie o download."
+        commands.withLock {
+            val entry = state.value.entries.firstOrNull { it.key == key && it.account == account &&
+                it.status == DesktopDownloadStatus.COMPLETED } ?: return@withLock null
+            val file = completedFile(entry)
+            if (file == null) {
+                store.update { data -> data.copy(entries = data.entries.map {
+                    if (it == entry) it.copy(status = DesktopDownloadStatus.FAILED,
+                        bytes = 0, failure = "Arquivo ausente ou incompleto. Reinicie o download.") else it
+                }) }
+            }
+            file
         }
-        file?.let { entry to it }
     }
 
     private fun path(entry: DesktopDownload, partial: Boolean): Path {
@@ -218,14 +251,21 @@ internal class DesktopDownloads(directory: Path, private val scope: CoroutineSco
         return result
     }
 
-    private fun completedFile(entry: DesktopDownload): Path? = try {
-        path(entry, false).takeIf { entry.status == DesktopDownloadStatus.COMPLETED &&
-            Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) && Files.size(it) == entry.bytes }
-    } catch (_: IOException) { null }
+    private fun completedFile(entry: DesktopDownload): Path? {
+        if (entry.status != DesktopDownloadStatus.COMPLETED) return null
+        val file = path(entry, false)
+        return try {
+            val attributes = Files.readAttributes(file, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            file.takeIf { attributes.isRegularFile && attributes.size() == entry.bytes }
+        } catch (_: IOException) { null }
+    }
 
     private suspend fun download(account: ServerCredentials, entry: DesktopDownload) {
         var outcome = DesktopDownloadStatus.INTERRUPTED
+        var failure: String? = null
+        mutableProgress.value = DesktopDownloadProgress(entry.key, 0, -1)
         try {
+            currentCoroutineContext().ensureActive()
             Files.createDirectories(files)
             check(!Files.isSymbolicLink(files) && !Files.isSymbolicLink(root))
             var url = OnDemandPlayback.address(account, entry.kind == DesktopDownloadKind.EPISODE, entry.streamId, entry.extension).toHttpUrl()
@@ -239,93 +279,112 @@ internal class DesktopDownloads(directory: Path, private val scope: CoroutineSco
                     url = result.redirect
                 } else {
                     currentCoroutineContext().ensureActive()
-                    check(store.update { data -> data.copy(entries = data.entries.map {
-                        if (it.key == entry.key) it.copy(status = DesktopDownloadStatus.COMPLETED,
-                            bytes = result.bytes, total = result.bytes) else it
-                    }) })
-                    outcome = DesktopDownloadStatus.COMPLETED
+                    withContext(NonCancellable) {
+                        val partial = path(entry, true)
+                        val destination = path(entry, false)
+                        try { Files.move(partial, destination, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
+                        catch (_: AtomicMoveNotSupportedException) { Files.move(partial, destination, StandardCopyOption.REPLACE_EXISTING) }
+                        check(store.update { data -> data.copy(entries = data.entries.map {
+                            if (it.key == entry.key) it.copy(status = DesktopDownloadStatus.COMPLETED,
+                                bytes = result.bytes, total = result.bytes, failure = null) else it
+                        }) })
+                        outcome = DesktopDownloadStatus.COMPLETED
+                    }
                     return
                 }
             }
-            error("Too many redirects")
+            throw TransferFailure("O servidor excedeu o limite de redirecionamentos.")
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             currentCoroutineContext().ensureActive()
             outcome = DesktopDownloadStatus.FAILED
-            mutableNotice.value = "Não foi possível baixar o conteúdo. A fila foi interrompida. Confira a conexão, o espaço livre e o acesso do servidor."
+            failure = if (e is TransferFailure) e.message
+                else "Não foi possível baixar. Confira a conexão, o acesso do servidor e o espaço livre."
         } finally {
             withContext(NonCancellable) {
-                if (outcome != DesktopDownloadStatus.COMPLETED &&
-                    state.value.entries.firstOrNull { it.key == entry.key }?.status != DesktopDownloadStatus.COMPLETED)
-                    finishInterrupted(entry, outcome)
+                if (outcome != DesktopDownloadStatus.COMPLETED) {
+                    if (!Files.isSymbolicLink(files) && !Files.isSymbolicLink(root))
+                        runCatching { Files.deleteIfExists(path(entry, true)) }
+                    store.update { data -> data.copy(entries = data.entries.map {
+                        if (it.key == entry.key && it.status == DesktopDownloadStatus.DOWNLOADING)
+                            it.copy(status = outcome, bytes = 0, total = -1, failure = failure) else it
+                    }) }
+                }
             }
             if (mutableProgress.value?.key == entry.key) mutableProgress.value = null
         }
     }
 
-    private suspend fun finishInterrupted(entry: DesktopDownload, status: DesktopDownloadStatus) {
-        val progress = mutableProgress.value?.takeIf { it.key == entry.key }
-        store.update { data -> data.copy(entries = data.entries.map {
-            if (it.key == entry.key) it.copy(status = status, bytes = progress?.bytes ?: 0, total = progress?.total ?: -1) else it
-        }) }
-    }
-
+    private class TransferFailure(message: String) : IOException(message)
     private data class TransferResult(val redirect: HttpUrl? = null, val bytes: Long = 0)
 
     private suspend fun transfer(url: HttpUrl, entry: DesktopDownload): TransferResult {
+        val call = client.newCall(Request.Builder().url(url).header("User-Agent", "SquiTV-Windows-Downloads").build())
         val finished = CompletableDeferred<Unit>()
         try {
             return suspendCancellableCoroutine { continuation ->
-                val call = client.newCall(Request.Builder().url(url).header("User-Agent", "SquiTV-Windows-Downloads").build())
-                continuation.invokeOnCancellation { call.cancel() }
-                try { call.enqueue(object : Callback {
-                    override fun onFailure(call: Call, e: IOException) {
-                        try { if (continuation.isActive) continuation.resumeWithException(e) } finally { finished.complete(Unit) }
-                    }
-                    override fun onResponse(call: Call, response: Response) {
-                        try {
-                            val result = response.use {
-                                if (it.code in setOf(301, 302, 303, 307, 308)) return@use TransferResult(
-                                    redirect = it.header("Location")?.let(url::resolve) ?: error("Missing redirect"))
-                                check(it.code == 200)
-                                val type = it.body.contentType()?.toString().orEmpty().lowercase()
-                                check(!type.startsWith("text/") && !type.contains("json") && !type.contains("mpegurl") && !type.contains("dash+xml"))
-                                val total = it.body.contentLength()
-                                check(total != 0L)
-                                if (total > 0) check(total <= Files.getFileStore(files).usableSpace - 64L * 1024 * 1024)
-                                val partial = path(entry, true)
-                                check(!Files.isSymbolicLink(partial))
-                                var count = 0L; var reported = 0L
-                                it.body.byteStream().use { input -> Files.newOutputStream(partial).use { output ->
-                                    val buffer = ByteArray(64 * 1024)
-                                    while (true) {
-                                        if (call.isCanceled()) throw IOException()
-                                        val n = input.read(buffer); if (n < 0) break
-                                        if (count == 0L) {
-                                            val prefix = String(buffer, 0, minOf(n, 128), Charsets.ISO_8859_1).trimStart().lowercase()
-                                            check(!prefix.startsWith("<html") && !prefix.startsWith("<!doctype") &&
-                                                !prefix.startsWith("#extm3u") && !prefix.startsWith("<?xml"))
+                try {
+                    continuation.invokeOnCancellation { call.cancel() }
+                    call.enqueue(object : Callback {
+                        override fun onFailure(call: Call, e: IOException) {
+                            try { if (continuation.isActive) continuation.resumeWithException(e) } finally { finished.complete(Unit) }
+                        }
+                        override fun onResponse(call: Call, response: Response) {
+                            try {
+                                val result = response.use {
+                                    if (it.code in setOf(301, 302, 303, 307, 308)) return@use TransferResult(
+                                        redirect = it.header("Location")?.let(url::resolve) ?: error("Missing redirect"))
+                                    if (it.code != 200) throw TransferFailure("O servidor respondeu com HTTP ${it.code}.")
+                                    val type = it.body.contentType()?.toString().orEmpty().lowercase()
+                                    if (type.startsWith("text/") || type.contains("json") || type.contains("mpegurl") || type.contains("dash+xml"))
+                                        throw TransferFailure("O servidor retornou uma resposta que não é um arquivo de vídeo.")
+                                    val total = it.body.contentLength()
+                                    check(total != 0L)
+                                    if (total > 0 && total > Files.getFileStore(files).usableSpace - 64L * 1024 * 1024)
+                                        throw TransferFailure("Espaço insuficiente para salvar este vídeo.")
+                                    val partial = path(entry, true)
+                                    check(!Files.isSymbolicLink(partial))
+                                    val count = it.body.byteStream().use { input ->
+                                        val prefix = input.readNBytes(128)
+                                        val text = prefix.toString(Charsets.UTF_8).trimStart('\uFEFF', ' ', '\r', '\n', '\t').lowercase()
+                                        if (listOf("<html", "<!doctype", "<?xml", "<mpd", "#extm3u", "{\"", "[{", "[\"").any(text::startsWith))
+                                            throw TransferFailure("O servidor retornou uma página de erro ou playlist em vez do vídeo.")
+                                        var count = prefix.size.toLong()
+                                        var reported = 0L
+                                        Files.newOutputStream(partial).use { output ->
+                                            output.write(prefix)
+                                            val buffer = ByteArray(64 * 1024)
+                                            while (true) {
+                                                if (call.isCanceled()) throw IOException()
+                                                val n = input.read(buffer)
+                                                if (n < 0) break
+                                                count += n
+                                                check(total < 0 || count <= total)
+                                                output.write(buffer, 0, n)
+                                                val now = System.nanoTime()
+                                                if (now - reported >= 250_000_000L) {
+                                                    mutableProgress.value = DesktopDownloadProgress(entry.key, count, total)
+                                                    reported = now
+                                                }
+                                            }
                                         }
-                                        count += n; check(total < 0 || count <= total)
-                                        output.write(buffer, 0, n)
-                                        val now = System.nanoTime()
-                                        if (now - reported >= 250_000_000L) {
-                                            mutableProgress.value = DesktopDownloadProgress(entry.key, count, total); reported = now
-                                        }
+                                        count
                                     }
-                                } }
-                                check(!call.isCanceled() && count > 0 && (total < 0 || count == total))
-                                val destination = path(entry, false)
-                                try { Files.move(partial, destination, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
-                                catch (_: AtomicMoveNotSupportedException) { Files.move(partial, destination, StandardCopyOption.REPLACE_EXISTING) }
-                                TransferResult(bytes = count)
-                            }
-                            if (continuation.isActive) continuation.resume(result)
-                        } catch (e: Exception) { if (continuation.isActive) continuation.resumeWithException(e) }
-                        finally { finished.complete(Unit) }
-                    }
-                }) } catch (e: Exception) { finished.complete(Unit); if (continuation.isActive) continuation.resumeWithException(e) }
+                                    if (call.isCanceled()) throw IOException()
+                                    if (count == 0L || total >= 0 && count != total)
+                                        throw TransferFailure("O servidor enviou um arquivo vazio ou incompleto.")
+                                    TransferResult(bytes = count)
+                                }
+                                if (continuation.isActive) continuation.resume(result)
+                            } catch (e: Exception) { if (continuation.isActive) continuation.resumeWithException(e) }
+                            finally { finished.complete(Unit) }
+                        }
+                    })
+                } catch (e: Exception) {
+                    finished.complete(Unit)
+                    if (continuation.isActive) continuation.resumeWithException(e)
+                }
             }
         } finally {
             // Wait for the canceled callback to close its file before retry/delete can reuse it.

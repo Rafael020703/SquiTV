@@ -96,6 +96,14 @@ O cartão Downloads abre uma biblioteca por conta. **Baixar** fica nos detalhes 
 
 A implementação foi revisada e compilada; nenhum download, reprodução local ou fila real foi exercitado pelo agente.
 
+### Ajustes de downloads e reprodução — Windows 1.26.3
+
+- Adicionar ou reiniciar itens usa o estado mais recente do índice. Uma falha de transferência fica visível no item, com o código HTTP quando disponível, e os demais episódios da fila continuam. Excluir um item em transferência cancela apenas aquele arquivo. **Cancelar fila** ainda interrompe o conjunto.
+- O arquivo fica parcial até a transferência terminar e o tamanho informado pelo servidor conferir. Respostas reconhecidas como páginas de erro ou playlists são recusadas. Se a transferência falhar ou for cancelada, o app tenta remover o parcial. **Reiniciar** começa do zero.
+- A reprodução iniciada em Downloads confere o arquivo na abertura, ao tentar novamente e a cada troca de episódio. Arquivo ausente ou truncado recebe indicação de falha e pode ser baixado novamente. A sequência offline é formada pelos episódios marcados como concluídos da mesma série e conta. O player abre somente arquivos locais nessa sessão.
+- A retomada usa a posição salva da conta e do item, depois de concluir o salvamento anterior. Episódios online continuam usando a extensão informada para cada episódio. HLS/DASH para download continuam fora do fluxo de arquivos diretos.
+- A validação do arquivo consulta os atributos uma vez por abertura. A fila também trata falhas na preparação da requisição antes de aguardar o encerramento do transporte.
+
 ## Capas, logos e imagens dos conteúdos — v1.24
 
 - `ContentImages` compartilhado trata espaços, entidades HTML, valores vazios e URLs relativas ao servidor conhecido, sem inventar uma origem para a imagem. DTOs aceitam arte opcional em texto/lista e ignoram formatos inválidos desse campo sem descartar os demais metadados.
@@ -117,6 +125,8 @@ Uma falha ou encerramento inesperado em TV ao vivo ou Multi-view permite uma ún
 **Notificações → Diagnóstico de reprodução ao vivo** mostra o horário, a identificação numérica do canal, o identificador da sessão/tentativa, o tempo decorrido, os estados do player, a reconexão e o DNS configurado. Em caso de erro, **Ver diagnóstico** também leva à tela. **Copiar diagnóstico** copia o relatório para a área de transferência; **Limpar** remove o histórico local. O app guarda até 200 eventos das últimas 72 horas, por variante, e não envia o relatório automaticamente.
 
 O registro contém eventos estruturados. Avisos e erros nativos são classificados pelo modelo de mensagem, sem gravar nem formatar seu conteúdo bruto. Pode indicar HTTP, DNS, TLS, tempo limite, conexão ou decodificação; os indícios não são uma confirmação da causa e não incluem o código HTTP exato. Não registra URLs, IPs, credenciais, cabeçalhos, nomes de conta ou dados brutos de servidor. A captura de um único caso não comprova recusa do provedor, limite de conexões, falha no caminho da rede ou incompatibilidade de decodificação.
+
+A partir da 1.26.3, o relatório registra quando uma tentativa ficou pelo menos três segundos aguardando a superfície de vídeo antes da entrega ao LibVLC. Esse evento ajuda a distinguir a espera local de uma tentativa que chegou à abertura da entrada.
 
 ### Janela e detalhes — Windows 1.26.1
 

@@ -24,6 +24,7 @@ internal enum class LivePlaybackOrigin(val label: String) { PLAYER("Ao vivo"), M
 internal enum class LiveDiagnosticEvent(val label: String) {
     OPEN("Abertura solicitada"),
     MANUAL_RETRY("Nova tentativa solicitada"),
+    WAITING_FOR_SURFACE("Aguardando a superfície de vídeo antes de iniciar o LibVLC"),
     START("Entrega ao LibVLC"),
     OPENING("LibVLC abrindo a entrada"),
     BUFFERING("LibVLC carregando o buffer"),
