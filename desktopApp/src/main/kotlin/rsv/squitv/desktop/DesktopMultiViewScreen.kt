@@ -124,7 +124,7 @@ private fun MultiViewVideo(channel: LiveChannel, credentials: ServerCredentials,
         engine.setVolume(volume)
         val manual = previousOpening?.let { it.first == channel.id && it.second != retry } == true
         previousOpening = channel.id to retry
-        engine.play(LiveStreamAddress.build(credentials.baseUrl, credentials.username, credentials.password, channel.id), channel.id,
+        engine.playLive(credentials, channel.id,
             audioLanguage = audioLanguage, subtitleLanguage = subtitleLanguage, manualRetry = manual)
     }
     LaunchedEffect(volume) { engine.setVolume(volume) }

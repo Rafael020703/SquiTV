@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import rsv.squitv.core.ui.components.player.*
 import rsv.squitv.desktop.player.WindowsLivePlayer
-import rsv.squitv.shared.xtream.LiveStreamAddress
 import rsv.squitv.ui.content.player.PlayerOverlayController
 import java.time.Instant
 import java.time.ZoneId
@@ -131,8 +130,8 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
         hideControls(); menu = null; banner = true
         val manual = previousOpening?.let { it.first == session.channel.id && it.second != retry } == true
         previousOpening = session.channel.id to retry
-        engine.play(LiveStreamAddress.build(credentials.baseUrl, credentials.username, credentials.password, session.channel.id),
-            session.channel.id, preferences.preferredAudioLanguage, preferences.preferredSubtitleLanguage, manualRetry = manual)
+        engine.playLive(credentials, session.channel.id, preferences.preferredAudioLanguage,
+            preferences.preferredSubtitleLanguage, manualRetry = manual)
         delay(3000); banner = false
     }
     LaunchedEffect(preferences.volume, preferences.muted) {

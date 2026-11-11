@@ -22,6 +22,9 @@ import rsv.squitv.shared.network.AppDnsMode
 import rsv.squitv.shared.player.VideoScaleMode
 import rsv.squitv.shared.player.VlcVideoGeometry
 import rsv.squitv.shared.player.vlcGeometry
+import rsv.squitv.shared.xtream.LiveStreamAddress
+import rsv.squitv.shared.xtream.ProviderServers
+import rsv.squitv.shared.xtream.ServerCredentials
 
 data class MediaTrack(val id: Int, val name: String)
 
@@ -55,7 +58,8 @@ class WindowsLivePlayer internal constructor(
     private var appliedGeometry: VlcVideoGeometry? = null
     private data class PendingMedia(val address: String, val generation: Long,
         val audioLanguage: String?, val subtitleLanguage: String?, val attempt: LivePlaybackAttempt?,
-        val queuedAt: Long = System.nanoTime())
+        val remainingAddresses: List<String>, val useStartupDeadline: Boolean,
+        val retried: Boolean = false, val queuedAt: Long = System.nanoTime())
     private var pendingMedia: PendingMedia? = null
     private var activeRequest: PendingMedia? = null
     private var retryTask: ScheduledFuture<*>? = null
@@ -66,12 +70,16 @@ class WindowsLivePlayer internal constructor(
     @Volatile private var currentAttempt: LivePlaybackAttempt? = null
     private var active = false
     private var activeGeneration = 0L
+    private var activeSince = 0L
     // VLC 3 can replace Error with Ended when the input thread dies, before the next poll.
     private val eventCallback = VlcPlaybackEventCallback { event, _ ->
         val attempt = currentAttempt
         if (attempt != null && event != null) runCatching {
             when (event.getInt(0)) {
-                VLC_PLAYING_EVENT -> attempt.record(LiveDiagnosticEvent.PLAYING)
+                VLC_PLAYING_EVENT -> {
+                    attempt.hasPlayed.set(true)
+                    attempt.record(LiveDiagnosticEvent.PLAYING)
+                }
                 VLC_END_EVENT -> {
                     attempt.terminal.compareAndSet(0, 6)
                     attempt.record(LiveDiagnosticEvent.END)
@@ -118,8 +126,17 @@ class WindowsLivePlayer internal constructor(
             val polledGeneration = activeGeneration
             val nativeState = api!!.libvlc_media_player_get_state(p)
             val attempt = currentAttempt
-            val code = attempt?.terminal?.get()?.takeIf { it != 0 } ?: nativeState
+            var code = attempt?.terminal?.get()?.takeIf { it != 0 } ?: nativeState
             if (polledGeneration != generation.get() || closed.get()) return@guarded
+            if (code == 3 || code == 4) attempt?.hasPlayed?.set(true)
+            val request = activeRequest
+            val started = attempt?.hasPlayed?.get() == true
+            val timedOut = request?.useStartupDeadline == true && !started &&
+                System.nanoTime() - activeSince >= TimeUnit.MILLISECONDS.toNanos(ProviderServers.PLAYBACK_START_TIMEOUT_MS)
+            if (timedOut) {
+                attempt?.record(LiveDiagnosticEvent.START_TIMEOUT)
+                code = 7
+            }
             when (code) {
                 1 -> attempt?.record(LiveDiagnosticEvent.OPENING)
                 2 -> attempt?.record(LiveDiagnosticEvent.BUFFERING)
@@ -129,11 +146,22 @@ class WindowsLivePlayer internal constructor(
             }
             if (code == 6 || code == 7) {
                 active = false
-                val request = activeRequest
                 activeRequest = null
-                if (request != null && request.attempt?.number == 1) {
-                    scheduleLiveRetry(request)
-                    return@guarded
+                if (request != null) {
+                    val nextAddress = request.remainingAddresses.firstOrNull()
+                    if (!started && nextAddress != null) {
+                        scheduleLiveRetry(request.copy(address = nextAddress,
+                            remainingAddresses = request.remainingAddresses.drop(1)), delayMs = 0)
+                        return@guarded
+                    }
+                    if (!request.retried && (started || !request.useStartupDeadline)) {
+                        scheduleLiveRetry(request.copy(retried = true, remainingAddresses = emptyList()), delayMs = 1200)
+                        return@guarded
+                    }
+                    if (timedOut) {
+                        currentAttempt = null
+                        api!!.libvlc_media_player_stop(p)
+                    }
                 }
             }
             // Native calls must stay outside StateFlow's retryable update lambda.
@@ -166,8 +194,16 @@ class WindowsLivePlayer internal constructor(
         }
     }
 
-    fun play(address: String, sourceId: Int? = null, audioLanguage: String? = null, subtitleLanguage: String? = null,
+    fun playLive(credentials: ServerCredentials, channelId: Int, audioLanguage: String?, subtitleLanguage: String?,
         manualRetry: Boolean = false) {
+        val addresses = ProviderServers.livePlaybackServers(credentials.baseUrl).map { server ->
+            LiveStreamAddress.build(server, credentials.username, credentials.password, channelId)
+        }
+        play(addresses.first(), channelId, audioLanguage, subtitleLanguage, manualRetry, addresses.drop(1))
+    }
+
+    fun play(address: String, sourceId: Int? = null, audioLanguage: String? = null, subtitleLanguage: String? = null,
+        manualRetry: Boolean = false, fallbackAddresses: List<String> = emptyList()) {
         if (closed.get()) return
         val token = generation.incrementAndGet()
         val attempt = if (onDemand) null else LivePlaybackAttempt(diagnostics, sourceId?.takeIf { it > 0 }, liveOrigin)
@@ -184,7 +220,8 @@ class WindowsLivePlayer internal constructor(
             currentAttempt = null
             activeRequest = null
             pendingMedia = PendingMedia(address, token, rsv.squitv.shared.player.TrackLanguage.normalize(audioLanguage),
-                rsv.squitv.shared.player.TrackLanguage.normalize(subtitleLanguage), attempt)
+                rsv.squitv.shared.player.TrackLanguage.normalize(subtitleLanguage), attempt, fallbackAddresses,
+                useStartupDeadline = fallbackAddresses.isNotEmpty())
             startPending()
         }
     }
@@ -204,7 +241,7 @@ class WindowsLivePlayer internal constructor(
         }
     }
 
-    private fun scheduleLiveRetry(request: PendingMedia) {
+    private fun scheduleLiveRetry(request: PendingMedia, delayMs: Long) {
         request.attempt?.record(LiveDiagnosticEvent.RETRY_SCHEDULED)
         mutable.update { if (request.generation == generation.get())
             it.copy(phase = "Reconectando…", paused = false, error = null, reconnecting = true) else it }
@@ -215,7 +252,7 @@ class WindowsLivePlayer internal constructor(
             next.record(LiveDiagnosticEvent.RETRY_STARTED)
             pendingMedia = request.copy(attempt = next, queuedAt = System.nanoTime())
             startPending()
-        } }, 1200, TimeUnit.MILLISECONDS)
+        } }, delayMs, TimeUnit.MILLISECONDS)
     }
 
     fun togglePause() = submit(mediaScoped = true) {
@@ -337,7 +374,7 @@ class WindowsLivePlayer internal constructor(
         }
         currentAttempt = request.attempt
         request.attempt?.record(LiveDiagnosticEvent.START, dns = if (useAppProxy) AppDns.state.value.mode else AppDnsMode.SYSTEM,
-            proxy = useAppProxy, https = request.address.startsWith("https://", ignoreCase = true))
+            proxy = useAppProxy, https = request.address.startsWith("https://", ignoreCase = true), address = request.address)
         if (subscribedEvents.size < 3) request.attempt?.record(LiveDiagnosticEvent.EVENT_MONITOR_UNAVAILABLE)
         if (diagnostics != null && !logSubscribed) request.attempt?.record(LiveDiagnosticEvent.LOG_MONITOR_UNAVAILABLE)
         val media = vlc.libvlc_media_new_location(instance!!, request.address)
@@ -354,8 +391,11 @@ class WindowsLivePlayer internal constructor(
         vlc.libvlc_audio_set_mute(p, if (mutable.value.muted) 1 else 0)
         appliedGeometry = null
         applyGeometry(mutable.value.scaleMode)
-        if (vlc.libvlc_media_player_play(p) != 0) error("Native play failed")
-        vlc.libvlc_media_player_set_rate(p, 1f)
+        activeSince = System.nanoTime()
+        if (vlc.libvlc_media_player_play(p) != 0) {
+            if (request.attempt == null) error("Native play failed")
+            request.attempt.terminal.set(7)
+        } else vlc.libvlc_media_player_set_rate(p, 1f)
         pendingMedia = null
         activeRequest = request.takeUnless { onDemand }
         activeGeneration = request.generation

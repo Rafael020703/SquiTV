@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import rsv.squitv.shared.xtream.ProviderServers
 import timber.log.Timber
 
 import rsv.squitv.data.repository.UpdateRepository
@@ -158,14 +160,6 @@ class LoginViewModel @Inject constructor(
                 _dnsStatusMap.value = currentMap.toMap()
             }
 
-            // Auto-select fastest working DNS if none selected yet
-            if (_selectedDns.value == null) {
-                val best = currentMap.filter { it.value != -1L }.minByOrNull { it.value }
-                if (best != null) {
-                    _selectedDns.value = best.key
-                }
-            }
-
             _isTestingDns.value = false
         }
     }
@@ -188,13 +182,7 @@ class LoginViewModel @Inject constructor(
             _errorMessage.value = null
             
             try {
-                val dnsList = if (customUrl.isNotEmpty()) {
-                    listOf(customUrl)
-                } else if (_selectedDns.value != null) {
-                    listOf(_selectedDns.value!!) + (availableDns - _selectedDns.value!!)
-                } else {
-                    availableDns
-                }
+                val dnsList = ProviderServers.loginCandidates(customUrl, _selectedDns.value, availableDns)
 
                 var lastError: String? = null
                 var success = false
@@ -204,7 +192,8 @@ class LoginViewModel @Inject constructor(
                         _errorMessage.value = "Conectando ao servidor..."
                         dnsManager.updateBaseUrl(dns)
                         val credentials = XtreamCredentials(currentUser, currentPass, dns)
-                        val response = authManager.login(credentials)
+                        val response = withTimeoutOrNull(15_000) { authManager.login(credentials) }
+                            ?: throw IllegalStateException("O servidor não respondeu ao login no prazo esperado.")
 
                         if (response.userInfo?.auth == 1) {
                             settingsRepository.saveCredentials(credentials)

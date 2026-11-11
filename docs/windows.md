@@ -128,6 +128,10 @@ O registro contém eventos estruturados. Avisos e erros nativos são classificad
 
 A partir da 1.26.3, o relatório registra quando uma tentativa ficou pelo menos três segundos aguardando a superfície de vídeo antes da entrega ao LibVLC. Esse evento ajuda a distinguir a espera local de uma tentativa que chegou à abertura da entrada.
 
+Na debug, a linha **Entrega ao LibVLC** inclui a **URL inicial**. O endereço é reconstruído com protocolo, servidor, porta quando explícita e, para o caminho ao vivo conhecido, ID e formato do canal. Usuário, senha, prefixos personalizados, parâmetros e fragmentos são ocultados. O registro identifica o endereço entregue ao player antes de redirecionamentos.
+
+A partir da 1.27.0, o modo automático no login tenta primeiro o servidor principal da lista. Ao abrir canais de uma conta da lista, a TV ao vivo e o Multi-view usam a mesma ordem. Cada tentativa tem até cinco segundos para começar, com avanço antecipado em caso de erro. A troca atua sobre o endereço do mesmo canal e não altera a conta salva nem a categoria de origem. Servidores de outros provedores mantêm o próprio endereço.
+
 ### Janela e detalhes — Windows 1.26.1
 
 O modo de tela cheia Windows passa a ser **tela cheia em janela**, sem bordas e com os limites do monitor, mantendo o peer AWT em `Floating`; não solicita fullscreen exclusivo nem troca o modo de vídeo. F11 e duplo clique nas áreas não interativas de arraste dos cabeçalhos alternam os modos. O último modo continua salvo por variante e a primeira abertura continua em tela cheia em janela. ESC permanece no fluxo de navegação. No modo janela, o arraste usa as coordenadas de tela do mouse; a proporção 16:9 e o tamanho/posição da sessão são restaurados ao sair da tela cheia, ajustados à área útil do monitor. Em tela cheia, arraste e redimensionamento ficam desativados. Não foi adicionada barra de título ou ação sobre botões/campos.

@@ -182,7 +182,7 @@ class DesktopController(
 
     fun connect(address: String, username: String, password: String, remember: Boolean, automatic: Boolean = false) {
         if (mutable.value.busy || mutable.value.restoring) return
-        val preferred = mutable.value.selectedDns ?: mutable.value.dnsStatus.filterValues { it >= 0 }.minByOrNull { it.value }?.key
+        val preferred = mutable.value.selectedDns
         val candidates = try { ProviderServers.loginCandidates(address, preferred) }
             catch (e: IllegalArgumentException) { mutable.value = mutable.value.copy(error = e.message); return }
         if (username.isBlank() || password.isEmpty()) {

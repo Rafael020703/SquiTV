@@ -13,6 +13,8 @@ import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
+import rsv.squitv.core.domain.interactor.startLivePlayback
+import rsv.squitv.shared.xtream.ProviderServers
 import rsv.squitv.core.data.repository.CatalogRepository
 import rsv.squitv.core.data.repository.StreamRepository
 import rsv.squitv.core.data.repository.UserRepository
@@ -121,6 +123,8 @@ class PlayerViewModel @Inject constructor(
     val zappingSessionId: StateFlow<Int> = _zappingSessionId.asStateFlow()
 
     private var currentChannelSwitchId: String? = null
+    private var liveStartupSession: Int? = null
+    private var liveMediaId: String? = null
 
     private val _zappingChannel = MutableStateFlow<XtreamStream?>(null)
     val zappingChannel: StateFlow<XtreamStream?> = _zappingChannel.asStateFlow()
@@ -227,7 +231,7 @@ class PlayerViewModel @Inject constructor(
             return false
         }
         val expectedMediaId = currentStreamId?.toString()
-        if (expectedMediaId != null && eventMediaId != null && eventMediaId != expectedMediaId) {
+        if (expectedMediaId != null && eventMediaId != null && eventMediaId != expectedMediaId && eventMediaId != liveMediaId) {
             Timber.w("[STALE_CALLBACK_IGNORED] eventMediaId=$eventMediaId != expectedMediaId=$expectedMediaId, reason=MEDIA_ID_MISMATCH")
             return false
         }
@@ -308,7 +312,7 @@ class PlayerViewModel @Inject constructor(
             else -> null
         }
 
-        val expectedMediaId = currentStreamId?.toString()
+        val expectedMediaId = liveMediaId ?: currentStreamId?.toString()
 
         // Caso A: Evento com mediaId explícito que não corresponde ao canal ativo esperado -> rejeitar
         if (!eventMediaId.isNullOrBlank() && expectedMediaId != null && eventMediaId != expectedMediaId) {
@@ -463,6 +467,7 @@ class PlayerViewModel @Inject constructor(
                 }
             }
             is PlaybackManager.Event.PlayerError -> {
+                if (liveStartupSession == currentSession) return
                 stopWatchdog("PLAYER_ERROR")
                 val error = event.error
                 val cause = error.cause
@@ -811,6 +816,8 @@ class PlayerViewModel @Inject constructor(
         val oldSession = _zappingSessionId.value
         val newSession = oldSession + 1
         _zappingSessionId.value = newSession
+        liveStartupSession = null
+        liveMediaId = null
 
         Timber.i("[PLAYER_SESSION] release sessionId=$oldSession stream=$currentStreamId reason=CHANNEL_CHANGE")
         Timber.i("[PLAYER_SESSION] create sessionId=$newSession stream=$streamId channel=$displayName")
@@ -959,11 +966,11 @@ class PlayerViewModel @Inject constructor(
 
                 ensurePlayer()
                 
-                withContext(Dispatchers.Main) {
+                val playbackStarted = withContext(Dispatchers.Main) {
                     ensureActive()
                     if (!isPlaybackEventValid(currentSession, streamId.toString())) {
                         Timber.w("[STALE_JOB_ABORTED] session=$currentSession != activeSession=${_zappingSessionId.value}. Abortando preparo de mídia para stream $streamId.")
-                        return@withContext
+                        return@withContext false
                     }
 
                     val metadataBuilder = MediaMetadata.Builder()
@@ -994,16 +1001,37 @@ class PlayerViewModel @Inject constructor(
                         )
                         .build()
 
-                    if (initialSeekPos > 0L) {
-                        playbackManager.setMediaItem(mediaItem, initialSeekPos)
+                    val liveServers = if (type == ContentType.LIVE && streamId > 0)
+                        ProviderServers.livePlaybackServers(credentials.baseUrl) else emptyList()
+                    if (liveServers.size > 1) {
+                        val player = ensurePlayer()
+                        liveStartupSession = currentSession
+                        try {
+                            for ((index, server) in liveServers.withIndex()) {
+                                val attemptId = "live:$currentSession:$streamId:$index"
+                                liveMediaId = attemptId
+                                val attemptUrl = streamRepository.getStreamUrl(credentials.copy(baseUrl = server),
+                                    streamId, type.toString(), container)
+                                val item = mediaItem.buildUpon().setMediaId(attemptId).setUri(attemptUrl)
+                                    .setMimeType(null).build()
+                                if (player.startLivePlayback(item)) break
+                                if (index == liveServers.lastIndex) {
+                                    liveMediaId = "live:$currentSession:$streamId:ended"
+                                    playbackManager.stopAndClear()
+                                    _uiState.value = PlayerUiState.Error("O canal não iniciou nos servidores disponíveis. Tente novamente.")
+                                    return@withContext false
+                                }
+                            }
+                        } finally {
+                            if (liveStartupSession == currentSession) liveStartupSession = null
+                        }
                     } else {
-                        playbackManager.setMediaItem(mediaItem)
+                        if (initialSeekPos > 0L) playbackManager.setMediaItem(mediaItem, initialSeekPos)
+                        else playbackManager.setMediaItem(mediaItem)
+                        playbackManager.prepare()
+                        if (initialSeekPos > 0L) playbackManager.seekTo(initialSeekPos)
+                        playbackManager.play()
                     }
-                    playbackManager.prepare()
-                    if (initialSeekPos > 0L) {
-                        playbackManager.seekTo(initialSeekPos)
-                    }
-                    playbackManager.play()
                     zapPreparedMs = System.currentTimeMillis()
                     
                     Timber.d("[MEDIA_TRANSITION_COMPLETE] session=$currentSession stream=$streamId timestamp=${zapPreparedMs}")
@@ -1014,9 +1042,10 @@ class PlayerViewModel @Inject constructor(
                     if (p != null && (p.isPlaying || p.playbackState == Player.STATE_READY)) {
                         updatePlayingState(p, currentSession)
                     }
+                    true
                 }
 
-                if (!isPlaybackEventValid(currentSession, streamId.toString())) return@launch
+                if (!playbackStarted || !isPlaybackEventValid(currentSession, streamId.toString())) return@launch
 
                 // Background tasks after starting playback
                 backgroundJob = launch(Dispatchers.IO) {
@@ -1457,6 +1486,9 @@ class PlayerViewModel @Inject constructor(
     fun stopPlayback() {
         episodeCountdown.cancel()
         epgJob?.cancel()
+        playJob?.cancel()
+        recoveryJob?.cancel()
+        backgroundJob?.cancel()
         syncFinalProgress()
         stopWatchdog()
         playbackManager.stopAndDisconnect()

@@ -17,6 +17,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import rsv.squitv.IptvApplication
 import rsv.squitv.core.data.repository.StreamRepository
+import rsv.squitv.core.domain.interactor.startLivePlayback
 import rsv.squitv.data.model.XtreamStream
 import rsv.squitv.data.repository.SettingsRepository
 import rsv.squitv.di.PlaybackCache
@@ -37,6 +38,7 @@ import rsv.squitv.data.model.SettingsBackupCodec
 import rsv.squitv.shared.catalog.LiveCatalogView
 import rsv.squitv.shared.xtream.LiveCategory
 import rsv.squitv.shared.xtream.LiveChannel
+import rsv.squitv.shared.xtream.ProviderServers
 import rsv.squitv.domain.model.ChannelQuality
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -113,13 +115,14 @@ class MultiViewViewModel @Inject constructor(
     }
 
     fun playChannel(index: Int, stream: XtreamStream) {
-        if (index !in 0 until MultiViewPolicy.SLOT_COUNT || (stream.streamId ?: 0) <= 0) return
+        val streamId = stream.streamId ?: return
+        if (index !in 0 until MultiViewPolicy.SLOT_COUNT || streamId <= 0) return
         playJobs[index]?.cancel()
         playJobs[index] = viewModelScope.launch {
             val settings = settingsRepository.settingsFlow.first()
             val creds = settings.credentials ?: return@launch
             
-            val url = streamRepository.getStreamUrl(creds, stream.streamId ?: 0, "live", null)
+            val servers = ProviderServers.livePlaybackServers(creds.baseUrl)
             ensureActive()
             
             var player = _players.value[index]
@@ -130,18 +133,26 @@ class MultiViewViewModel @Inject constructor(
                 _players.value = currentPlayers
             }
 
-            player.apply {
-                stop()
-                clearMediaItems()
-                setMediaItem(MediaItem.fromUri(url))
-                prepare()
-                playWhenReady = true
-                volume = MultiViewPolicy.audioVolume(index, _focusedIndex.value)
-            }
-
             val currentChannels = _activeChannels.value.toMutableList()
             currentChannels[index] = stream
             _activeChannels.value = currentChannels
+            player.volume = MultiViewPolicy.audioVolume(index, _focusedIndex.value)
+            if (servers.size == 1) {
+                player.stop()
+                player.clearMediaItems()
+                player.setMediaItem(MediaItem.fromUri(streamRepository.getStreamUrl(creds, streamId, "live", null)))
+                player.prepare()
+                player.play()
+            } else {
+                val opening = System.nanoTime()
+                for ((attempt, server) in servers.withIndex()) {
+                    val url = streamRepository.getStreamUrl(creds.copy(baseUrl = server), streamId, "live", null)
+                    val item = MediaItem.Builder().setMediaId("multi:$index:$opening:$attempt").setUri(url).build()
+                    if (player.startLivePlayback(item)) return@launch
+                }
+                player.stop()
+                player.clearMediaItems()
+            }
         }
     }
 

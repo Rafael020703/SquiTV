@@ -36,7 +36,9 @@ internal fun DesktopLiveNotifications(diagnostics: LivePlaybackDiagnostics) {
             }, enabled = entries.isNotEmpty()) { Text("Copiar diagnóstico") }
             TextButton(onClick = { confirmClear = true }, enabled = entries.isNotEmpty()) { Text("Limpar") }
         }
-        Text("Até 200 eventos das últimas 72 horas. O diagnóstico fica neste PC e não inclui endereços de transmissão ou credenciais.",
+        Text(if (DesktopBuildInfo.DEBUG)
+            "Até 200 eventos das últimas 72 horas. O diagnóstico fica neste PC. A URL inicial é exibida com as credenciais ocultas."
+        else "Até 200 eventos das últimas 72 horas. O diagnóstico fica neste PC e não inclui endereços de transmissão ou credenciais.",
             style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant)
         storageError?.let { StatusNotice(it, error = true) }
         actionNotice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = palette.primary) }

@@ -17,6 +17,21 @@ class XtreamCatalogTest {
         }
     }
 
+    @Test fun automaticLoginAndLivePlaybackPreferThePrimaryServer() {
+        val order = ProviderServers.addresses.map(ServerAddress::normalize)
+        assertEquals(ServerAddress.normalize(ProviderServers.PRIMARY), order.first())
+        assertEquals(order, ProviderServers.loginCandidates("", null))
+        assertEquals(order, ProviderServers.livePlaybackServers("https://u123.life/"))
+        assertEquals(order.size, order.toSet().size)
+    }
+
+    @Test fun customProviderDoesNotReceiveFallbackServers() {
+        val custom = "https://other.example:8443/subdirectory"
+        val expected = listOf("https://other.example:8443/subdirectory/")
+        assertEquals(expected, ProviderServers.loginCandidates(custom, ProviderServers.PRIMARY))
+        assertEquals(expected, ProviderServers.livePlaybackServers(custom))
+    }
+
     @Test fun parsesMixedScalarAccountAndServerData() {
         val account = XtreamCatalogParser.account("""
             {"user_info":{"auth":"1","status":"Active","username":"demo","exp_date":"2000000000",

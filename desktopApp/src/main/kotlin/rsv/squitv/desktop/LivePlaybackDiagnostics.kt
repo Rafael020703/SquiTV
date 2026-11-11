@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import rsv.squitv.shared.network.AppDnsMode
+import java.net.URI
 import java.nio.file.Path
 import java.time.Instant
 import java.time.ZoneId
@@ -18,13 +19,16 @@ import java.time.format.DateTimeFormatter
 import java.util.EnumSet
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import rsv.squitv.shared.xtream.ProviderServers
 
 internal enum class LivePlaybackOrigin(val label: String) { PLAYER("Ao vivo"), MULTIVIEW("Multi-view") }
 internal enum class LiveDiagnosticEvent(val label: String) {
     OPEN("Abertura solicitada"),
     MANUAL_RETRY("Nova tentativa solicitada"),
     WAITING_FOR_SURFACE("Aguardando a superfície de vídeo antes de iniciar o LibVLC"),
+    START_TIMEOUT("O canal não começou em cinco segundos"),
     START("Entrega ao LibVLC"),
     OPENING("LibVLC abrindo a entrada"),
     BUFFERING("LibVLC carregando o buffer"),
@@ -60,7 +64,8 @@ internal data class LiveDiagnosticEntry(
     val appVersion: String = DesktopBuildInfo.VERSION,
     val dns: AppDnsMode? = null,
     val proxy: Boolean? = null,
-    val https: Boolean? = null
+    val https: Boolean? = null,
+    val initialUrl: String? = null
 ) {
     fun display(): String = buildString {
         append(timestamp.format(Instant.ofEpochMilli(time)))
@@ -71,6 +76,7 @@ internal data class LiveDiagnosticEntry(
         dns?.let { append(" · DNS ").append(it.label) }
         proxy?.let { append(if (it) " · ponte DNS configurada" else " · sem ponte DNS do app") }
         https?.let { append(if (it) " · entrada HTTPS" else " · entrada HTTP") }
+        if (DesktopBuildInfo.DEBUG) initialUrl?.let { append(" · URL inicial: ").append(it) }
         append(" · v").append(appVersion)
     }
 
@@ -79,7 +85,25 @@ internal data class LiveDiagnosticEntry(
     }
 }
 
-/** Only typed events and numeric channel IDs reach the journal. Native log strings never do. */
+/** Rebuild the public parts. Never copy the path's account segments, query, fragment or user-info. */
+private fun redactPlaybackUrl(address: String, channelId: Int?): String? {
+    val uri = runCatching { URI(address) }.getOrNull() ?: return null
+    val scheme = uri.scheme?.lowercase()
+    val host = uri.host ?: return null
+    if ((scheme != "http" && scheme != "https") || host.length > 253 ||
+        uri.port !in -1..65535 || uri.port == 0) return null
+    val server = runCatching { URI(scheme, null, host, uri.port, null, null, null).toASCIIString() }
+        .getOrNull() ?: return null
+    if (channelId == null) return server
+    val segments = uri.rawPath.orEmpty().split('/')
+    val file = segments.last()
+    if ((file != "$channelId.ts" && file != "$channelId.m3u8") ||
+        segments.getOrNull(segments.size - 4) != "live") return server
+    val prefix = if (segments.size > 5) "/..." else ""
+    return "$server$prefix/live/***/***/$file"
+}
+
+/** The journal receives typed events and, in debug, a redacted initial address. */
 internal class LivePlaybackAttempt(
     private val log: LivePlaybackDiagnostics?,
     private val channelId: Int?,
@@ -90,14 +114,18 @@ internal class LivePlaybackAttempt(
     private val started = System.nanoTime()
     private val seen = EnumSet.noneOf(LiveDiagnosticEvent::class.java)
     val terminal = AtomicInteger()
+    val hasPlayed = AtomicBoolean()
 
-    fun record(event: LiveDiagnosticEvent, dns: AppDnsMode? = null, proxy: Boolean? = null, https: Boolean? = null) {
+    fun record(event: LiveDiagnosticEvent, dns: AppDnsMode? = null, proxy: Boolean? = null, https: Boolean? = null,
+        address: String? = null) {
         val target = log ?: return
         synchronized(seen) {
             if (!seen.add(event)) return
+            val initialUrl = if (DesktopBuildInfo.DEBUG && event == LiveDiagnosticEvent.START)
+                address?.let { redactPlaybackUrl(it, channelId) } else null
             target.record(LiveDiagnosticEntry(session, channelId, origin, number, System.currentTimeMillis(),
                 TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started).coerceAtLeast(0), event,
-                dns = dns, proxy = proxy, https = https))
+                dns = dns, proxy = proxy, https = https, initialUrl = initialUrl))
         }
     }
 
@@ -109,8 +137,10 @@ internal class LivePlaybackDiagnostics(directory: Path, scope: CoroutineScope) {
         LiveDiagnosticJournal.serializer(), 128 * 1024, "o diagnóstico ao vivo") { journal ->
         require(journal.schema == 1 && journal.entries.size <= LIMIT)
         require(journal.entries.all { it.session.matches(uuid) && it.appVersion.matches(version) &&
-            (it.channelId == null || it.channelId > 0) && it.attempt in 1..2 &&
-            it.time in 1..253402300799999L && it.elapsedMs >= 0 })
+            (it.channelId == null || it.channelId > 0) && it.attempt in 1..(ProviderServers.addresses.size + 1) &&
+            it.time in 1..253402300799999L && it.elapsedMs >= 0 &&
+            (it.initialUrl == null || it.event == LiveDiagnosticEvent.START &&
+                it.initialUrl == redactPlaybackUrl(it.initialUrl, it.channelId)) })
     }
     private val lock = Any()
     private val writer = Mutex()

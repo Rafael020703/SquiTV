@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.net.URI
+import rsv.squitv.shared.xtream.ProviderServers
 
 @Composable
 internal fun LoginForm(state: DesktopState, controller: DesktopController, modifier: Modifier) {
@@ -123,13 +124,13 @@ internal fun LoginForm(state: DesktopState, controller: DesktopController, modif
                             Icon(Icons.Rounded.Dns, null, Modifier.size(20.dp))
                             Spacer(Modifier.width(10.dp))
                             Text(if (customAddress) "Endereço personalizado"
-                                else state.selectedDns?.let { host(it) } ?: "Automático · melhor disponível",
+                                else state.selectedDns?.let { host(it) } ?: "Automático · servidor principal",
                                 modifier = Modifier.weight(1f), textAlign = TextAlign.Start,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Icon(Icons.Rounded.ExpandMore, null, Modifier.size(20.dp))
                         }
                         DropdownMenu(expanded = dnsExpanded, onDismissRequest = { dnsExpanded = false }) {
-                            DropdownMenuItem(text = { Text("Automático · melhor disponível") }, onClick = {
+                            DropdownMenuItem(text = { Text("Automático · servidor principal") }, onClick = {
                                 controller.selectDns(null); customAddress = false; dnsExpanded = false
                             })
                             controller.availableDns.forEach { dns ->
@@ -158,6 +159,11 @@ internal fun LoginForm(state: DesktopState, controller: DesktopController, modif
                         leadingIcon = { Icon(Icons.Rounded.Language, null, Modifier.size(20.dp)) },
                         shape = RoundedCornerShape(16.dp), colors = fieldColors,
                         enabled = !state.busy, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    val selectedAddress = if (customAddress) address else state.selectedDns ?: ProviderServers.PRIMARY
+                    if (selectedAddress.trim().trimEnd('/').equals(ProviderServers.PRIMARY, ignoreCase = true)) {
+                        Text("O servidor principal usa HTTP sem criptografia.",
+                            style = MaterialTheme.typography.bodySmall, color = palette.error)
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(rememberAccount, { rememberAccount = it }, enabled = !state.busy)
                         Text("Lembrar minha conta", style = MaterialTheme.typography.bodySmall)
