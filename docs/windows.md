@@ -2,7 +2,7 @@
 
 ## Estado e plataformas
 
-A versão atual do Windows é [**1.26.3 x64**, publicada em 10/11/2026](https://github.com/Rafael020703/SquiTV/releases/tag/v1.26.3.1). [Notas Windows](releases/v1.26.3-windows.md). O Android permanece em **1.26/code 29**, na [publicação conjunta v1.26](https://github.com/Rafael020703/SquiTV/releases/tag/v1.26), que continua como Latest. A referência estável Windows aponta v1.26.3.1 e a Android aponta v1.26.
+A versão atual do Windows é [**1.27.0 x64**, publicada em 11/11/2026](https://github.com/Rafael020703/SquiTV/releases/tag/v1.27), na mesma release do **Android 1.27/code 30**. [Notas Windows](releases/v1.27-windows.md). Os dois canais estáveis apontam para a v1.27.
 
 O Windows aproxima funções e apresentação do Android, mas ainda não tem paridade completa. `:desktopApp` consome Kotlin puro em `:shared` e fontes Compose em `uiCommon`; nunca depende de `:app`. Motores, armazenamento e integrações de sistema permanecem específicos de cada plataforma.
 
@@ -202,6 +202,10 @@ Preferências, favoritos e organização têm escopo por conta/tipo. Histórico 
 O `.gitignore` conserva planos, auditorias, registros de manutenção, dados privados, caches e builds localmente. Documentação pública permanente e notas de versões são versionadas; binários/checksums/manifesto são assets da release. Não publicar diretórios inteiros de staging nem relatórios contendo caminhos/dados pessoais.
 
 ## Evidências e limites
+
+### Revisão Windows 1.27.0
+
+O instalador x64 foi conferido sem execução. Os hashes dos payloads MSI/MST e as propriedades de upgrade e limpeza foram verificados. O [CI da revisão distribuída](https://github.com/Rafael020703/SquiTV/actions/runs/42952307309) passou nos dois jobs. Os cinco assets públicos foram verificados por tamanho e SHA-256. O comportamento do novo failover ainda não foi observado em execução pelos agentes.
 
 ### Revisão Windows 1.26.3
 
