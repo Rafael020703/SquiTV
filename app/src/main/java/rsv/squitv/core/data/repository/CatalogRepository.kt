@@ -13,6 +13,7 @@ import rsv.squitv.data.model.XtreamCredentials
 import rsv.squitv.domain.model.ContentType
 import rsv.squitv.domain.model.IptvItem
 import rsv.squitv.shared.catalog.RecentlyAddedCatalog
+import rsv.squitv.shared.account.FavoriteCloudSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -262,7 +263,8 @@ class CatalogRepository @Inject constructor(
     }
 
     suspend fun getVodInfo(credentials: XtreamCredentials, vodId: Int): XtreamVodInfo {
-        val info = xtreamService.getVodInfo(credentials.username, credentials.password, vodId = vodId)
+        val info = cloudCatalog(credentials)?.catalogDetail("movie", vodId, XtreamVodInfo.serializer())
+            ?: xtreamService.getVodInfo(credentials.username, credentials.password, vodId = vodId)
         val details = info.info
         if (details != null) {
             withContext(Dispatchers.IO) {
@@ -288,7 +290,7 @@ class CatalogRepository @Inject constructor(
 
     suspend fun getSeriesMetadata(credentials: XtreamCredentials, seriesId: Int): XtreamSeries? {
         return try {
-            val response = xtreamService.getSeriesEpisodes(credentials.username, credentials.password, seriesId = seriesId)
+            val response = seriesDetails(credentials, seriesId)
             val info = response.info
             if (info != null) {
                 withContext(Dispatchers.IO) {
@@ -316,6 +318,13 @@ class CatalogRepository @Inject constructor(
             null
         }
     }
+
+    private fun cloudCatalog(credentials: XtreamCredentials) =
+        FavoriteCloudSession.catalogClient(SettingsBackupCodec.fingerprint(SettingsBackupCodec.accountKey(credentials)))
+
+    private suspend fun seriesDetails(credentials: XtreamCredentials, seriesId: Int): XtreamSeriesInfo =
+        cloudCatalog(credentials)?.catalogDetail("series", seriesId, XtreamSeriesInfo.serializer())
+            ?: xtreamService.getSeriesEpisodes(credentials.username, credentials.password, seriesId = seriesId)
 
     fun getStreamsByCategoryPaged(categoryId: String, type: String): Flow<PagingData<IptvItem>> {
         return Pager(
@@ -429,18 +438,22 @@ class CatalogRepository @Inject constructor(
 
     suspend fun getSeriesInfo(credentials: XtreamCredentials, seriesId: Int): Pair<List<SeasonEntity>, Map<Int, List<EpisodeEntity>>> {
         val cachedSeasons = iptvDao.getSeasons(seriesId)
-        if (cachedSeasons.isNotEmpty()) {
-            val episodesMap = mutableMapOf<Int, List<EpisodeEntity>>()
-            cachedSeasons.forEach { season ->
-                episodesMap[season.seasonNumber] = iptvDao.getEpisodes(seriesId, season.seasonNumber)
+        val cachedEpisodes = cachedSeasons.associate { season ->
+            season.seasonNumber to iptvDao.getEpisodes(seriesId, season.seasonNumber)
+        }
+        val cloudDetails = if (cachedSeasons.isNotEmpty() && cachedEpisodes.values.flatten().any { it.image.isNullOrBlank() }) {
+            cloudCatalog(credentials)?.catalogDetail("series", seriesId, XtreamSeriesInfo.serializer())
+        } else null
+        if (cachedSeasons.isNotEmpty() && cloudDetails?.episodes.isNullOrEmpty()) {
+            if (cachedEpisodes.values.any { it.isNotEmpty() }) {
+                return Pair(cachedSeasons, cachedEpisodes)
             }
-            return Pair(cachedSeasons, episodesMap)
         }
         val response = try {
-            xtreamService.getSeriesEpisodes(credentials.username, credentials.password, seriesId = seriesId)
+            cloudDetails ?: seriesDetails(credentials, seriesId)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
-            return Pair(emptyList(), emptyMap())
+            return Pair(cachedSeasons, cachedEpisodes)
         }
 
         val seasons = mutableListOf<SeasonEntity>()
@@ -448,17 +461,17 @@ class CatalogRepository @Inject constructor(
         val rawSeasons = response.seasons.orEmpty()
         val rawEpisodes = response.episodes ?: emptyMap()
 
-        val seasonKeys = if (rawSeasons.isEmpty()) {
-            rawEpisodes.keys.mapNotNull { it.toIntOrNull() }.sorted()
-        } else {
-            rawSeasons.mapNotNull { it.seasonNumber }
-        }
+        val seasonKeys = (rawSeasons.mapNotNull { it.seasonNumber } +
+            rawEpisodes.keys.mapNotNull { it.toIntOrNull() } + cachedEpisodes.keys).distinct().sorted()
 
         seasonKeys.forEach { sn ->
             val xtreamSeason = rawSeasons.find { it.seasonNumber == sn }
-            seasons.add(SeasonEntity(seriesId, sn, xtreamSeason?.name ?: "Season $sn", xtreamSeason?.cover ?: response.info?.cover))
+            val cachedSeason = cachedSeasons.firstOrNull { it.seasonNumber == sn }
+            seasons.add(SeasonEntity(seriesId, sn, xtreamSeason?.name ?: cachedSeason?.name ?: "Season $sn",
+                xtreamSeason?.cover ?: cachedSeason?.cover ?: response.info?.cover))
             val eps = rawEpisodes[sn.toString()] ?: rawEpisodes["Season $sn"] ?: rawEpisodes[xtreamSeason?.name.orEmpty()] ?: emptyList()
-            episodesMap[sn] = eps.map {
+            val previous = cachedEpisodes[sn].orEmpty().associateBy { it.streamId }
+            val refreshed = eps.map {
                 EpisodeEntity(
                     seriesId = seriesId,
                     seasonNumber = sn,
@@ -467,12 +480,13 @@ class CatalogRepository @Inject constructor(
                     title = it.title ?: "Episode ${it.episodeNum ?: 0}",
                     streamId = it.id?.toIntOrNull() ?: 0,
                     containerExtension = it.container_extension,
-                    image = it.info?.movieImage,
+                    image = it.info?.movieImage?.takeIf(String::isNotBlank) ?: previous[it.id?.toIntOrNull()]?.image,
                     plot = it.info?.plot,
                     duration = it.info?.duration,
                     rating = it.info?.rating
                 )
             }
+            episodesMap[sn] = (refreshed + previous.values).distinctBy { it.streamId }.sortedBy { it.episodeNum }
         }
         if (seasons.isNotEmpty()) {
             iptvDao.insertSeasons(seasons)

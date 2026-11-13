@@ -136,7 +136,11 @@ class EpgRepository @Inject constructor(
         iptvDao.getEpgForChannel(channelId, System.currentTimeMillis() / 1000)
 
     suspend fun getShortEpg(credentials: XtreamCredentials, streamId: Int): XtreamShortEpg {
-        val response = xtreamService.getShortEpg(credentials.username, credentials.password, streamId = streamId)
+        val account = rsv.squitv.data.model.SettingsBackupCodec
+        val response = rsv.squitv.shared.account.FavoriteCloudSession.catalogClient(
+            account.fingerprint(account.accountKey(credentials)),
+        )?.catalogDetail("live", streamId, XtreamShortEpg.serializer())
+            ?: xtreamService.getShortEpg(credentials.username, credentials.password, streamId = streamId)
         return response.copy(
             epgListings = response.epgListings?.map { listing ->
                 listing.copy(

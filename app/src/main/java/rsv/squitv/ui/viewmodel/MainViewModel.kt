@@ -1,4 +1,4 @@
-﻿package rsv.squitv.ui.viewmodel
+package rsv.squitv.ui.viewmodel
 
 import android.content.Context
 import androidx.compose.ui.graphics.Color
@@ -142,7 +142,7 @@ class MainViewModel @Inject constructor(
             val cleanUrl = baseUrl?.trim()?.lowercase()?.removeSuffix("/")
             val accountKey = if (!cleanUrl.isNullOrBlank()) "$cleanUrl#$simpleKey" else simpleKey
             val map = settings.displayNamesMap
-            map[accountKey] ?: map[simpleKey]
+            settings.portalDisplayName ?: map[accountKey] ?: map[simpleKey]
         } else null
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 

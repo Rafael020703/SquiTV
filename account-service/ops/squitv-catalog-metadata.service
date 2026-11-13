@@ -1,0 +1,17 @@
+[Unit]
+Description=Squi TV - preparação de metadados do catálogo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+WorkingDirectory=/usr/local/lib/squitv-account
+LoadCredential=db-password:/etc/squitv-account/iptv-db-password
+LoadCredential=iptv-key-v1:/etc/squitv-account/iptv-key-v1
+ExecStart=/usr/bin/python3 -B /usr/local/lib/squitv-account/catalog_metadata.py
+TimeoutStartSec=80s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

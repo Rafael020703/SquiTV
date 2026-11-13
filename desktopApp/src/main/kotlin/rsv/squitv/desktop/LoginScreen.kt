@@ -43,7 +43,7 @@ internal fun LoginForm(state: DesktopState, controller: DesktopController, modif
         mutableStateOf(saved?.baseUrl?.takeUnless { it in controller.availableDns }.orEmpty())
     }
     var username by rememberSaveable(saved) { mutableStateOf(saved?.username.orEmpty()) }
-    var password by rememberSaveable(saved) { mutableStateOf(saved?.password.orEmpty()) }
+    var password by remember(saved) { mutableStateOf(saved?.password.orEmpty()) }
     var rememberAccount by rememberSaveable(saved) { mutableStateOf(saved != null) }
     var showPassword by remember { mutableStateOf(false) }
     var customAddress by rememberSaveable(saved) { mutableStateOf(address.isNotEmpty()) }
@@ -87,7 +87,11 @@ internal fun LoginForm(state: DesktopState, controller: DesktopController, modif
                 Column(Modifier.verticalScroll(formScroll).padding(26.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("BEM-VINDO DE VOLTA!", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                    Text("Faça seu login para continuar assistindo.", style = MaterialTheme.typography.bodySmall,
+                    rsv.squitv.core.ui.components.AccountPilotEntry(!state.busy && !state.restoring) { credentials ->
+                        controller.connect("", credentials.username, credentials.password, rememberAccount,
+                            linkedLogin = credentials)
+                    }
+                    Text("Ou entre com seu acesso IPTV", style = MaterialTheme.typography.bodySmall,
                         color = palette.onSurfaceVariant)
                     OutlinedTextField(username, { username = it }, label = { Text("USUÁRIO") },
                         leadingIcon = { Icon(Icons.Rounded.Person, null, Modifier.size(20.dp)) },
@@ -183,7 +187,7 @@ internal fun LoginForm(state: DesktopState, controller: DesktopController, modif
                             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = palette.onSurface)
                             Spacer(Modifier.width(10.dp))
                             Text("CONECTANDO…", color = palette.onSurface, style = MaterialTheme.typography.labelMedium)
-                        } else Text("ENTRAR", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                        } else Text("ENTRAR COM IPTV", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     }
                     if (state.busy) TextButton(onClick = controller::cancelConnection,
                         modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Cancelar") }

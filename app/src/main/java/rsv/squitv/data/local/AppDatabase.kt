@@ -24,13 +24,43 @@ import rsv.squitv.data.local.entities.*
         PendingSyncEntity::class,
         CatalogMetadataEntity::class
     ], 
-    version = 27,
+    version = 28,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun iptvDao(): IptvDao
 
     companion object {
+        val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `downloads_new` (
+                        `streamId` INTEGER NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `icon` TEXT,
+                        `localUri` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `progress` REAL NOT NULL,
+                        `size` INTEGER NOT NULL,
+                        `downloadedBytes` INTEGER NOT NULL,
+                        `duration` TEXT,
+                        `container` TEXT,
+                        `seriesId` INTEGER,
+                        `seasonNumber` INTEGER,
+                        `downloadSpeedMbps` REAL NOT NULL,
+                        PRIMARY KEY(`streamId`, `type`)
+                    )
+                """.trimIndent())
+                database.execSQL("""
+                    INSERT OR REPLACE INTO `downloads_new`
+                    SELECT `streamId`, COALESCE(`type`, 'movie'), `name`, `icon`, `localUri`, `status`, `progress`, `size`, `downloadedBytes`, `duration`, `container`, `seriesId`, `seasonNumber`, `downloadSpeedMbps`
+                    FROM `downloads`
+                """.trimIndent())
+                database.execSQL("DROP TABLE `downloads`")
+                database.execSQL("ALTER TABLE `downloads_new` RENAME TO `downloads`")
+            }
+        }
         val MIGRATION_26_27 = object : Migration(26, 27) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("""

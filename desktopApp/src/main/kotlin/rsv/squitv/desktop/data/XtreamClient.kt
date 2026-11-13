@@ -12,6 +12,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import rsv.squitv.shared.xtream.*
 import rsv.squitv.data.model.*
 import kotlinx.serialization.json.Json
+import rsv.squitv.desktop.liveCategoryScope
+import rsv.squitv.shared.account.FavoriteCloudSession
 
 class ServerProblem(message: String) : IOException(message)
 
@@ -32,10 +34,12 @@ class XtreamClient(private val client: OkHttpClient = OkHttpClient.Builder()
         json.decodeFromString(request(credentials, "get_series", categoryId))
 
     suspend fun movieInfo(credentials: ServerCredentials, id: Int): XtreamVodInfo =
-        json.decodeFromString(request(credentials, "get_vod_info", itemParameter = "vod_id" to id))
+        cloudCatalog(credentials)?.catalogDetail("movie", id, XtreamVodInfo.serializer())
+            ?: json.decodeFromString(request(credentials, "get_vod_info", itemParameter = "vod_id" to id))
 
     suspend fun seriesInfo(credentials: ServerCredentials, id: Int): XtreamSeriesInfo =
-        json.decodeFromString(request(credentials, "get_series_info", itemParameter = "series_id" to id))
+        cloudCatalog(credentials)?.catalogDetail("series", id, XtreamSeriesInfo.serializer())
+            ?: json.decodeFromString(request(credentials, "get_series_info", itemParameter = "series_id" to id))
 
     suspend fun login(credentials: ServerCredentials): ServerAccount =
         XtreamCatalogParser.account(request(credentials), credentials.username, System.currentTimeMillis() / 1000)
@@ -47,7 +51,12 @@ class XtreamClient(private val client: OkHttpClient = OkHttpClient.Builder()
         XtreamCatalogParser.channels(request(credentials, "get_live_streams", categoryId))
 
     suspend fun epg(credentials: ServerCredentials, streamId: Int): List<LiveProgramme> =
-        XtreamCatalogParser.epg(request(credentials, "get_short_epg", streamId = streamId))
+        XtreamCatalogParser.epg(cloudCatalog(credentials)?.catalogDetail(
+            "live", streamId, kotlinx.serialization.json.JsonObject.serializer(),
+        )?.toString() ?: request(credentials, "get_short_epg", streamId = streamId))
+
+    private fun cloudCatalog(credentials: ServerCredentials) =
+        FavoriteCloudSession.catalogClient(liveCategoryScope(credentials))
 
     private suspend fun request(credentials: ServerCredentials, action: String? = null, category: String? = null,
         streamId: Int? = null, itemParameter: Pair<String, Int>? = null): String {

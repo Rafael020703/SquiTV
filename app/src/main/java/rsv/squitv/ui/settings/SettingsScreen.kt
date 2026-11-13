@@ -31,11 +31,14 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.common.util.UnstableApi
 import rsv.squitv.R
+import rsv.squitv.core.ui.components.AccountSyncSettingsDialog
 import rsv.squitv.core.ui.components.buttons.AppButton
 import rsv.squitv.core.ui.components.buttons.AppIconButton
 import rsv.squitv.core.ui.components.settings.*
 import rsv.squitv.core.ui.components.states.LoadingState
 import rsv.squitv.core.ui.theme.*
+import rsv.squitv.data.model.SettingsBackupCodec
+import rsv.squitv.shared.account.FavoriteCloudSession
 import rsv.squitv.ui.dashboard.PortalBackground
 import rsv.squitv.ui.viewmodel.MainViewModel
 import rsv.squitv.ui.viewmodel.library.LibraryViewModel
@@ -65,6 +68,8 @@ enum class SettingsCategory(val labelRes: Int, val icon: ImageVector) {
     AUTO_PLAY(R.string.auto_play_label, Icons.AutoMirrored.Rounded.PlaylistPlay),
     BACKGROUND_AND_PIP(R.string.background_and_pip_label, Icons.Rounded.PictureInPictureAlt),
     UPDATE(R.string.force_sync_button, Icons.Rounded.Sync),
+    ACCOUNT_SYNC(R.string.account_sync_now, Icons.Rounded.CloudSync),
+    CREDITS(R.string.metadata_credits, Icons.Rounded.Info),
     APP_UPDATES(R.string.app_updates_title, Icons.Rounded.SystemUpdate),
     DNS_TESTER(R.string.dns_tester_title, Icons.Rounded.Dns),
     CLEAR_CACHE(R.string.clear_cache_label, Icons.Rounded.Brush),
@@ -93,6 +98,7 @@ fun SettingsScreen(
     var detailCategory by remember { mutableStateOf<SettingsCategory?>(null) }
     var showResetDialog by remember { mutableStateOf(false) }
     var showSyncDialog by remember { mutableStateOf(false) }
+    var showAccountSync by remember { mutableStateOf(false) }
     var showBackupDialog by remember { mutableStateOf(false) }
 
     val contentFocusRequester = remember { FocusRequester() }
@@ -153,6 +159,7 @@ fun SettingsScreen(
                         SettingsCategory.ACCOUNT -> onNavigateToAccount()
                         SettingsCategory.NAV_CUSTOMIZATION -> onNavigateToContentCustomization()
                         SettingsCategory.BACKUP -> showBackupDialog = true
+                        SettingsCategory.ACCOUNT_SYNC -> showAccountSync = true
                         SettingsCategory.SIGN_OUT -> mainViewModel.logout()
                         SettingsCategory.UPDATE -> {
                             if (!syncProgress.isRunning) mainViewModel.loadData(force = true)
@@ -204,6 +211,19 @@ fun SettingsScreen(
 
     if (showBackupDialog) {
         SettingsBackupDialog(onDismiss = { showBackupDialog = false })
+    }
+
+    if (showAccountSync) {
+        val session by FavoriteCloudSession.state.collectAsStateWithLifecycle()
+        val account = settings.credentials?.let(SettingsBackupCodec::accountKey)
+            ?.let(SettingsBackupCodec::fingerprint)
+        val active = session?.takeIf { it.localAccount == account }
+        val profileId = settings.activeProfileId
+        val profileName = settings.profiles.firstOrNull { it.id == profileId }?.name ?: "Perfil principal"
+        val local = remember(active, profileId) {
+            active?.let { libraryViewModel.favoriteCloudStore(it.localAccount, profileId, profileName, it.client.scopeId) }
+        }
+        AccountSyncSettingsDialog(active?.client, local, onClose = { showAccountSync = false })
     }
 
     if (showSyncDialog) {
@@ -323,6 +343,7 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     when (cat) {
+                        SettingsCategory.CREDITS -> rsv.squitv.core.ui.components.EditorialCredits()
                         SettingsCategory.ACCOUNT -> {
                             SettingsActionItem(
                                 label = "CONTA ATIVA: ${credentials?.username ?: "NENHUM"}",

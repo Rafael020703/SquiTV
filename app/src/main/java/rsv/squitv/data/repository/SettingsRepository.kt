@@ -1,4 +1,4 @@
-﻿package rsv.squitv.data.repository
+package rsv.squitv.data.repository
 
 import android.content.Context
 import androidx.datastore.core.DataStore
@@ -11,6 +11,7 @@ import rsv.squitv.data.model.XtreamCredentials
 import rsv.squitv.util.SecurityHelper
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -126,6 +127,8 @@ class SettingsRepository @Inject constructor(
 
         // Customization
         val DISPLAY_NAMES_MAP = stringPreferencesKey("display_names_map")
+        val PORTAL_DISPLAY_NAME = stringPreferencesKey("portal_display_name")
+        val PORTAL_SYNC_SESSION = stringPreferencesKey("portal_sync_session")
         val LOCAL_PROFILES = stringPreferencesKey("local_profiles_v1")
         val PROFILE_PICTURE = stringPreferencesKey("profile_picture")
         val HIDDEN_SECTIONS = stringSetPreferencesKey("hidden_sections")
@@ -186,7 +189,8 @@ class SettingsRepository @Inject constructor(
         val moviePromptDismissedMap: Map<String, Boolean> = emptyMap(),
         val seriesPromptDismissedMap: Map<String, Boolean> = emptyMap(),
         val preparationSpeed: String = "NORMAL",
-        val browseMemory: rsv.squitv.shared.catalog.CatalogBrowseMemory = rsv.squitv.shared.catalog.CatalogBrowseMemory()
+        val browseMemory: rsv.squitv.shared.catalog.CatalogBrowseMemory = rsv.squitv.shared.catalog.CatalogBrowseMemory(),
+        val portalDisplayName: String? = null
     ) {
         fun catalogPosition(type: String) = browseMemory.position(
             rsv.squitv.core.data.repository.PlaybackSourceRepository.scope(this), type)
@@ -373,6 +377,7 @@ class SettingsRepository @Inject constructor(
             lastNotifiedVersion = lastNotifiedVersion,
             ignoredVersion = ignoredVersion,
             displayNamesMap = displayNamesMap,
+            portalDisplayName = preferences[PreferencesKeys.PORTAL_DISPLAY_NAME],
             hiddenSections = hiddenSections,
             categoryOrderMap = categoryOrderMap,
             hiddenCategoriesMap = hiddenCategoriesMap,
@@ -386,15 +391,174 @@ class SettingsRepository @Inject constructor(
 
     val credentialsFlow: Flow<XtreamCredentials?> = settingsFlow.map { it.credentials }
 
-    suspend fun saveSessionCredentials(credentials: XtreamCredentials) {
-        context.dataStore.edit { preferences ->
-            val encryptedPassword = SecurityHelper.encrypt(credentials.password)
-            preferences[PreferencesKeys.USERNAME] = credentials.username
-            if (encryptedPassword != null) {
-                preferences[PreferencesKeys.PASSWORD] = encryptedPassword
+    internal suspend fun applyCloudProfileName(accountId: String, profileId: String, name: String) {
+        require(name.isNotBlank() && name.length <= 80)
+        context.dataStore.edit { prefs ->
+            val settings = readSettings(prefs)
+            val key = settings.credentials?.let(SettingsBackupCodec::accountKey) ?: return@edit
+            if (SettingsBackupCodec.fingerprint(key) != accountId || settings.activeProfileId != profileId) return@edit
+            val profile = settings.profiles.firstOrNull { it.id == profileId } ?: return@edit
+            if (profile.name != name) {
+                prefs[PreferencesKeys.LOCAL_PROFILES] = Json.encodeToString(
+                    settings.profiles.map { if (it.id == profileId) it.copy(name = name) else it },
+                )
             }
-            preferences[PreferencesKeys.BASE_URL] = credentials.baseUrl
         }
+    }
+
+    internal fun cloudCategories(
+        settings: AppSettings,
+        accountKey: String,
+        profileId: String,
+    ): List<rsv.squitv.shared.account.CloudCategories> =
+        listOf("live", "movie", "series").map { kind ->
+            val localType = if (kind == "movie") "vod" else kind
+            val key = "${accountKey.lowercase().trim()}_$localType"
+            val mode = when (kind) {
+                "movie" -> settings.getMovieCategoryMode(accountKey, profileId).name.lowercase()
+                "series" -> settings.getSeriesCategoryMode(accountKey, profileId).name.lowercase()
+                else -> "provider"
+            }
+            rsv.squitv.shared.account.CloudCategories(
+                kind, mode, settings.categoryOrderMap[key].orEmpty(), settings.hiddenCategoriesMap[key].orEmpty().sorted(),
+            )
+        }
+
+    internal suspend fun applyCloudCategories(
+        accountId: String,
+        profileId: String,
+        expected: List<rsv.squitv.shared.account.CloudCategories>,
+        rows: List<rsv.squitv.shared.account.CloudCategories>,
+    ): Boolean {
+        var applied = false
+        context.dataStore.edit { prefs ->
+            val settings = readSettings(prefs)
+            val accountKey = settings.credentials?.let(SettingsBackupCodec::accountKey) ?: return@edit
+            if (SettingsBackupCodec.fingerprint(accountKey) != accountId || settings.activeProfileId != profileId ||
+                cloudCategories(settings, accountKey, profileId) != expected) return@edit
+            val order = readOrderMap(prefs)
+            val hidden = readHiddenMap(prefs)
+            val modeKey = "${accountKey}_$profileId"
+            for (row in rows) {
+                val localType = if (row.kind == "movie") "vod" else row.kind
+                val key = "${accountKey.lowercase().trim()}_$localType"
+                order[key] = row.order
+                hidden[key] = row.hidden.toSet()
+                when (row.kind) {
+                    "movie" -> prefs[PreferencesKeys.MOVIE_CATEGORY_MODE_MAP] =
+                        Json.encodeToString(settings.movieCategoryModeMap + (modeKey to row.mode.uppercase()))
+                    "series" -> prefs[PreferencesKeys.SERIES_CATEGORY_MODE_MAP] =
+                        Json.encodeToString(settings.seriesCategoryModeMap + (modeKey to row.mode.uppercase()))
+                }
+            }
+            prefs[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(order)
+            prefs[PreferencesKeys.HIDDEN_CATEGORIES_MAP] = Json.encodeToString(hidden)
+            applied = true
+        }
+        return applied
+    }
+
+    internal suspend fun loadFavoriteCheckpoint(key: String): rsv.squitv.shared.account.FavoriteCheckpoint? =
+        withContext(Dispatchers.IO) {
+            val file = favoriteCheckpointFile(key)
+            if (!file.baseFile.exists() && !java.io.File(file.baseFile.path + ".bak").exists()) return@withContext null
+            file.openRead().use { input ->
+                val bytes = input.readBytes()
+                require(bytes.size <= 2 * 1024 * 1024)
+                Json.decodeFromString<rsv.squitv.shared.account.FavoriteCheckpoint>(bytes.toString(Charsets.UTF_8))
+            }
+        }
+
+    internal suspend fun saveFavoriteCheckpoint(key: String, value: rsv.squitv.shared.account.FavoriteCheckpoint) =
+        withContext(Dispatchers.IO) {
+            val file = favoriteCheckpointFile(key)
+            val bytes = Json.encodeToString(value).toByteArray(Charsets.UTF_8)
+            require(bytes.size <= 2 * 1024 * 1024)
+            val output = file.startWrite()
+            try {
+                output.write(bytes)
+                file.finishWrite(output)
+            } catch (failure: Exception) {
+                file.failWrite(output)
+                throw failure
+            }
+        }
+
+    internal suspend fun loadCloudProgress(key: String): rsv.squitv.shared.account.CloudProgressJournal =
+        withContext(Dispatchers.IO) {
+            val file = favoriteCheckpointFile(key, "-progress")
+            if (!file.baseFile.exists() && !java.io.File(file.baseFile.path + ".bak").exists())
+                return@withContext rsv.squitv.shared.account.CloudProgressJournal()
+            require(file.baseFile.length() <= 4 * 1024 * 1024)
+            file.openRead().use { input ->
+                Json.decodeFromString<rsv.squitv.shared.account.CloudProgressJournal>(input.readBytes().toString(Charsets.UTF_8))
+            }
+        }
+
+    internal suspend fun saveCloudProgress(key: String, value: rsv.squitv.shared.account.CloudProgressJournal) =
+        withContext(Dispatchers.IO) {
+            val file = favoriteCheckpointFile(key, "-progress")
+            val bytes = Json.encodeToString(value).toByteArray(Charsets.UTF_8)
+            require(bytes.size <= 4 * 1024 * 1024)
+            val output = file.startWrite()
+            try {
+                output.write(bytes)
+                file.finishWrite(output)
+            } catch (failure: Exception) {
+                file.failWrite(output)
+                throw failure
+            }
+        }
+
+    private fun favoriteCheckpointFile(key: String, suffix: String = ""): android.util.AtomicFile {
+        require(key.matches(Regex("[a-f0-9]{64}")))
+        return android.util.AtomicFile(java.io.File(context.filesDir, "favorite-sync/$key$suffix.json"))
+    }
+
+    internal val portalSyncSessionFlow = context.dataStore.data.map { preferences ->
+        val encrypted = preferences[PreferencesKeys.PORTAL_SYNC_SESSION] ?: return@map null
+        val user = preferences[PreferencesKeys.USERNAME] ?: return@map null
+        val url = preferences[PreferencesKeys.BASE_URL] ?: return@map null
+        val account = SettingsBackupCodec.accountKey(XtreamCredentials(user, "", url))
+        account to encrypted
+    }.distinctUntilChanged().map { entry ->
+        if (entry == null) null else withContext(Dispatchers.IO) {
+            val (account, encrypted) = entry
+            if (SecurityHelper.isEncrypted(encrypted)) {
+                SettingsBackupCodec.fingerprint(account) to SecurityHelper.decrypt(encrypted)
+            } else null
+        }
+    }
+
+    suspend fun saveSessionCredentials(
+        credentials: XtreamCredentials,
+        portalDisplayName: String? = null,
+        portalSyncSession: String? = null,
+    ) {
+        context.dataStore.edit { preferences ->
+            preferences.writeActiveSession(encryptCredentials(credentials), portalDisplayName, portalSyncSession)
+        }
+    }
+
+    private fun encryptCredentials(credentials: XtreamCredentials): XtreamCredentials =
+        credentials.copy(password = SecurityHelper.encrypt(credentials.password)
+            ?: throw IllegalStateException("Não foi possível proteger a senha neste aparelho."))
+
+    private fun MutablePreferences.writeActiveSession(
+        encrypted: XtreamCredentials,
+        portalDisplayName: String?,
+        portalSyncSession: String?,
+    ) {
+        val encryptedSession = portalSyncSession?.let {
+            SecurityHelper.encrypt(it) ?: throw IllegalStateException("Não foi possível proteger a sessão da conta.")
+        }
+        this[PreferencesKeys.USERNAME] = encrypted.username
+        this[PreferencesKeys.PASSWORD] = encrypted.password
+        this[PreferencesKeys.BASE_URL] = encrypted.baseUrl
+        if (portalDisplayName.isNullOrBlank()) remove(PreferencesKeys.PORTAL_DISPLAY_NAME)
+        else this[PreferencesKeys.PORTAL_DISPLAY_NAME] = portalDisplayName
+        if (encryptedSession == null) remove(PreferencesKeys.PORTAL_SYNC_SESSION)
+        else this[PreferencesKeys.PORTAL_SYNC_SESSION] = encryptedSession
     }
 
     suspend fun isAccountSaved(credentials: XtreamCredentials): Boolean {
@@ -407,36 +571,43 @@ class SettingsRepository @Inject constructor(
 
     suspend fun saveAccountToSavedList(credentials: XtreamCredentials) {
         context.dataStore.edit { preferences ->
-            val encryptedPassword = SecurityHelper.encrypt(credentials.password) ?: credentials.password
-            val encryptedCreds = credentials.copy(password = encryptedPassword)
-
-            val accountsJson = preferences[PreferencesKeys.ACCOUNTS]
-            val accounts = try {
-                if (accountsJson != null) Json.decodeFromString<List<XtreamCredentials>>(accountsJson).toMutableList()
-                else mutableListOf()
-            } catch (_: Exception) {
-                mutableListOf()
-            }
-
-            val index = accounts.indexOfFirst {
-                it.username.equals(credentials.username, ignoreCase = true) &&
-                it.baseUrl.equals(credentials.baseUrl, ignoreCase = true)
-            }
-            if (index == -1) {
-                accounts.add(encryptedCreds)
-                preferences[PreferencesKeys.ACCOUNTS] = Json.encodeToString(accounts)
-                preferences[PreferencesKeys.CURRENT_ACCOUNT_INDEX] = accounts.size - 1
-            } else {
-                accounts[index] = encryptedCreds
-                preferences[PreferencesKeys.ACCOUNTS] = Json.encodeToString(accounts)
-                preferences[PreferencesKeys.CURRENT_ACCOUNT_INDEX] = index
-            }
+            preferences.writeSavedAccount(encryptCredentials(credentials))
         }
     }
 
-    suspend fun saveCredentials(credentials: XtreamCredentials) {
-        saveSessionCredentials(credentials)
-        saveAccountToSavedList(credentials)
+    private fun MutablePreferences.writeSavedAccount(encryptedCreds: XtreamCredentials) {
+        val accountsJson = this[PreferencesKeys.ACCOUNTS]
+        val accounts = try {
+            if (accountsJson != null) Json.decodeFromString<List<XtreamCredentials>>(accountsJson).toMutableList()
+            else mutableListOf()
+        } catch (_: Exception) {
+            mutableListOf()
+        }
+
+        val index = accounts.indexOfFirst {
+            it.username.equals(encryptedCreds.username, ignoreCase = true) &&
+            it.baseUrl.equals(encryptedCreds.baseUrl, ignoreCase = true)
+        }
+        if (index == -1) {
+            accounts.add(encryptedCreds)
+            this[PreferencesKeys.CURRENT_ACCOUNT_INDEX] = accounts.lastIndex
+        } else {
+            accounts[index] = encryptedCreds
+            this[PreferencesKeys.CURRENT_ACCOUNT_INDEX] = index
+        }
+        this[PreferencesKeys.ACCOUNTS] = Json.encodeToString(accounts)
+    }
+
+    suspend fun saveCredentials(
+        credentials: XtreamCredentials,
+        portalDisplayName: String? = null,
+        portalSyncSession: String? = null,
+    ) {
+        context.dataStore.edit { preferences ->
+            val encrypted = encryptCredentials(credentials)
+            preferences.writeActiveSession(encrypted, portalDisplayName, portalSyncSession)
+            preferences.writeSavedAccount(encrypted)
+        }
     }
 
     suspend fun addAccount(credentials: XtreamCredentials) {
@@ -459,6 +630,8 @@ class SettingsRepository @Inject constructor(
                 
                 val currentIndex = preferences[PreferencesKeys.CURRENT_ACCOUNT_INDEX] ?: 0
                 if (currentIndex == index) {
+                    preferences.remove(PreferencesKeys.PORTAL_DISPLAY_NAME)
+                    preferences.remove(PreferencesKeys.PORTAL_SYNC_SESSION)
                     preferences[PreferencesKeys.CURRENT_ACCOUNT_INDEX] = 0
                     if (accounts.isNotEmpty()) {
                         val first = accounts[0]
@@ -490,6 +663,8 @@ class SettingsRepository @Inject constructor(
             
             if (index in accounts.indices) {
                 preferences[PreferencesKeys.CURRENT_ACCOUNT_INDEX] = index
+                preferences.remove(PreferencesKeys.PORTAL_DISPLAY_NAME)
+                preferences.remove(PreferencesKeys.PORTAL_SYNC_SESSION)
                 val creds = accounts[index]
                 preferences[PreferencesKeys.USERNAME] = creds.username
                 preferences[PreferencesKeys.PASSWORD] = creds.password
@@ -529,6 +704,8 @@ class SettingsRepository @Inject constructor(
     suspend fun clearCredentials() {
         context.dataStore.edit { preferences ->
             // Clear active session
+            preferences.remove(PreferencesKeys.PORTAL_DISPLAY_NAME)
+            preferences.remove(PreferencesKeys.PORTAL_SYNC_SESSION)
             preferences.remove(PreferencesKeys.USERNAME)
             preferences.remove(PreferencesKeys.PASSWORD)
             preferences.remove(PreferencesKeys.BASE_URL)

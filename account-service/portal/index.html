@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Minha conta · Squi TV</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/account.js"></script>
+</head>
+<body>
+  <main class="panel" id="squitv-account">
+    <a class="brand" href="/" aria-label="Squi TV, início">
+      <span class="mark" aria-hidden="true">▶</span><span>Squi TV</span>
+    </a>
+    <h1 id="title">Minha conta</h1>
+    <p id="description">Abrindo sua Conta Squi TV…</p>
+    <div id="guest" class="actions" hidden>
+      <button type="button" data-flow="login">Tentar entrar novamente</button>
+    </div>
+    <p class="status" id="status" role="status" hidden></p>
+    <div class="dashboard" id="dashboard" hidden>
+      <nav class="site-nav" aria-label="Navegação da conta">
+        <button type="button" data-page="catalog">Catálogo</button>
+        <button type="button" data-page="library">Minha lista</button>
+        <button type="button" data-page="account">Conta</button>
+      </nav>
+      <section id="browse" class="browse" data-pane="catalog" aria-labelledby="browse-title" hidden>
+        <div class="catalog-hero" id="catalog-hero" hidden>
+          <img id="hero-image" alt="" hidden>
+          <div class="hero-content">
+            <p id="hero-kind"></p>
+            <h2 id="hero-title"></h2>
+            <p id="hero-description" hidden></p>
+            <button type="button" id="hero-detail">Ver detalhes</button>
+          </div>
+        </div>
+        <h2 id="browse-title">Catálogo</h2>
+        <div class="catalog-toolbar">
+          <div class="kind-picker" role="group" aria-label="Tipo de catálogo">
+            <button type="button" data-kind="live">Ao vivo</button>
+            <button type="button" data-kind="movie" aria-pressed="true">Filmes</button>
+            <button type="button" data-kind="series">Séries</button>
+          </div>
+          <form id="browse-search" role="search">
+            <input type="search" id="browse-query" maxlength="100" aria-label="Buscar no catálogo" placeholder="Buscar no catálogo">
+            <button type="submit" class="secondary">Buscar</button>
+          </form>
+        </div>
+        <p class="status" id="browse-status" role="status" hidden></p>
+        <ul id="browse-items" class="browse-grid"></ul>
+        <button type="button" class="secondary load-more" id="browse-more" hidden>Carregar mais</button>
+      </section>
+      <section id="overview" class="account-section" data-pane="account" aria-labelledby="overview-title" hidden>
+        <h2 id="overview-title">Dados da conta</h2>
+        <dl class="account-data">
+          <div><dt>Usuário</dt><dd id="account-username">—</dd></div>
+          <div><dt>Vínculo selecionado</dt><dd id="account-iptv-state" aria-live="polite">Consultando…</dd></div>
+          <div><dt>Servidor padrão do app</dt><dd>dnssquitv.rafael020703.shop</dd></div>
+        </dl>
+        <form id="account-name-form">
+          <label for="account-display-name">Nome de exibição</label>
+          <input id="account-display-name" maxlength="80" aria-describedby="account-display-help" autocomplete="off">
+          <small id="account-display-help">Aparece no app na próxima entrada pela Conta Squi TV. Em branco, usa seu usuário.</small>
+          <button type="submit" id="account-name-save" disabled>Salvar nome</button>
+          <p class="status" id="account-name-status" role="status" hidden></p>
+        </form>
+        <div id="member" class="actions" hidden>
+          <button type="button" class="secondary" data-flow="password">Alterar senha</button>
+          <button type="button" id="logout" class="secondary">Sair</button>
+        </div>
+        <details class="credits" id="catalog-credits" hidden>
+          <summary>Créditos de metadados</summary>
+          <a href="https://www.themoviedb.org/" rel="noreferrer"><img id="tmdb-logo" alt="The Movie Database (TMDB)"></a>
+          <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+        </details>
+      </section>
+      <section id="iptv" class="account-section" data-pane="account" aria-labelledby="iptv-title" hidden>
+        <h2 id="iptv-title">Conta IPTV</h2>
+        <div class="iptv-slots" id="iptv-slots" hidden>
+          <div>
+            <label for="iptv-slot-picker">Vínculo IPTV</label>
+            <select id="iptv-slot-picker"></select>
+          </div>
+          <button type="button" class="secondary" id="iptv-add">Adicionar vínculo</button>
+          <button type="button" class="secondary" id="iptv-cancel-new" hidden>Cancelar novo vínculo</button>
+        </div>
+        <p id="iptv-description">Vincule a conta que você já usa no provedor do Squi TV.</p>
+        <dl class="account-data" id="iptv-details" hidden>
+          <div><dt>Usuário IPTV</dt><dd id="iptv-linked-user">—</dd></div>
+          <div>
+            <dt>Senha IPTV</dt>
+            <dd class="iptv-secret">
+              <span id="iptv-saved-password">••••••••</span>
+              <button type="button" id="iptv-reveal" class="secondary icon-button"
+                      aria-label="Mostrar senha IPTV" aria-pressed="false" aria-controls="iptv-saved-password">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+                  <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"></path>
+                  <circle cx="12" cy="12" r="2.5"></circle>
+                  <path id="iptv-eye-slash" d="M4 4l16 16" hidden></path>
+                </svg>
+              </button>
+            </dd>
+          </div>
+          <div><dt>Última validação</dt><dd id="iptv-validated-at">—</dd></div>
+          <div><dt>Validade informada pelo provedor</dt><dd id="iptv-expires-at">—</dd></div>
+        </dl>
+        <details id="provider-details" class="provider-details" hidden>
+          <summary>Dados do provedor</summary>
+          <dl class="account-data">
+            <div><dt>Situação no provedor</dt><dd id="provider-state">—</dd></div>
+            <div><dt>Conexões em uso</dt><dd id="provider-connections">—</dd></div>
+            <div><dt>Consultado em</dt><dd id="provider-checked-at">—</dd></div>
+          </dl>
+          <p class="status" id="provider-status" role="status" hidden></p>
+          <button type="button" id="provider-refresh" class="secondary">Atualizar dados do provedor</button>
+        </details>
+        <button type="button" id="iptv-edit" class="secondary" aria-controls="iptv-form" aria-expanded="false" hidden>Atualizar vínculo</button>
+        <form id="iptv-form" autocomplete="off" hidden>
+          <div id="iptv-user-field">
+            <label for="iptv-user">Usuário IPTV</label>
+            <input id="iptv-user" autocomplete="off" maxlength="256" spellcheck="false" autocapitalize="none" required>
+          </div>
+          <div>
+            <label for="iptv-password" id="iptv-password-label">Senha IPTV</label>
+            <input id="iptv-password" type="password" maxlength="256" autocomplete="new-password" required>
+          </div>
+          <button type="submit" id="iptv-submit">Vincular conta</button>
+        </form>
+        <p class="status" id="iptv-status" role="status" hidden></p>
+      </section>
+      <section id="cloud-library" class="account-section cloud-library" data-pane="library" aria-labelledby="cloud-title" hidden>
+        <h2 id="cloud-title">Minha lista</h2>
+        <div class="cloud-profile-picker">
+          <label for="cloud-profile">Perfil da Conta Squi TV</label>
+          <select id="cloud-profile" disabled></select>
+        </div>
+        <details>
+          <summary>Gerenciar perfis</summary>
+        <form id="cloud-profile-form" autocomplete="off">
+          <label for="cloud-profile-name">Nome do perfil</label>
+          <input id="cloud-profile-name" maxlength="80" required>
+          <div class="actions">
+            <button type="submit" value="create">Criar perfil</button>
+            <button type="submit" value="rename" class="secondary" id="cloud-profile-rename" disabled>Renomear selecionado</button>
+          </div>
+        </form>
+        </details>
+        <p class="status" id="cloud-status" role="status" hidden></p>
+        <ul id="cloud-favorites" class="cloud-favorites" aria-label="Favoritos sincronizados"></ul>
+        <details id="cloud-progress" class="provider-details" hidden>
+          <summary>Progresso sincronizado</summary>
+          <button type="button" id="cloud-progress-open" class="secondary">Ver progresso</button>
+          <p class="status" id="cloud-progress-status" role="status" hidden></p>
+          <ul id="cloud-progress-list" class="cloud-favorites" aria-label="Progresso de filmes e séries"></ul>
+        </details>
+        <details id="cloud-categories" class="provider-details" hidden>
+          <summary>Organização de categorias</summary>
+          <div class="cloud-profile-picker">
+            <label for="cloud-category-kind">Catálogo</label>
+            <select id="cloud-category-kind">
+              <option value="live">Ao vivo</option>
+              <option value="movie">Filmes</option>
+              <option value="series">Séries</option>
+            </select>
+          </div>
+          <button type="button" id="cloud-category-open" class="secondary">Organizar categorias</button>
+          <form id="cloud-category-form" hidden>
+            <div id="cloud-category-mode-row">
+              <label for="cloud-category-mode">Modo de categorias</label>
+              <select id="cloud-category-mode">
+                <option value="provider">Categorias do servidor</option>
+                <option value="genre">Gêneros</option>
+              </select>
+            </div>
+            <div>
+              <label for="cloud-category-search">Buscar categorias</label>
+              <input id="cloud-category-search" type="search" placeholder="Nome ou código da categoria" autocomplete="off">
+            </div>
+            <ul id="cloud-category-list" class="cloud-favorites" aria-label="Ordem das categorias"></ul>
+            <button type="submit">Salvar organização</button>
+          </form>
+          <p class="status" id="cloud-category-status" role="status" hidden></p>
+        </details>
+      </section>
+    </div>
+    <dialog id="item-dialog" aria-labelledby="item-dialog-title">
+      <form method="dialog"><button type="submit" class="secondary">Fechar</button></form>
+      <img id="item-dialog-image" alt="" hidden>
+      <h2 id="item-dialog-title"></h2>
+      <p id="item-dialog-meta" hidden></p>
+      <p id="item-dialog-plot" hidden></p>
+      <p id="item-dialog-status" role="status" hidden></p>
+      <ul id="item-dialog-extra" hidden></ul>
+    </dialog>
+    <noscript><p>Ative o JavaScript para acessar sua conta.</p></noscript>
+  </main>
+</body>
+</html>

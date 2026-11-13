@@ -67,7 +67,7 @@ internal fun CatalogPreparationPanel(state: DesktopPreparationState, preparation
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 val percent = rsv.squitv.shared.catalog.PreparationProgress.percent(state.total, state.done)
-                Text(if (state.running) "Preparando catálogo · $percent%" else "Catálogo · $percent% · ${state.done}/${state.total} preparados",
+                Text(if (state.serverManaged) "Catálogo no servidor · $percent%" else if (state.running) "Preparando catálogo · $percent%" else "Catálogo · $percent% · ${state.done}/${state.total} preparados",
                     Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = palette.onSurfaceVariant)
                 TextButton({ expanded = !expanded }) { Text(if (expanded) "Recolher" else "Detalhes") }
             }
@@ -76,17 +76,19 @@ internal fun CatalogPreparationPanel(state: DesktopPreparationState, preparation
                 rsv.squitv.core.ui.components.common.PreparationProgressSummary(
                     state.total, state.done, state.estimatedRemainingMs, state.paused,
                     state.failed, palette.primary, palette.onSurfaceVariant)
-                Text("Com gênero: ${state.withGenre} · Sem gênero: ${state.noData} · Falhas: ${state.failed}", style = MaterialTheme.typography.bodySmall)
+                Text(if (state.serverManaged) "Gêneros disponíveis neste dispositivo: ${state.withGenre} · Falhas no servidor: ${state.failed}"
+                    else "Com gênero: ${state.withGenre} · Sem gênero: ${state.noData} · Falhas: ${state.failed}",
+                    style = MaterialTheme.typography.bodySmall)
                 state.message?.let { Text(it, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant) }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton({ preparation.setPaused(!state.paused) }) { Text(if (state.paused) "Retomar" else "Pausar") }
-                    PreparationSpeed.entries.forEach { speed ->
+                    if (!state.serverManaged) TextButton({ preparation.setPaused(!state.paused) }) { Text(if (state.paused) "Retomar" else "Pausar") }
+                    if (!state.serverManaged) PreparationSpeed.entries.forEach { speed ->
                         FilterChip(state.speed == speed, { preparation.setSpeed(speed) }, { Text(when (speed) {
                             PreparationSpeed.SLOW -> "Lento"; PreparationSpeed.NORMAL -> "Normal"; PreparationSpeed.FAST -> "Rápido"
                         }) })
                     }
-                    TextButton(preparation::retryFailures, enabled = state.failed > 0) { Text("Tentar falhas novamente") }
+                    if (!state.serverManaged) TextButton(preparation::retryFailures, enabled = state.failed > 0) { Text("Tentar falhas novamente") }
                     TextButton(refresh) { Text("Atualizar listas") }
                 }
             }

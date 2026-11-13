@@ -1,4 +1,4 @@
-﻿package rsv.squitv.ui.login
+package rsv.squitv.ui.login
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,6 +8,7 @@ import rsv.squitv.core.domain.interactor.DnsManager
 import rsv.squitv.data.repository.SettingsRepository
 import rsv.squitv.data.model.XtreamCredentials
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -24,6 +25,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import rsv.squitv.shared.xtream.ProviderServers
+import rsv.squitv.shared.xtream.ServerAccountException
+import rsv.squitv.shared.xtream.XtreamCatalogParser
 import timber.log.Timber
 
 import rsv.squitv.data.repository.UpdateRepository
@@ -164,11 +167,24 @@ class LoginViewModel @Inject constructor(
         }
     }
 
-    fun login() {
-        if (_isLoading.value) return
-        val currentUser = _username.value.trim()
-        val currentPass = _password.value.trim()
-        val customUrl = _url.value.trim()
+    private var loginJob: Job? = null
+
+    fun login() = login(_username.value.trim(), _password.value, _url.value.trim())
+
+    fun loginLinked(credentials: rsv.squitv.shared.account.AccountPilot.LinkedLogin) =
+        login(credentials.username, credentials.password, "", linkedLogin = credentials)
+
+    fun cancelLogin() {
+        if (_state.value == LoginState.CONNECTING) loginJob?.cancel()
+    }
+
+    private fun login(
+        currentUser: String,
+        currentPass: String,
+        customUrl: String,
+        linkedLogin: rsv.squitv.shared.account.AccountPilot.LinkedLogin? = null,
+    ) {
+        if (_isLoading.value || _state.value == LoginState.SUCCESS) return
 
         if (currentUser.isEmpty() || currentPass.isEmpty()) {
             _errorMessage.value = "Preencha usuário e senha"
@@ -176,54 +192,46 @@ class LoginViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
-            _isLoading.value = true
-            _state.value = LoginState.CONNECTING
-            _errorMessage.value = null
+        _isLoading.value = true
+        _state.value = LoginState.CONNECTING
+        _errorMessage.value = null
+        loginJob = viewModelScope.launch {
             
             try {
-                val dnsList = ProviderServers.loginCandidates(customUrl, _selectedDns.value, availableDns)
-
-                var lastError: String? = null
-                var success = false
-
+                val selected = _selectedDns.value.takeIf { linkedLogin == null }
+                val dnsList = ProviderServers.loginCandidates(customUrl, selected, availableDns)
                 for (dns in dnsList) {
+                    val credentials = XtreamCredentials(currentUser, currentPass, dns)
                     try {
-                        _errorMessage.value = "Conectando ao servidor..."
                         dnsManager.updateBaseUrl(dns)
-                        val credentials = XtreamCredentials(currentUser, currentPass, dns)
                         val response = withTimeoutOrNull(15_000) { authManager.login(credentials) }
                             ?: throw IllegalStateException("O servidor não respondeu ao login no prazo esperado.")
-
-                        if (response.userInfo?.auth == 1) {
-                            settingsRepository.saveCredentials(credentials)
-                            _state.value = LoginState.SUCCESS
-                            _loginSuccess.emit(Unit)
-                            success = true
-                            break
-                        } else {
-                            val msg = response.userInfo?.message ?: "Credenciais inválidas"
-                            lastError = msg
-                            if (msg.contains("invalid", ignoreCase = true) || msg.contains("expired", ignoreCase = true)) {
-                                break 
-                            }
-                        }
+                        val user = response.userInfo
+                        XtreamCatalogParser.validateProviderLogin(user?.auth?.toString(), user?.status,
+                            user?.expDate?.toLongOrNull(), System.currentTimeMillis() / 1000)
                     } catch (e: CancellationException) {
                         throw e
-                    } catch (e: Exception) {
-                        lastError = "Erro no servidor: ${e.message}"
+                    } catch (e: ServerAccountException) {
+                        _errorMessage.value = e.message
+                        _state.value = LoginState.ERROR
+                        return@launch
+                    } catch (_: Exception) {
+                        continue
                     }
+                    settingsRepository.saveCredentials(credentials, linkedLogin?.displayName,
+                        linkedLogin?.favoriteClient?.encodeForProtectedStorage())
+                    _state.value = LoginState.SUCCESS
+                    _loginSuccess.emit(Unit)
+                    return@launch
                 }
-
-                if (!success) {
-                    _errorMessage.value = lastError ?: "Falha ao conectar"
-                    _state.value = LoginState.ERROR
-                }
-
+                _errorMessage.value = if (linkedLogin == null) "Não foi possível conectar ao servidor IPTV."
+                    else "O vínculo foi encontrado, mas o servidor IPTV não respondeu. Tente novamente."
+                _state.value = LoginState.ERROR
             } catch (e: CancellationException) {
+                _state.value = LoginState.IDLE
                 throw e
-            } catch (e: Exception) {
-                _errorMessage.value = "Erro inesperado: ${e.message}"
+            } catch (_: Exception) {
+                _errorMessage.value = "Não foi possível concluir o login. Confira o endereço e tente novamente."
                 _state.value = LoginState.ERROR
             } finally {
                 _isLoading.value = false

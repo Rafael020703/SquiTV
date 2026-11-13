@@ -1,4 +1,4 @@
-﻿package rsv.squitv.ui.viewmodel
+package rsv.squitv.ui.viewmodel
 
 import android.app.Application
 import android.net.Uri
@@ -402,7 +402,9 @@ class PlayerViewModel @Inject constructor(
                                     duration = dur,
                                     seriesId = endedSeriesId,
                                     forceSync = true,
-                                    isEndedEvent = true
+                                    isEndedEvent = true,
+                                    cloudScope = cloudPlaybackScope,
+                                    title = _uiState.value.name
                                 )
                             }
 
@@ -694,6 +696,7 @@ class PlayerViewModel @Inject constructor(
     private var currentContainer: String? = null
     private var currentSeriesId: Int? = null
     private var currentSeasonNumber: Int? = null
+    private var cloudPlaybackScope: UserRepository.CloudPlaybackScope? = null
     private var currentStreamId: Int? = null
     private var currentEpgId: String? = null
     private var currentCategoryId: String? = null
@@ -753,6 +756,8 @@ class PlayerViewModel @Inject constructor(
 
     val isLiveContent: Boolean get() = currentType == ContentType.LIVE
 
+    private var currentIsOffline: Boolean = false
+
     fun playStream(
         streamId: Int, 
         type: ContentType, 
@@ -766,7 +771,8 @@ class PlayerViewModel @Inject constructor(
         isRecovery: Boolean = false,
         isZapping: Boolean = false,
         existingChannelSwitchId: String? = null,
-        sourceId: String? = null
+        sourceId: String? = null,
+        isOffline: Boolean = false
     ) {
         episodeCountdown.cancel()
         val t0 = System.currentTimeMillis()
@@ -851,6 +857,7 @@ class PlayerViewModel @Inject constructor(
         _playbackSpeed.value = 1.0f
         playbackManager.setPlaybackSpeed(1.0f)
         
+        cloudPlaybackScope = null
         currentStreamId = streamId
         currentType = type
         currentContainer = container
@@ -907,21 +914,37 @@ class PlayerViewModel @Inject constructor(
             val currentSession = _zappingSessionId.value
             try {
                 if (!isPlaybackEventValid(currentSession, streamId.toString())) return@launch
-                val credentials = appSettings.value.credentials 
-                    ?: settingsRepository.settingsFlow.first().credentials 
-                    ?: run {
-                        _uiState.value = PlayerUiState.Error("Credenciais não encontradas")
+                currentIsOffline = isOffline
+
+                if (isOffline) {
+                    val offlineItem = userRepository.getDownload(streamId, type.toString().lowercase())
+                    if (offlineItem == null || offlineItem.status != "COMPLETED") {
+                        _uiState.value = PlayerUiState.Error("Conteúdo offline indisponível ou incompleto. Baixe novamente quando estiver online.")
                         return@launch
                     }
+                }
+
+                val credentials = appSettings.value.credentials 
+                    ?: settingsRepository.settingsFlow.first().credentials 
+                    ?: if (!isOffline) {
+                        _uiState.value = PlayerUiState.Error("Credenciais não encontradas")
+                        return@launch
+                    } else null
                 
                 if (!isPlaybackEventValid(currentSession, streamId.toString())) return@launch
+                val progressScope = if (!isOffline && type != ContentType.LIVE && credentials != null)
+                    userRepository.cloudPlaybackScope(credentials) else null
                 val actualName = displayName ?: "Carregando..."
                 val actualIcon = streamIcon
 
-                Timber.tag("SquiTV_E2E").i("[PLAY_STREAM] streamId=$streamId type=$type seriesId=$seriesId season=$seasonNumber name='$actualName'")
+                Timber.tag("SquiTV_E2E").i("[PLAY_STREAM] streamId=$streamId type=$type seriesId=$seriesId season=$seasonNumber name='$actualName' isOffline=$isOffline")
                 
-                // Get URL immediately (fast)
-                val url = streamRepository.getStreamUrl(credentials, streamId, type.toString(), container)
+                // Get URL immediately
+                val url = if (credentials != null) {
+                    streamRepository.getStreamUrl(credentials, streamId, type.toString(), container)
+                } else {
+                    userRepository.getDownload(streamId, type.toString().lowercase())?.localUri.orEmpty()
+                }
                 zapUrlReadyMs = System.currentTimeMillis()
                 
                 // Load saved watch progress for Movies or Episodes if available
@@ -973,6 +996,7 @@ class PlayerViewModel @Inject constructor(
                         return@withContext false
                     }
 
+                    cloudPlaybackScope = progressScope
                     val metadataBuilder = MediaMetadata.Builder()
                         .setTitle(actualName)
                         .setDisplayTitle(actualName)
@@ -990,7 +1014,7 @@ class PlayerViewModel @Inject constructor(
                         } catch (_: Exception) {}
                     }
 
-                    val mediaItem = MediaItem.Builder()
+                    val mediaItemBuilder = MediaItem.Builder()
                         .setUri(url)
                         .setMediaId(streamId.toString())
                         .setMediaMetadata(metadataBuilder.build())
@@ -999,11 +1023,13 @@ class PlayerViewModel @Inject constructor(
                                 .setTargetOffsetMs(if (type == ContentType.LIVE) 2000L else 5000L) 
                                 .build()
                         )
-                        .build()
 
-                    val liveServers = if (type == ContentType.LIVE && streamId > 0)
+                    inferMimeType(container, type)?.let { mediaItemBuilder.setMimeType(it) }
+                    val mediaItem = mediaItemBuilder.build()
+
+                    val liveServers = if (type == ContentType.LIVE && streamId > 0 && credentials != null)
                         ProviderServers.livePlaybackServers(credentials.baseUrl) else emptyList()
-                    if (liveServers.size > 1) {
+                    if (liveServers.size > 1 && credentials != null) {
                         val player = ensurePlayer()
                         liveStartupSession = currentSession
                         try {
@@ -1184,6 +1210,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     private var nextEpisodeSeasonNumber: Int? = null
+    private var nextEpisodeContainer: String? = null
 
     private fun checkNextEpisode(seriesId: Int, seasonNumber: Int, streamId: Int) {
         viewModelScope.launch {
@@ -1216,9 +1243,17 @@ class PlayerViewModel @Inject constructor(
                     }
                 }
 
+                if (currentIsOffline && foundNext != null) {
+                    val offlineNext = userRepository.getDownload(foundNext.streamId, "series")
+                    if (offlineNext == null || offlineNext.status != "COMPLETED") {
+                        foundNext = null
+                    }
+                }
+
                 nextEpisodeStreamId = foundNext?.streamId
                 nextEpisodeName = foundNext?.title
                 nextEpisodeSeasonNumber = foundSeasonNum
+                nextEpisodeContainer = foundNext?.containerExtension
 
                 val currentState = _uiState.value
                 if (currentState is PlayerUiState.Playing) {
@@ -1283,7 +1318,7 @@ class PlayerViewModel @Inject constructor(
                         // pause or channel events update UI state. Never overwrite them afterwards.
                         if (type != ContentType.LIVE && streamId != null && duration > 0 &&
                             sessionId == _zappingSessionId.value && p.currentMediaItem?.mediaId == streamId.toString()) {
-                            syncWatchProgressUseCase(streamId, type.toString(), currentPos, duration, seriesId)
+                            syncWatchProgressUseCase(streamId, type.toString(), currentPos, duration, seriesId, cloudScope = cloudPlaybackScope, title = currentState.name)
                         }
                     }
                 }
@@ -1357,6 +1392,18 @@ class PlayerViewModel @Inject constructor(
 
     fun cancelCountdown() { episodeCountdown.cancel() }
 
+    private fun inferMimeType(container: String?, type: ContentType): String? {
+        val clean = container?.lowercase()?.removePrefix(".")?.trim().orEmpty()
+        return when {
+            clean == "m3u8" || type == ContentType.LIVE -> androidx.media3.common.MimeTypes.APPLICATION_M3U8
+            clean == "mp4" -> androidx.media3.common.MimeTypes.VIDEO_MP4
+            clean == "mkv" -> androidx.media3.common.MimeTypes.VIDEO_MATROSKA
+            clean == "ts" -> androidx.media3.common.MimeTypes.VIDEO_MP2T
+            clean == "webm" -> androidx.media3.common.MimeTypes.VIDEO_WEBM
+            else -> null
+        }
+    }
+
     fun playNextEpisode() {
         episodeCountdown.cancel()
         val currentState = _uiState.value as? PlayerUiState.Playing ?: return
@@ -1368,12 +1415,13 @@ class PlayerViewModel @Inject constructor(
         playStream(
             streamId = nextId,
             type = ContentType.SERIES,
-            container = currentContainer,
+            container = nextEpisodeContainer ?: currentContainer,
             epgId = currentEpgId,
             seriesId = seriesId,
             seasonNumber = nextSeason,
             categoryId = currentCategoryId,
-            displayName = nextName
+            displayName = nextName,
+            isOffline = currentIsOffline
         )
     }
 
@@ -1503,6 +1551,8 @@ class PlayerViewModel @Inject constructor(
         val type = currentType.toString()
         val seriesId = currentSeriesId
         if (currentType != ContentType.LIVE && streamId != null && duration > 0) {
+            val progressScope = cloudPlaybackScope
+            val progressTitle = _uiState.value.name
             val nonCancellableScope = CoroutineScope(Dispatchers.IO + NonCancellable)
             nonCancellableScope.launch {
                 try {
@@ -1512,7 +1562,9 @@ class PlayerViewModel @Inject constructor(
                         position = currentPos,
                         duration = duration,
                         seriesId = seriesId,
-                        forceSync = true
+                        forceSync = true,
+                        cloudScope = progressScope,
+                        title = progressTitle
                     )
                 } catch (e: Exception) {
                     Timber.e(e, "Error saving final watch progress for stream $streamId")

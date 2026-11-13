@@ -88,6 +88,145 @@ internal class DesktopPreferencesStore(private val directory: Path, private val 
         scope.launch { updateAndAwait(transform) }
     }
 
+    internal fun favoriteCloudStore(
+        account: String,
+        cloudScope: String,
+        onProgressApplied: suspend (Long, List<rsv.squitv.shared.account.CloudProgress>) -> Unit = { _, _ -> },
+        titleFor: (String, Int) -> String?,
+    ): rsv.squitv.shared.account.FavoriteLocalStore {
+        val key = java.security.MessageDigest.getInstance("SHA-256")
+            .digest("$account/$cloudScope".toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        val file = directory.resolve("favorite-sync").resolve("$key.json")
+        val progressFile = directory.resolve("favorite-sync").resolve("$key-progress.json")
+        val catalogKeys = mapOf("movie" to "$account/MOVIES", "series" to "$account/SERIES")
+
+        fun snapshot(value: DesktopPreferences): List<rsv.squitv.shared.account.CloudFavorite> {
+            fun item(kind: String, id: Int): rsv.squitv.shared.account.CloudFavorite {
+                val title = titleFor(kind, id)?.filterNot(Char::isISOControl)?.take(180)
+                    ?.trimEnd { Character.isHighSurrogate(it) }
+                return rsv.squitv.shared.account.CloudFavorite(kind, id, title)
+            }
+            return value.favoriteLiveChannelsByAccount[account].orEmpty().map { item("live", it) } +
+                catalogKeys.flatMap { (kind, localKey) ->
+                    value.favoriteCatalogItemsByScope[localKey].orEmpty().map { item(kind, it) }
+                }
+        }
+
+        fun categoryKind(kind: String): CatalogKind? = when (kind) {
+            "movie" -> CatalogKind.MOVIES
+            "series" -> CatalogKind.SERIES
+            else -> null
+        }
+
+        fun categorySnapshot(value: DesktopPreferences) = listOf("live", "movie", "series").map { kind ->
+            val catalogKind = categoryKind(kind)
+            rsv.squitv.shared.account.CloudCategories(
+                kind, catalogKind?.let { value.catalogMode(account, it).name.lowercase() } ?: "provider",
+                value.categoryOrder(account, catalogKind), value.hiddenCategories(account, catalogKind).sorted(),
+            )
+        }
+
+        return object : rsv.squitv.shared.account.FavoriteLocalStore {
+            override val label = "Favoritos deste Windows"
+            override suspend fun checkpoint(): rsv.squitv.shared.account.FavoriteCheckpoint? =
+                withContext(Dispatchers.IO) {
+                    if (!Files.isRegularFile(file)) return@withContext null
+                    require(Files.size(file) <= 2 * 1024 * 1024)
+                    json.decodeFromString<rsv.squitv.shared.account.FavoriteCheckpoint>(Files.readString(file))
+                }
+
+            override suspend fun saveCheckpoint(checkpoint: rsv.squitv.shared.account.FavoriteCheckpoint) {
+                withContext(Dispatchers.IO) {
+                    val serialized = json.encodeToString(checkpoint)
+                    require(serialized.toByteArray(Charsets.UTF_8).size <= 2 * 1024 * 1024)
+                    Files.createDirectories(file.parent)
+                    val temp = Files.createTempFile(file.parent, "checkpoint-", ".tmp")
+                    try {
+                        Files.writeString(temp, serialized)
+                        try { Files.move(temp, file, ATOMIC_MOVE, REPLACE_EXISTING) }
+                        catch (_: java.nio.file.AtomicMoveNotSupportedException) { Files.move(temp, file, REPLACE_EXISTING) }
+                    } finally { Files.deleteIfExists(temp) }
+                }
+            }
+
+            override suspend fun snapshot() = snapshot(mutable.value)
+
+            override suspend fun progressJournal(): rsv.squitv.shared.account.CloudProgressJournal =
+                withContext(Dispatchers.IO) {
+                    if (!Files.isRegularFile(progressFile)) return@withContext rsv.squitv.shared.account.CloudProgressJournal()
+                    require(Files.size(progressFile) <= 4 * 1024 * 1024)
+                    json.decodeFromString<rsv.squitv.shared.account.CloudProgressJournal>(Files.readString(progressFile))
+                }
+
+            override suspend fun saveProgressJournal(journal: rsv.squitv.shared.account.CloudProgressJournal) {
+                withContext(Dispatchers.IO) {
+                    val serialized = json.encodeToString(journal)
+                    require(serialized.toByteArray(Charsets.UTF_8).size <= 4 * 1024 * 1024)
+                    Files.createDirectories(progressFile.parent)
+                    val temp = Files.createTempFile(progressFile.parent, "progress-", ".tmp")
+                    try {
+                        Files.writeString(temp, serialized)
+                        try { Files.move(temp, progressFile, ATOMIC_MOVE, REPLACE_EXISTING) }
+                        catch (_: java.nio.file.AtomicMoveNotSupportedException) { Files.move(temp, progressFile, REPLACE_EXISTING) }
+                    } finally { Files.deleteIfExists(temp) }
+                }
+            }
+
+            override suspend fun applyProgress(boundAt: Long, rows: List<rsv.squitv.shared.account.CloudProgress>) =
+                onProgressApplied(boundAt, rows)
+
+            override suspend fun categorySnapshot() = categorySnapshot(mutable.value)
+            override suspend fun applyCategories(
+                expected: List<rsv.squitv.shared.account.CloudCategories>,
+                cloudRows: List<rsv.squitv.shared.account.CloudCategories>,
+            ): Boolean {
+                var matched = false
+                val persisted = updateAndAwait { current ->
+                    if (categorySnapshot(current) != expected) return@updateAndAwait current
+                    matched = true
+                    cloudRows.fold(current) { value, row ->
+                        val kind = categoryKind(row.kind)
+                        val updated = value.withCategoryOrder(account, kind, row.order)
+                            .withHiddenCategories(account, kind, row.hidden.toSet())
+                        if (kind == null) updated else updated.withCatalogMode(
+                            account, kind, rsv.squitv.domain.model.CategoryMode.fromString(row.mode),
+                        )
+                    }
+                }
+                return persisted && matched
+            }
+            override suspend fun applyChanges(
+                expected: Set<Pair<String, Int>>,
+                cloudRows: List<rsv.squitv.shared.account.CloudFavorite>,
+            ): Boolean {
+                var matched = false
+                val persisted = updateAndAwait { current ->
+                    val existing = snapshot(current)
+                    if (existing.map { it.key }.toSet() != expected) return@updateAndAwait current
+                    val byKind = existing.groupBy { it.kind }
+                        .mapValues { (_, entries) -> entries.map { it.id }.toMutableSet() }
+                        .toMutableMap()
+                    for (row in cloudRows) {
+                        val ids = byKind.getOrPut(row.kind) { mutableSetOf() }
+                        if (row.deleted) ids.remove(row.id) else ids.add(row.id)
+                    }
+                    val live = current.favoriteLiveChannelsByAccount.toMutableMap()
+                    val catalog = current.favoriteCatalogItemsByScope.toMutableMap()
+                    val liveIds = byKind["live"].orEmpty().toSet()
+                    if (liveIds.isEmpty()) live.remove(account) else live[account] = liveIds
+                    for ((kind, localKey) in catalogKeys) {
+                        val ids = byKind[kind].orEmpty().toSet()
+                        if (ids.isEmpty()) catalog.remove(localKey) else catalog[localKey] = ids
+                    }
+                    matched = true
+                    current.copy(favoriteLiveChannelsByAccount = live, favoriteCatalogItemsByScope = catalog)
+                }
+                return persisted && matched
+            }
+        }
+    }
+
     suspend fun updateAndAwait(transform: (DesktopPreferences) -> DesktopPreferences): Boolean =
         mutex.withLock {
             if (!ready.value || !writable) return@withLock false

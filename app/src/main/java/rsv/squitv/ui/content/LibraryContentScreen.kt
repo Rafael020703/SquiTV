@@ -1,4 +1,4 @@
-﻿package rsv.squitv.ui.content
+package rsv.squitv.ui.content
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -35,7 +35,7 @@ fun LibraryContentScreen(
     onPlay: (Int, String, String, String?, String?, String?) -> Unit,
     onSeriesClick: (Int, String, String?) -> Unit,
     onVodClick: (Int, String, String?) -> Unit,
-    onNavigateToSearch: () -> Unit
+    onNavigateToSearch: () -> Unit,
 ) {
     val contentRows by categoryViewModel.currentContentRows.collectAsStateWithLifecycle()
     val isLoading by categoryViewModel.isLoading.collectAsStateWithLifecycle()

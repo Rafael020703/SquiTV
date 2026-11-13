@@ -154,11 +154,23 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
                     val id = download.request.id
                     lastDownloadedBytes.remove(id)
                     lastPollTime.remove(id)
-                    applicationScope.launch(Dispatchers.IO) {
-                        database.iptvDao().deleteDownload(id.toInt())
+                    val (streamId, type) = parseMediaId(id)
+                    if (streamId > 0) {
+                        applicationScope.launch(Dispatchers.IO) {
+                            database.iptvDao().deleteDownload(streamId, type)
+                        }
                     }
                 }
             })
+        }
+    }
+
+    private fun parseMediaId(id: String): Pair<Int, String> {
+        val parts = id.split("_", limit = 2)
+        return if (parts.size == 2 && parts[0].isNotBlank() && parts[1].toIntOrNull() != null) {
+            Pair(parts[1].toInt(), parts[0])
+        } else {
+            Pair(id.toIntOrNull() ?: -1, "movie")
         }
     }
 
@@ -198,6 +210,8 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
         }
 
         val id = download.request.id
+        val (streamId, type) = parseMediaId(id)
+        if (streamId <= 0) return
         val now = System.currentTimeMillis()
         val currentBytes = download.bytesDownloaded
         
@@ -220,7 +234,8 @@ class IptvApplication : Application(), ImageLoaderFactory, Configuration.Provide
 
         applicationScope.launch(Dispatchers.IO) {
             database.iptvDao().updateDownloadProgress(
-                streamId = id.toInt(),
+                streamId = streamId,
+                type = type,
                 status = status,
                 progress = download.percentDownloaded,
                 size = download.contentLength,

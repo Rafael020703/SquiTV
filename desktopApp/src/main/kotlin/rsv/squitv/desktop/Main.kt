@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.*
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import rsv.squitv.desktop.data.WindowsCredentialStore
 import rsv.squitv.desktop.data.XtreamClient
@@ -24,6 +25,7 @@ import rsv.squitv.shared.xtream.ServerCredentials
 import rsv.squitv.shared.brand.AppBrand
 import rsv.squitv.desktop.player.WindowsLivePlayer
 import rsv.squitv.desktop.update.DesktopUpdateController
+import rsv.squitv.shared.account.FavoriteCloudSession
 
 internal val palette = darkColorScheme(
     primary = Color(AppBrand.PRIMARY), onPrimary = Color.Black,
@@ -62,11 +64,35 @@ private fun runApplication() {
                     it.liveDiagnostics = liveDiagnostics
                 } }
         val preferences = remember { DesktopPreferencesStore(directory, scope) }
+        val preferencesLoaded by preferences.loaded.collectAsState()
+        DisposableEffect(history, preferences) {
+            history.onNewProgress = { account, progress ->
+                val active = FavoriteCloudSession.state.value
+                if (active?.localAccount == account) {
+                    val local = preferences.favoriteCloudStore(account, active.client.scopeId) { _, _ -> null }
+                    FavoriteCloudSession.recordProgress(local, progress)
+                }
+            }
+            onDispose { history.onNewProgress = null }
+        }
+        val cloudSession by FavoriteCloudSession.state.collectAsState()
+        LaunchedEffect(cloudSession, preferencesLoaded) {
+            if (!preferencesLoaded) return@LaunchedEffect
+            val active = cloudSession ?: return@LaunchedEffect
+            val local = preferences.favoriteCloudStore(active.localAccount, active.client.scopeId,
+                onProgressApplied = { boundAt, rows ->
+                    if (FavoriteCloudSession.state.value !== active ||
+                        liveCategoryScope(controller.state.value.credentials) != active.localAccount)
+                        throw CancellationException("A conta ativa mudou.")
+                    history.applyCloudProgress(active.localAccount, boundAt, rows)
+                },
+            ) { _, _ -> null }
+            active.client.maintainAssociatedData(local)
+        }
         val updates = remember { DesktopUpdateController(directory.resolve("updates"), preferences, scope) }
         val updateState by updates.state.collectAsState()
         DisposableEffect(updates) { onDispose { updates.close() } }
         val settings by preferences.state.collectAsState()
-        val preferencesLoaded by preferences.loaded.collectAsState()
         LaunchedEffect(preferencesLoaded, settings.groupLiveChannels, settings.preferredChannelQuality) {
             if (preferencesLoaded) controller.configureLiveChannels(settings.groupLiveChannels,
                 rsv.squitv.domain.model.ChannelQuality.fromPreference(settings.preferredChannelQuality))

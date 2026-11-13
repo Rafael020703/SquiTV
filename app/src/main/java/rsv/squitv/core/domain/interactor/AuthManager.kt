@@ -1,4 +1,4 @@
-﻿package rsv.squitv.core.domain.interactor
+package rsv.squitv.core.domain.interactor
 
 import rsv.squitv.data.api.XtreamService
 import rsv.squitv.data.model.UserInfo
@@ -42,6 +42,11 @@ class AuthManager @Inject constructor(
 
     init {
         managerScope.launch {
+            settingsRepository.portalSyncSessionFlow.collect { session ->
+                rsv.squitv.shared.account.FavoriteCloudSession.restore(session?.first, session?.second)
+            }
+        }
+        managerScope.launch {
             settingsRepository.settingsFlow.collect { settings ->
                 val hasCredentials = settings.credentials != null
                 _isLoggedIn.value = hasCredentials
@@ -60,6 +65,7 @@ class AuthManager @Inject constructor(
     }
 
     fun logout() {
+        rsv.squitv.shared.account.FavoriteCloudSession.activate(null, null)
         DebugLogger.log(
             level = DebugLevel.INFO,
             category = DebugCategory.AUTH,
@@ -102,7 +108,6 @@ class AuthManager @Inject constructor(
             operationId = opId,
             context = mapOf("baseUrl" to DebugSanitizer.sanitizeUrl(credentials.baseUrl))
         )
-        Timber.d("Tentando login para usuário: ${credentials.username} em ${credentials.baseUrl}")
         try {
             val response = xtreamService.login(credentials.username, credentials.password)
             val status = if (response.userInfo?.auth == 1) {
@@ -137,6 +142,7 @@ class AuthManager @Inject constructor(
             }
             return response
         } catch (e: CancellationException) {
+            DebugTrace.endTrace(opId, result = "CANCELLED")
             throw e
         } catch (e: Exception) {
             _sessionStatus.value = SessionStatus.OFFLINE
@@ -145,10 +151,10 @@ class AuthManager @Inject constructor(
                 category = DebugCategory.AUTH,
                 event = "SESSION_LOGIN_ERROR",
                 operationId = opId,
-                error = "${e.javaClass.simpleName}: ${e.message}"
+                error = e.javaClass.simpleName
             )
-            DebugTrace.endTrace(opId, result = "ERROR", error = e.message)
-            Timber.e(e, "Erro de rede/servidor no login")
+            DebugTrace.endTrace(opId, result = "ERROR", error = e.javaClass.simpleName)
+            Timber.w("Erro de rede/servidor no login: %s", e.javaClass.simpleName)
             throw e
         }
     }

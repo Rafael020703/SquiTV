@@ -6,12 +6,14 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import rsv.squitv.desktop.player.PlayerStatus
 import rsv.squitv.domain.usecase.WatchProgressUtils
+import rsv.squitv.shared.account.CloudProgress
 import java.nio.file.Path
 
 @Serializable
 internal data class DesktopWatchEntry(val account: String, val streamId: Int, val catalogId: Int,
     val series: Boolean, val title: String, val streamTitle: String, val cover: String?, val extension: String?,
-    val positionMs: Long, val durationMs: Long, val lastWatched: Long, val season: Int? = null) {
+    val positionMs: Long, val durationMs: Long, val lastWatched: Long, val season: Int? = null,
+    val cloudManaged: Boolean = false) {
     val key: String get() = "$account/${if (series) "SERIES" else "MOVIES"}/$streamId"
     val progress: Float get() = (positionMs.toDouble() / durationMs.coerceAtLeast(1)).toFloat().coerceIn(0f, 1f)
     fun item() = CatalogItem(catalogId, title, cover, null, extension = if (series) null else extension)
@@ -33,6 +35,7 @@ internal class DesktopWatchHistory(directory: Path, scope: CoroutineScope) {
     val state = file.state
     val error = file.error
     private val saves = Mutex()
+    var onNewProgress: (suspend (String, CloudProgress) -> Unit)? = null
     private val lastSaved = mutableMapOf<String, Long>()
     init { scope.launch { file.load() } }
 
@@ -50,6 +53,31 @@ internal class DesktopWatchHistory(directory: Path, scope: CoroutineScope) {
         ready()
         return state.value.entries.firstOrNull { it.account == account && it.series == session.series &&
             it.streamId == session.id && WatchProgressUtils.isPendingWatchProgress(it.positionMs, it.durationMs) }
+    }
+
+    suspend fun applyCloudProgress(account: String, boundAt: Long, rows: List<CloudProgress>) = saves.withLock {
+        ready()
+        if (!file.update { old ->
+            val entries = old.entries.associateBy(DesktopWatchEntry::key).toMutableMap()
+            for (row in rows) {
+                val series = row.kind == "episode"
+                val key = "$account/${if (series) "SERIES" else "MOVIES"}/${row.id}"
+                val previous = entries[key]
+                if (previous != null && previous.lastWatched > row.observedAt) continue
+                val duration = row.durationMs
+                if (row.deleted || row.completed) {
+                    if (previous != null && (previous.cloudManaged || (boundAt > 0 && previous.lastWatched >= boundAt))) entries.remove(key)
+                } else if (duration != null && duration > 0) {
+                    val catalogId = row.catalogId ?: if (series) previous?.catalogId else row.id
+                    if (catalogId == null) continue
+                    val title = row.title?.takeIf(String::isNotBlank) ?: previous?.title ?: "#$catalogId"
+                    entries[key] = DesktopWatchEntry(account, row.id, catalogId, series, title,
+                        previous?.streamTitle ?: title, previous?.cover, previous?.extension,
+                        row.positionMs, duration, row.observedAt, previous?.season, cloudManaged = true)
+                }
+            }
+            old.copy(entries = entries.values.toList())
+        }) throw java.io.IOException("Não foi possível aplicar o progresso no Windows.")
     }
 
     suspend fun record(account: String, session: VodSession, status: PlayerStatus, force: Boolean = false,
@@ -76,7 +104,24 @@ internal class DesktopWatchHistory(directory: Path, scope: CoroutineScope) {
             else if (previous?.positionMs == entry.positionMs && previous.durationMs == entry.durationMs) old
             else old.copy(entries = old.entries.filterNot { it.key == key } + entry)
         }
-        if (saved) lastSaved[key] = monotonic
+        if (saved) {
+            lastSaved[key] = monotonic
+            val duration = status.durationMs
+            if (duration in 1..172800000) {
+                try {
+                    onNewProgress?.invoke(account, CloudProgress(
+                        kind = if (session.series) "episode" else "movie", id = session.id, catalogId = session.catalogId,
+                        title = session.catalogTitle.filterNot(Char::isISOControl).take(180).trimEnd { Character.isHighSurrogate(it) },
+                        positionMs = status.timeMs.coerceIn(0, duration), durationMs = duration,
+                        completed = complete, observedAt = observedAt,
+                    ))
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (_: Exception) {
+                    // Playback and the existing local save remain available.
+                }
+            }
+        }
         saved
     }
 }

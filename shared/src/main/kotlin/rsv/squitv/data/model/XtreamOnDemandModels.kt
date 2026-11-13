@@ -72,7 +72,8 @@ data class XtreamSeries(
     @SerialName("episode_run_time") val episodeRunTime: String? = null,
     @SerialName("backdrop_path") @Serializable(with = ImageListSerializer::class) val backdropPath: List<String>? = null,
     @SerialName("age") val age: String? = null,
-    @SerialName("mpaa_rating") val mpaaRating: String? = null
+    @SerialName("mpaa_rating") val mpaaRating: String? = null,
+    val editorialCredits: List<EditorialCredit> = emptyList(),
 )
 
 @Serializable
@@ -239,8 +240,12 @@ data class VodDetails(
     @SerialName("movie_image") @Serializable(with = ImageTextSerializer::class) val movieImage: String? = null,
     val duration: String? = null,
     @SerialName("age") val age: String? = null,
-    @SerialName("mpaa_rating") val mpaaRating: String? = null
+    @SerialName("mpaa_rating") val mpaaRating: String? = null,
+    val editorialCredits: List<EditorialCredit> = emptyList(),
 )
+
+@Serializable
+data class EditorialCredit(val source: String, val url: String, val license: String)
 
 @Serializable
 data class VodMovieData(

@@ -172,8 +172,23 @@ fun DownloadItemCard(
     val tokens = AppDesignSystem
     var isFocused by remember { mutableStateOf(false) }
 
+    val statusText = when (download.status) {
+        "COMPLETED" -> "CONCLUÍDO"
+        "DOWNLOADING" -> "BAIXANDO ${download.progress.toInt()}%"
+        "PENDING" -> "AGUARDANDO"
+        "FAILED" -> "FALHOU"
+        "STOPPED" -> "PAUSADO"
+        else -> download.status.uppercase()
+    }
+
+    val isCompleted = download.status == "COMPLETED"
+
     Surface(
-        onClick = { onPlay(download.streamId, download.name, download.type, download.container, download.seriesId, download.seasonNumber) },
+        onClick = {
+            if (isCompleted) {
+                onPlay(download.streamId, download.name, download.type, download.container, download.seriesId, download.seasonNumber)
+            }
+        },
         modifier = Modifier
             .fillMaxWidth()
             .adaptiveFocus(
@@ -186,10 +201,10 @@ fun DownloadItemCard(
     ) {
         rsv.squitv.core.ui.components.downloads.DownloadItemContent(
             title = download.name.uppercase(),
-            subtitle = "${download.duration ?: "N/D"} • ${formatFileSize(download.downloadedBytes)}".uppercase(),
+            subtitle = "$statusText • ${download.duration ?: "N/D"} • ${formatFileSize(download.downloadedBytes)}".uppercase(),
             titleStyle = tokens.typography.title, subtitleStyle = tokens.typography.caption,
             titleColor = if (isFocused) tokens.colors.primary else tokens.colors.textPrimary,
-            subtitleColor = tokens.colors.textSecondary.copy(alpha = .6f),
+            subtitleColor = if (download.status == "FAILED") tokens.colors.error else tokens.colors.textSecondary.copy(alpha = .6f),
             padding = tokens.spacing.medium, gap = tokens.spacing.extraLarge,
             thumbnail = {
                 Box(modifier = Modifier.width(if (isExpanded) 180.dp else 120.dp).aspectRatio(1.77f).clip(tokens.shapes.small)) {
@@ -200,18 +215,27 @@ fun DownloadItemCard(
                         contentScale = ContentScale.Crop
                     )
 
-                    if (download.status == "DOWNLOADING") {
+                    if (download.status == "DOWNLOADING" || download.status == "PENDING") {
                         Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(
-                                progress = { download.progress / 100f },
+                                progress = { if (download.progress > 0f) download.progress / 100f else 0f },
                                 modifier = Modifier.size(36.dp),
                                 strokeWidth = 3.dp,
                                 color = tokens.colors.primary
                             )
                         }
-                    } else {
+                    } else if (isCompleted) {
                         Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
                             Icon(Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(32.dp))
+                        }
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
+                            Icon(
+                                if (download.status == "FAILED") Icons.Rounded.ErrorOutline else Icons.Rounded.PauseCircle,
+                                null,
+                                tint = if (download.status == "FAILED") tokens.colors.error else Color.White,
+                                modifier = Modifier.size(32.dp)
+                            )
                         }
                     }
                 }

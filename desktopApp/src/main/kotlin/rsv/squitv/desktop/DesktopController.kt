@@ -29,6 +29,7 @@ data class DesktopState(
     val savedAccounts: List<ServerCredentials> = emptyList(), val managingAccounts: Boolean = false,
     val accountError: String? = null,
     val debugLoginDefaults: ServerCredentials? = null,
+    val portalDisplayName: String? = null,
     val account: ServerAccount? = null, val categories: List<LiveCategory> = emptyList(),
     val selectedCategory: LiveCategory? = null, val channels: List<LiveChannel> = emptyList(),
     val loadingChannels: Boolean = false, val channelsLoaded: Boolean = false,
@@ -180,10 +181,19 @@ class DesktopController(
         }
     }
 
-    fun connect(address: String, username: String, password: String, remember: Boolean, automatic: Boolean = false) {
+    fun connect(
+        address: String,
+        username: String,
+        password: String,
+        remember: Boolean,
+        automatic: Boolean = false,
+        linkedLogin: rsv.squitv.shared.account.AccountPilot.LinkedLogin? = null,
+    ) {
         if (mutable.value.busy || mutable.value.restoring) return
-        val preferred = mutable.value.selectedDns
-        val candidates = try { ProviderServers.loginCandidates(address, preferred) }
+        val candidates = try {
+            ProviderServers.loginCandidates(if (linkedLogin == null) address else "",
+                mutable.value.selectedDns.takeIf { linkedLogin == null })
+        }
             catch (e: IllegalArgumentException) { mutable.value = mutable.value.copy(error = e.message); return }
         if (username.isBlank() || password.isEmpty()) {
             mutable.value = mutable.value.copy(error = "Preencha usuário e senha.")
@@ -215,8 +225,20 @@ class DesktopController(
                 val (credentials, account) = connected ?: throw (lastFailure ?: ServerProblem("Nenhum DNS respondeu ao login."))
                 search.reset(); favorites.reset(); multiView.reset(); liveIndex.reset()
                 var notice: String? = null
+                var portalSession = rsv.squitv.desktop.data.RememberedPortalSession(
+                    linkedLogin?.displayName, linkedLogin?.favoriteClient?.encodeForProtectedStorage(),
+                )
                 credentialWrites.withLock { withContext(Dispatchers.IO) {
-                    try { if (remember) store.save(credentials) else store.clear() }
+                    try {
+                        if (remember) {
+                            store.save(credentials)
+                            if (automatic) {
+                                store.loadPortalSession(credentials)?.let { portalSession = it }
+                            } else {
+                                store.savePortalSession(credentials, portalSession)
+                            }
+                        } else store.clear()
+                    }
                     catch (e: CancellationException) { throw e }
                     catch (_: Exception) {
                         runCatching { store.setAutomaticLogin(false) }
@@ -225,11 +247,12 @@ class DesktopController(
                 } }
                 reloadSavedAccounts()
                 val operation = java.util.UUID.randomUUID().toString()
-                mutable.value = mutable.value.copy(restoring = false, credentials = credentials, account = account,
+                mutable.value = mutable.value.copy(restoring = false, credentials = credentials, account = account, portalDisplayName = portalSession.displayName,
                     savedCredentials = if (remember) credentials else null, notice = notice, busy = true,
                     connectingServer = null, error = null, categories = emptyList(), channels = emptyList(),
                     selectedCategory = null, channelsLoaded = false, channelError = null, automaticLogin = false,
                     page = DesktopPage.DASHBOARD, loginSync = newLoginSync(operation))
+                rsv.squitv.shared.account.FavoriteCloudSession.restore(liveCategoryScope(credentials), portalSession.syncSession)
                 downloads?.bind(credentials)
                 synchronizeLoginCategories(credentials, operation)
             } catch (e: CancellationException) { throw e }
@@ -469,6 +492,7 @@ class DesktopController(
     }
 
     fun disconnect() {
+        rsv.squitv.shared.account.FavoriteCloudSession.activate(null, null)
         accountManagementJob?.cancel()
         downloads?.bind(null)
         favorites.reset(); multiView.reset(); liveIndex.reset()
@@ -487,7 +511,7 @@ class DesktopController(
             }
         }
         val saved = mutable.value.savedCredentials
-        mutable.value = mutable.value.copy(restoring = false, busy = false, credentials = null,
+        mutable.value = mutable.value.copy(restoring = false, busy = false, credentials = null, portalDisplayName = null,
             managingAccounts = false, accountError = null,
             account = null, categories = emptyList(), channels = emptyList(), selectedCategory = null,
             refreshingCatalog = false, catalogSyncError = null, loginSync = null,

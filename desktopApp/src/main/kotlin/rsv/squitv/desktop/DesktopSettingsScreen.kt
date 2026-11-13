@@ -27,9 +27,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import rsv.squitv.core.ui.components.settings.CommonSettingsGridCard
+import rsv.squitv.core.ui.components.AccountSyncSettingsDialog
 import rsv.squitv.core.ui.components.player.PlayerSettingsOption
 import rsv.squitv.domain.model.ChannelQuality
 import rsv.squitv.shared.catalog.CategoryCustomization
+import rsv.squitv.shared.account.FavoriteCloudSession
 import java.text.Collator
 import java.time.Instant
 import java.time.ZoneId
@@ -71,6 +73,8 @@ private enum class DesktopSetting(val label: String, val icon: ImageVector) {
     AUTO_PLAY("Auto-reprodução de Episódios", Icons.AutoMirrored.Rounded.PlaylistPlay),
     LIVE_CHANNELS("Canais ao vivo", Icons.Rounded.Tune),
     SYNC_CATALOG("Atualizar categorias ao vivo", Icons.Rounded.Sync),
+    ACCOUNT_SYNC("Sincronizar agora", Icons.Rounded.CloudSync),
+    CREDITS("Créditos", Icons.Rounded.Info),
     UPDATES("Atualizações", Icons.Rounded.SystemUpdate),
     DNS("Testador de DNS", Icons.Rounded.Dns),
     CLEAR_CACHE("Limpar cache de catálogos", Icons.Rounded.Brush)
@@ -83,6 +87,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
     val catalogState by controller.catalog.state.collectAsState()
     val scope = rememberCoroutineScope()
     val accountScope = remember(state.credentials) { liveCategoryScope(state.credentials) }
+    var showAccountSync by remember { mutableStateOf(false) }
     val error by store.error.collectAsState()
     val loaded by store.loaded.collectAsState()
     var selected by rememberSaveable { mutableStateOf<DesktopSetting?>(null) }
@@ -196,6 +201,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                             when (category) {
                                 DesktopSetting.SIGN_OUT -> controller.disconnect()
                                 DesktopSetting.UPDATES -> controller.openUpdates()
+                                DesktopSetting.ACCOUNT_SYNC -> showAccountSync = true
                                 DesktopSetting.SYNC_CATALOG -> {
                                     controller.syncCatalog()
                                     selected = category
@@ -215,6 +221,29 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
             }
         }
 
+    }
+    if (showAccountSync) {
+        val session by FavoriteCloudSession.state.collectAsState()
+        val active = session?.takeIf { it.localAccount == accountScope }
+        val local = remember(active, store, controller) {
+            active?.let { account ->
+                store.favoriteCloudStore(account.localAccount, account.client.scopeId, onProgressApplied = { boundAt, rows ->
+                    if (FavoriteCloudSession.state.value !== account ||
+                        liveCategoryScope(controller.state.value.credentials) != account.localAccount)
+                        throw IllegalStateException("A conta ativa mudou.")
+                    controller.watchHistory?.applyCloudProgress(account.localAccount, boundAt, rows)
+                }) { kind, id ->
+                    val type = when (kind) {
+                        "live" -> DesktopSearchType.LIVE
+                        "series" -> DesktopSearchType.SERIES
+                        else -> DesktopSearchType.MOVIES
+                    }
+                    controller.favorites.state.value.results.firstOrNull { it.id == id && it.type == type }?.name
+                }
+            }
+        }
+        AccountSyncSettingsDialog(active?.client, local, onClose = { showAccountSync = false },
+            modifier = Modifier.directionalNavigation())
     }
     removingAccount?.let { id ->
         AlertDialog(onDismissRequest = { removingAccount = null }, modifier = Modifier.directionalNavigation(),
@@ -247,6 +276,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                     else contentModifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     when (category) {
+                        DesktopSetting.CREDITS -> rsv.squitv.core.ui.components.EditorialCredits()
                         DesktopSetting.ACCOUNT -> {
                             state.accountError?.let { Text(it, color = palette.error) }
                             if (state.managingAccounts) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -661,7 +691,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                                 Text(if (state.testingDns) "Testando…" else "Testar novamente")
                             }
                         }
-                        DesktopSetting.SIGN_OUT, DesktopSetting.UPDATES -> Unit
+                        DesktopSetting.SIGN_OUT, DesktopSetting.UPDATES, DesktopSetting.ACCOUNT_SYNC -> Unit
                     }
                 }
             })

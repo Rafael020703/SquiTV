@@ -27,6 +27,10 @@
     <string name="username_label">Usuario</string>
     <string name="password_label">Contraseña</string>
     <string name="login_button">ENTRAR</string>
+    <string name="login_iptv_button">Entrar con IPTV</string>
+    <string name="login_iptv_alternative">Usa tu Cuenta Squi TV o acceso IPTV.</string>
+    <string name="account_sync_now">Sincronizar ahora</string>
+    <string name="metadata_credits">Créditos</string>
     <string name="server_label">Servidor</string>
     <string name="auto_server_label">Auto</string>
     <string name="error_fill_all_fields">Complete todos los campos</string>

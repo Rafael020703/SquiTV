@@ -1,11 +1,10 @@
 ﻿package rsv.squitv.data.local.entities
 
 import androidx.room.Entity
-import androidx.room.PrimaryKey
 
-@Entity(tableName = "downloads")
+@Entity(tableName = "downloads", primaryKeys = ["streamId", "type"])
 data class DownloadEntity(
-    @PrimaryKey val streamId: Int,
+    val streamId: Int,
     val name: String,
     val type: String, // movie or series
     val icon: String?,

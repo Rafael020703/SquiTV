@@ -1,4 +1,4 @@
-﻿package rsv.squitv.core.navigation
+package rsv.squitv.core.navigation
 
 import android.util.Log
 import androidx.compose.runtime.LaunchedEffect
@@ -278,7 +278,8 @@ fun NavGraphBuilder.appNavGraph(
                 route.categoryId,
                 displayName = route.streamName,
                 streamIcon = route.streamIcon,
-                sourceId = route.sourceId
+                sourceId = route.sourceId,
+                isOffline = route.isOffline
             )
         }
         PlayerScreen(
@@ -358,7 +359,8 @@ fun NavGraphBuilder.appNavGraph(
                         streamType = type,
                         container = container,
                         seriesId = seriesId,
-                        seasonNumber = seasonNumber
+                        seasonNumber = seasonNumber,
+                        isOffline = true
                     )
                 )
             }

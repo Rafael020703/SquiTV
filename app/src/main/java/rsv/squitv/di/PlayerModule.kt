@@ -71,33 +71,44 @@ object PlayerModule {
         @ApplicationContext context: Context,
         @PlayerOkHttpClient okHttpClient: OkHttpClient,
         bandwidthMeter: DefaultBandwidthMeter,
-        @PlaybackCache playbackCache: SimpleCache
+        @PlaybackCache playbackCache: SimpleCache,
+        @DownloadCache downloadCache: SimpleCache
     ): ExoPlayer {
         val httpDataSourceFactory = OkHttpDataSource.Factory(okHttpClient)
             .setUserAgent(rsv.squitv.data.network.RetrofitClient.USER_AGENT)
 
-        val cacheDataSourceFactory = CacheDataSource.Factory()
+        val downloadCacheDataSourceFactory = CacheDataSource.Factory()
+            .setCache(downloadCache)
+            .setUpstreamDataSourceFactory(httpDataSourceFactory)
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+
+        val playbackCacheDataSourceFactory = CacheDataSource.Factory()
             .setCache(playbackCache)
             .setUpstreamDataSourceFactory(httpDataSourceFactory)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
-        // Bypasses CacheDataSource for Live IPTV streams to prevent stale packet reads and A/V desync
+        // Bypasses CacheDataSource for Live IPTV streams; checks downloadCache first for offline/downloaded items
         val dataSourceFactory = DataSource.Factory {
             val httpDataSource = httpDataSourceFactory.createDataSource()
-            val cacheDataSource = cacheDataSourceFactory.createDataSource()
+            val downloadCacheDataSource = downloadCacheDataSourceFactory.createDataSource()
+            val playbackCacheDataSource = playbackCacheDataSourceFactory.createDataSource()
 
             object : DataSource by httpDataSource {
                 private var activeDataSource: DataSource = httpDataSource
 
                 override fun open(dataSpec: DataSpec): Long {
-                    val uriPath = dataSpec.uri.path?.lowercase() ?: ""
+                    val uriPath = dataSpec.uri.path?.lowercase().orEmpty()
                     val uriString = dataSpec.uri.toString().lowercase()
+                    val key = dataSpec.key ?: dataSpec.uri.toString()
 
                     val isLiveStream = uriPath.contains("/live/") || uriString.contains("/live/") || uriPath.endsWith(".ts")
                     activeDataSource = if (isLiveStream) {
                         httpDataSource
+                    } else if (downloadCache.isCached(key, dataSpec.position, 1L) ||
+                               downloadCache.isCached(dataSpec.uri.toString(), dataSpec.position, 1L)) {
+                        downloadCacheDataSource
                     } else {
-                        cacheDataSource
+                        playbackCacheDataSource
                     }
                     return activeDataSource.open(dataSpec)
                 }
@@ -120,7 +131,8 @@ object PlayerModule {
 
                 override fun addTransferListener(transferListener: TransferListener) {
                     httpDataSource.addTransferListener(transferListener)
-                    cacheDataSource.addTransferListener(transferListener)
+                    downloadCacheDataSource.addTransferListener(transferListener)
+                    playbackCacheDataSource.addTransferListener(transferListener)
                 }
             }
         }

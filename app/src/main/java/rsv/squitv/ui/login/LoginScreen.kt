@@ -1,4 +1,4 @@
-﻿package rsv.squitv.ui.login
+package rsv.squitv.ui.login
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -32,6 +32,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import rsv.squitv.R
+import rsv.squitv.core.ui.components.AccountPilotEntry
+import rsv.squitv.shared.account.AccountPilot
 import rsv.squitv.core.ui.components.buttons.AppButton
 import rsv.squitv.core.ui.components.common.adaptiveFocus
 import rsv.squitv.core.ui.components.inputs.AppTextField
@@ -85,6 +87,8 @@ fun LoginScreen(
         onUsernameChange = viewModel::onUsernameChanged,
         onPasswordChange = viewModel::onPasswordChanged,
         onLoginClick = viewModel::login,
+        onCancelLogin = viewModel::cancelLogin,
+        onLinkedLogin = viewModel::loginLinked,
         onSelectSavedAccount = viewModel::selectSavedAccount,
         onRemoveSavedAccount = viewModel::removeSavedAccount,
         onOpenLocalLogin = onOpenLocalLogin,
@@ -108,6 +112,8 @@ fun LoginContent(
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
+    onCancelLogin: (() -> Unit)? = null,
+    onLinkedLogin: ((AccountPilot.LinkedLogin) -> Unit)? = null,
     onSelectSavedAccount: (XtreamCredentials) -> Unit = {},
     onRemoveSavedAccount: (Int) -> Unit = {},
     onOpenLocalLogin: (() -> Unit)? = null,
@@ -138,6 +144,8 @@ fun LoginContent(
                 onUsernameChange = onUsernameChange,
                 onPasswordChange = onPasswordChange,
                 onLoginClick = onLoginClick,
+                onCancelLogin = onCancelLogin,
+                onLinkedLogin = onLinkedLogin,
                 onSelectSavedAccount = onSelectSavedAccount,
                 onRemoveSavedAccount = onRemoveSavedAccount,
                 onOpenLocalLogin = onOpenLocalLogin,
@@ -156,6 +164,8 @@ fun LoginContent(
                 onUsernameChange = onUsernameChange,
                 onPasswordChange = onPasswordChange,
                 onLoginClick = onLoginClick,
+                onCancelLogin = onCancelLogin,
+                onLinkedLogin = onLinkedLogin,
                 onSelectSavedAccount = onSelectSavedAccount,
                 onRemoveSavedAccount = onRemoveSavedAccount,
                 onOpenLocalLogin = onOpenLocalLogin,
@@ -204,6 +214,8 @@ private fun CompactLoginLayout(
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
+    onCancelLogin: (() -> Unit)?,
+    onLinkedLogin: ((AccountPilot.LinkedLogin) -> Unit)? = null,
     onSelectSavedAccount: (XtreamCredentials) -> Unit = {},
     onRemoveSavedAccount: (Int) -> Unit = {},
     onOpenLocalLogin: (() -> Unit)? = null,
@@ -349,11 +361,16 @@ private fun CompactLoginLayout(
                     )
 
                     Text(
-                        text = stringResource(R.string.login_subtitle_instruction),
+                        text = stringResource(R.string.login_iptv_alternative),
                         style = tokens.typography.body.copy(fontSize = 13.sp),
                         color = tokens.colors.textSecondary,
                         fontWeight = FontWeight.Medium
                     )
+
+                    if (onLinkedLogin != null) {
+                        Spacer(Modifier.height(8.dp))
+                        AccountPilotEntry(!isLoading, onLinkedLogin)
+                    }
 
                     // SAVED ACCOUNTS SELECTOR
                     if (savedAccounts.isNotEmpty()) {
@@ -374,8 +391,8 @@ private fun CompactLoginLayout(
                                 SavedAccountChip(
                                     account = account,
                                     isSelected = username == account.username && (url.isEmpty() || url == account.baseUrl),
-                                    onSelect = { onSelectSavedAccount(account) },
-                                    onDelete = { onRemoveSavedAccount(index) }
+                                    onSelect = { if (!isLoading) onSelectSavedAccount(account) },
+                                    onDelete = { if (!isLoading) onRemoveSavedAccount(index) }
                                 )
                             }
                         }
@@ -386,6 +403,7 @@ private fun CompactLoginLayout(
                     // FIELDS WITH CYAN GLOW
                     AppTextField(
                         value = username,
+                        enabled = !isLoading,
                         onValueChange = onUsernameChange,
                         placeholder = stringResource(R.string.username_label).uppercase(),
                         modifier = Modifier
@@ -408,6 +426,7 @@ private fun CompactLoginLayout(
 
                     AppTextField(
                         value = password,
+                        enabled = !isLoading,
                         onValueChange = onPasswordChange,
                         placeholder = stringResource(R.string.password_label).uppercase(),
                         isPassword = true,
@@ -464,7 +483,7 @@ private fun CompactLoginLayout(
 
                     // BOTÃO ENTRAR CINEMÁTICO COM GRADIENTE E ELEVAÇÃO
                     AppButton(
-                        text = if (isLoading) stringResource(R.string.msg_connecting).uppercase() else stringResource(R.string.login_button).uppercase(),
+                        text = if (isLoading) stringResource(R.string.msg_connecting).uppercase() else stringResource(R.string.login_iptv_button).uppercase(),
                         onClick = onLoginClick,
                         enabled = !isLoading,
                         useGradient = true,
@@ -474,11 +493,15 @@ private fun CompactLoginLayout(
                             .height(52.dp)
                     )
 
+                    if (isLoading && onCancelLogin != null) {
+                        TextButton(onClick = onCancelLogin) { Text("Cancelar conexão") }
+                    }
                     if (onOpenLocalLogin != null) {
                         Spacer(modifier = Modifier.height(10.dp))
                         AppButton(
                             text = "LOGIN VIA REDE LOCAL",
                             onClick = onOpenLocalLogin,
+                            enabled = !isLoading,
                             useGradient = false,
                             icon = Icons.Rounded.Wifi,
                             modifier = Modifier
@@ -519,6 +542,8 @@ private fun ExpandedLoginLayout(
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
     onLoginClick: () -> Unit,
+    onCancelLogin: (() -> Unit)?,
+    onLinkedLogin: ((AccountPilot.LinkedLogin) -> Unit)? = null,
     onSelectSavedAccount: (XtreamCredentials) -> Unit = {},
     onRemoveSavedAccount: (Int) -> Unit = {},
     onOpenLocalLogin: (() -> Unit)? = null,
@@ -685,7 +710,7 @@ private fun ExpandedLoginLayout(
                     )
 
                     Text(
-                        text = stringResource(R.string.login_subtitle_instruction),
+                        text = stringResource(R.string.login_iptv_alternative),
                         style = tokens.typography.body.copy(
                             fontSize = if (isVeryCompactHeight) 11.sp else 13.sp
                         ),
@@ -712,8 +737,8 @@ private fun ExpandedLoginLayout(
                                 SavedAccountChip(
                                     account = account,
                                     isSelected = username == account.username && (url.isEmpty() || url == account.baseUrl),
-                                    onSelect = { onSelectSavedAccount(account) },
-                                    onDelete = { onRemoveSavedAccount(index) }
+                                    onSelect = { if (!isLoading) onSelectSavedAccount(account) },
+                                    onDelete = { if (!isLoading) onRemoveSavedAccount(index) }
                                 )
                             }
                         }
@@ -722,8 +747,12 @@ private fun ExpandedLoginLayout(
                     Spacer(modifier = Modifier.height(formSpacer))
 
                     // FIELDS WITH CYAN GLOW
+                    if (onLinkedLogin != null) {
+                        AccountPilotEntry(!isLoading, onLinkedLogin)
+                    }
                     AppTextField(
                         value = username,
+                        enabled = !isLoading,
                         onValueChange = onUsernameChange,
                         placeholder = stringResource(R.string.username_label).uppercase(),
                         modifier = Modifier
@@ -746,6 +775,7 @@ private fun ExpandedLoginLayout(
 
                     AppTextField(
                         value = password,
+                        enabled = !isLoading,
                         onValueChange = onPasswordChange,
                         placeholder = stringResource(R.string.password_label).uppercase(),
                         isPassword = true,
@@ -795,7 +825,7 @@ private fun ExpandedLoginLayout(
 
                     // BOTÃO ENTRAR CINEMÁTICO COM GRADIENTE E ELEVAÇÃO
                     AppButton(
-                        text = if (isLoading) stringResource(R.string.msg_connecting).uppercase() else stringResource(R.string.login_button).uppercase(),
+                        text = if (isLoading) stringResource(R.string.msg_connecting).uppercase() else stringResource(R.string.login_iptv_button).uppercase(),
                         onClick = onLoginClick,
                         enabled = !isLoading,
                         useGradient = true,
@@ -805,6 +835,9 @@ private fun ExpandedLoginLayout(
                             .height(buttonHeight)
                     )
 
+                    if (isLoading && onCancelLogin != null) {
+                        TextButton(onClick = onCancelLogin) { Text("Cancelar conexão") }
+                    }
                     if (onOpenAppDns != null) {
                         Spacer(Modifier.height(8.dp))
                         AppButton(text = "DNS DO APLICATIVO", onClick = onOpenAppDns,
@@ -817,6 +850,7 @@ private fun ExpandedLoginLayout(
                         AppButton(
                             text = "LOGIN VIA REDE LOCAL",
                             onClick = onOpenLocalLogin,
+                            enabled = !isLoading,
                             useGradient = false,
                             icon = Icons.Rounded.Wifi,
                             modifier = Modifier

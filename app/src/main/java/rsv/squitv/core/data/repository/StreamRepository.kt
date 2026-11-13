@@ -1,6 +1,7 @@
 ﻿package rsv.squitv.core.data.repository
 
 import rsv.squitv.data.model.XtreamCredentials
+import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -17,13 +18,16 @@ class StreamRepository @Inject constructor() {
             "series" -> "series"
             else -> "live"
         }
+        val cleanExt = container?.trim()?.lowercase().orEmpty().removePrefix(".")
         val ext = when (normalizedType) {
             "live" -> ".ts"
-            else -> if (container.isNullOrBlank()) ".mp4" else if (container.startsWith(".")) container else ".$container"
+            else -> if (cleanExt.isBlank()) ".mp4" else ".$cleanExt"
         }
         var baseUrl = credentials.baseUrl.trim()
         if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) baseUrl = "http://$baseUrl"
         if (baseUrl.endsWith("/")) baseUrl = baseUrl.substring(0, baseUrl.length - 1)
-        return "$baseUrl/$action/${credentials.username}/${credentials.password}/$streamId$ext"
+        val userEnc = URLEncoder.encode(credentials.username, "UTF-8")
+        val passEnc = URLEncoder.encode(credentials.password, "UTF-8")
+        return "$baseUrl/$action/$userEnc/$passEnc/$streamId$ext"
     }
 }

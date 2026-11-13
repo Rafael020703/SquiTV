@@ -1,0 +1,21 @@
+[Unit]
+Description=Squi TV - vinculo IPTV
+After=network-online.target squitv-keycloak.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+WorkingDirectory=/usr/local/lib/squitv-account
+LoadCredential=db-password:/etc/squitv-account/iptv-db-password
+LoadCredential=iptv-key-v1:/etc/squitv-account/iptv-key-v1
+LoadCredential=native-client-secret:/etc/squitv-account/native-client-secret
+ExecStart=/usr/bin/gunicorn --bind 127.0.0.1:8766 --workers 2 --threads 2 --timeout 18 iptv:application
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

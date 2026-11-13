@@ -1,4 +1,4 @@
-﻿package rsv.squitv.domain.usecase
+package rsv.squitv.domain.usecase
 
 import rsv.squitv.core.data.repository.UserRepository
 import javax.inject.Inject
@@ -38,7 +38,9 @@ class SyncWatchProgressUseCase @Inject constructor(
         duration: Long,
         seriesId: Int?,
         forceSync: Boolean = false,
-        isEndedEvent: Boolean = false
+        isEndedEvent: Boolean = false,
+        cloudScope: UserRepository.CloudPlaybackScope? = null,
+        title: String? = null
     ) = saves.withLock {
         val timestamp = System.currentTimeMillis()
         val elapsed = android.os.SystemClock.elapsedRealtime()
@@ -62,6 +64,15 @@ class SyncWatchProgressUseCase @Inject constructor(
                 } else if (position >= 5000L) {
                     userRepository.saveWatchProgress(streamId, type, position, duration, seriesId, timestamp)
                 } else return@withLock
+                try {
+                    if (cloudScope != null) userRepository.recordNewCloudProgress(
+                        streamId, type, position, duration, seriesId, timestamp, isCompleted, cloudScope, title,
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    Timber.w("Não foi possível preparar o progresso para sincronização.")
+                }
                 lastLocalSaveTime = elapsed
                 lastLocalSaveStreamId = streamId
                 lastLocalSaveType = type

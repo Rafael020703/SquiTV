@@ -1,4 +1,4 @@
-﻿package rsv.squitv.ui.viewmodel.library
+package rsv.squitv.ui.viewmodel.library
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -38,6 +38,13 @@ class LibraryViewModel @Inject constructor(
     private val downloadTracker: DownloadTracker,
     private val toggleFavoriteUseCase: ToggleFavoriteUseCase
 ) : ViewModel() {
+
+    internal fun favoriteCloudStore(
+        accountId: String,
+        profileId: String,
+        profileName: String,
+        cloudScope: String,
+    ) = userRepository.favoriteCloudStore(accountId, profileId, profileName, cloudScope)
 
     private val _favorites = MutableStateFlow<List<IptvItem>>(emptyList())
     val favorites: StateFlow<List<IptvItem>> = _favorites.asStateFlow()

@@ -45,7 +45,7 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
     val preferences by store.state.collectAsState()
     val account = state.account ?: return
     val displayName = rsv.squitv.shared.account.AccountPresentation.displayName(
-        preferences.displayNamesByAccount[liveCategoryScope(state.credentials)], account.username)
+        state.portalDisplayName ?: preferences.displayNamesByAccount[liveCategoryScope(state.credentials)], account.username)
     val windowDragArea = LocalWindowDragArea.current
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     // Match Android's HH:mm clock without a second date row.

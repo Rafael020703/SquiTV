@@ -45,7 +45,7 @@ class FavoritesScopeMigrationTest {
             sqlite.version = 25
         }
         database = Room.databaseBuilder(context, AppDatabase::class.java, name)
-            .allowMainThreadQueries().addMigrations(AppDatabase.MIGRATION_25_26, AppDatabase.MIGRATION_26_27).build()
+            .allowMainThreadQueries().addMigrations(AppDatabase.MIGRATION_25_26, AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28).build()
     }
 
     @After fun closeDatabase() {
@@ -56,7 +56,7 @@ class FavoritesScopeMigrationTest {
     @Test fun migratePreservesData() = runBlocking {
         val db = database!!
         val favorites = db.iptvDao().getAllFavoritesForBackup()
-        assertEquals(27, db.openHelper.writableDatabase.version)
+        assertEquals(28, db.openHelper.writableDatabase.version)
         assertEquals(3, favorites.size)
         assertEquals(setOf("LIVE", "MOVIE", "SERIES"), favorites.map { it.streamType }.toSet())
         assertTrue(favorites.all { it.accountId.isEmpty() && it.profileId.isEmpty() })

@@ -94,6 +94,7 @@ sealed interface Route {
         val seasonNumber: Int? = null,
         val sourceId: String? = null,
         val categoryId: String? = null,
-        val streamIcon: String? = null
+        val streamIcon: String? = null,
+        val isOffline: Boolean = false
     ) : Route
 }

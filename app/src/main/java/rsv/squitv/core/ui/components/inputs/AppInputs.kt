@@ -37,7 +37,8 @@ fun AppTextField(
     trailingIcon: @Composable (() -> Unit)? = null,
     imeAction: ImeAction = ImeAction.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
-    requireClickToEdit: Boolean = false
+    requireClickToEdit: Boolean = false,
+    enabled: Boolean = true,
 ) {
     val tokens = AppDesignSystem
     val responsive = tokens.responsive
@@ -86,6 +87,7 @@ fun AppTextField(
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
+        enabled = enabled,
         readOnly = false,
         modifier = modifier
             .fillMaxWidth()

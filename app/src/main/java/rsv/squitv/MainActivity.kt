@@ -34,9 +34,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import rsv.squitv.core.data.repository.UserRepository
+import rsv.squitv.data.model.SettingsBackupCodec
+import rsv.squitv.shared.account.FavoriteCloudSession
 import rsv.squitv.util.isMediaPipAllowed
 import rsv.squitv.util.supportsMediaPip
 import rsv.squitv.core.navigation.AppController
@@ -68,6 +74,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var appController: AppController
+
+    @Inject
+    lateinit var userRepository: UserRepository
 
     // Removed dispatchKeyEvent to use OnBackPressedDispatcher for standard consumption
 
@@ -131,6 +140,24 @@ class MainActivity : AppCompatActivity() {
             statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.BLACK)
         )
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                val localScope = settingsRepository.settingsFlow.map { settings ->
+                    val account = settings.credentials?.let(SettingsBackupCodec::accountKey)
+                        ?.let(SettingsBackupCodec::fingerprint)
+                    account to settings.activeProfileId
+                }.distinctUntilChanged()
+                combine(FavoriteCloudSession.state, localScope) { active, (account, profile) ->
+                    active?.takeIf { it.localAccount == account }?.let { it to profile }
+                }.distinctUntilChanged().collectLatest { binding ->
+                    if (binding != null) {
+                        val (active, profile) = binding
+                        val local = userRepository.favoriteCloudStore(active.localAccount, profile, "", active.client.scopeId)
+                        active.client.maintainAssociatedData(local)
+                    }
+                }
+            }
+        }
         lifecycleScope.launch {
             settingsRepository.settingsFlow
                 .map { it.backgroundPlaybackEnabled to it.pipAutoEnterEnabled }

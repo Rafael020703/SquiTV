@@ -13,6 +13,8 @@ interface CredentialStore {
     fun load(): ServerCredentials?
     fun loadDebugDefaults(): ServerCredentials? = null
     fun save(credentials: ServerCredentials)
+    fun loadPortalSession(credentials: ServerCredentials): RememberedPortalSession? = null
+    fun savePortalSession(credentials: ServerCredentials, session: RememberedPortalSession) {}
     fun clear()
     fun allowsAutomaticLogin(): Boolean = false
     fun setAutomaticLogin(enabled: Boolean) {}
@@ -20,11 +22,14 @@ interface CredentialStore {
     fun removeAccount(accountId: String) {}
 }
 
+class RememberedPortalSession(val displayName: String?, val syncSession: String?)
+
 /** DPAPI is bound to the current Windows user. Plaintext is never written to disk. */
 class WindowsCredentialStore(private val directory: Path, private val useDebugDefaults: Boolean = false,
     private val debugDefaultsFile: Path = directory.resolve("debug-login.dpapi")) : CredentialStore {
     private val file = directory.resolve("account.dpapi")
     private val paused = directory.resolve("login.paused")
+    private val portalNameFile = directory.resolve("account-display.dpapi")
     private val accountsFile = directory.resolve("accounts.dpapi")
     private fun id(credentials: ServerCredentials) = rsv.squitv.desktop.liveCategoryScope(credentials)
         ?: error("Invalid account identity")
@@ -76,6 +81,7 @@ class WindowsCredentialStore(private val directory: Path, private val useDebugDe
         writeAccounts(existing.filterNot { id(it) == accountId })
         if (Files.isRegularFile(file) && id(decode(file)) == accountId) {
             Files.deleteIfExists(file)
+            Files.deleteIfExists(portalNameFile)
             Files.createDirectories(directory)
             Files.writeString(paused, "paused")
         }
@@ -106,10 +112,43 @@ class WindowsCredentialStore(private val directory: Path, private val useDebugDe
         Files.deleteIfExists(paused)
     }
 
+    @Synchronized override fun loadPortalSession(credentials: ServerCredentials): RememberedPortalSession? {
+        if (!Files.isRegularFile(portalNameFile)) return null
+        require(Files.size(portalNameFile) <= 8192)
+        val clear = Crypt32Util.cryptUnprotectData(Files.readAllBytes(portalNameFile), WinCrypt.CRYPTPROTECT_UI_FORBIDDEN)
+        return try {
+            val data = Json.decodeFromString<Map<String, String>>(clear.toString(Charsets.UTF_8))
+            if (data["account"] != id(credentials)) return null
+            RememberedPortalSession(
+                data["name"]?.takeIf { it.isNotBlank() && it.length <= 255 },
+                data["sync"]?.takeIf { it.isNotBlank() && it.length <= 2048 },
+            )
+        } finally { clear.fill(0) }
+    }
+
+    @Synchronized override fun savePortalSession(credentials: ServerCredentials, session: RememberedPortalSession) {
+        val name = session.displayName?.takeIf { it.isNotBlank() && it.length <= 255 }
+        val sync = session.syncSession?.takeIf { it.isNotBlank() && it.length <= 2048 }
+        if (name == null && sync == null) {
+            Files.deleteIfExists(portalNameFile)
+            return
+        }
+        val data = buildMap {
+            put("account", id(credentials))
+            name?.let { put("name", it) }
+            sync?.let { put("sync", it) }
+        }
+        val clear = Json.encodeToString(data).toByteArray(Charsets.UTF_8)
+        val encrypted = try { Crypt32Util.cryptProtectData(clear, WinCrypt.CRYPTPROTECT_UI_FORBIDDEN) }
+            finally { clear.fill(0) }
+        atomicWrite(portalNameFile, encrypted)
+    }
+
     @Synchronized override fun clear() {
         // Preserve previously remembered accounts when a new session is opened without Remember.
         if (Files.isRegularFile(file)) writeAccounts(savedAccounts())
         Files.deleteIfExists(file)
+        Files.deleteIfExists(portalNameFile)
         Files.deleteIfExists(paused)
     }
     @Synchronized override fun allowsAutomaticLogin() = Files.isRegularFile(file) && !Files.exists(paused)

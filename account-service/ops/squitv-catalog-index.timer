@@ -1,0 +1,10 @@
+[Unit]
+Description=Squi TV - agendamento do índice de catálogo IPTV
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

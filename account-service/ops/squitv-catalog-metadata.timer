@@ -1,0 +1,10 @@
+[Unit]
+Description=Squi TV - agendamento da preparação de metadados
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=10s
+AccuracySec=2s
+
+[Install]
+WantedBy=timers.target

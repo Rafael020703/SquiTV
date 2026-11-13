@@ -24,6 +24,7 @@ import rsv.squitv.data.local.entities.CatalogMetadataEntity
 import rsv.squitv.data.local.entities.CatalogMetadataUpdate
 import rsv.squitv.shared.catalog.PreparationBatchPolicy
 import rsv.squitv.shared.catalog.PreparationProgress
+import rsv.squitv.shared.account.FavoriteCloudSession
 import rsv.squitv.domain.usecase.GenreUtils
 import rsv.squitv.data.model.SettingsBackupCodec
 import rsv.squitv.data.model.XtreamCredentials
@@ -66,7 +67,8 @@ data class CatalogPreparationState(
     val estimatedRemainingMs: Long? = null,
     val waitingForRetry: Boolean = false,
     val isThrottled: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val serverManaged: Boolean = false
 )
 
 @UnstableApi
@@ -245,8 +247,60 @@ class CatalogPreparationCoordinator @Inject constructor(
         val queue = java.util.ArrayDeque<CatalogMetadataEntity>()
         val credentials = settingsRepository.settingsFlow.first().credentials ?: return
         val accountKey = SettingsBackupCodec.accountKey(credentials)
+        val accountFingerprint = SettingsBackupCodec.fingerprint(accountKey)
+        val cloudCursors = mutableMapOf<String, Long>()
+        var cloudScope: String? = null
         while (currentCoroutineContext().isActive && token == generation) {
             if (settingsRepository.settingsFlow.first().credentials != credentials) return
+            val cloud = FavoriteCloudSession.catalogClient(accountFingerprint)
+            if (cloud != null) {
+                if (cloudScope != cloud.scopeId) {
+                    cloudCursors.clear()
+                    cloudScope = cloud.scopeId
+                }
+                var hasMore = false
+                for ((kind, type) in listOf("movie" to "VOD", "series" to "SERIES")) {
+                    for (batch in 0 until 8) {
+                        val cursor = cloudCursors[kind] ?: 0
+                        val page = cloud.catalogGenres(kind, cursor)?.takeIf { it.available } ?: break
+                        if (token != generation || settingsRepository.settingsFlow.first().credentials != credentials ||
+                            FavoriteCloudSession.catalogClient(accountFingerprint) !== cloud) return
+                        val now = System.currentTimeMillis()
+                        val details = page.items.mapNotNull { item ->
+                            val genre = item.genre?.takeIf { GenreUtils.extractNormalizedGenres(it).isNotEmpty() }
+                            genre?.let { CatalogMetadataUpdate(item.id, type, it, null, null, null, null, null, null) }
+                        }
+                        if (details.isNotEmpty()) {
+                            iptvDao.applyPreparationBatch(details.map { detail ->
+                                CatalogMetadataEntity(accountKey, type, detail.id, CatalogMetadataEntity.STATUS_SUCCESS,
+                                    detail.genre, lastSuccess = now)
+                            }, details)
+                        }
+                        cloudCursors[kind] = page.next
+                        if (!page.hasMore || page.next <= cursor) break
+                        if (batch == 7) hasMore = true
+                    }
+                }
+                if (seededAt == 0L || System.nanoTime() - seededAt >= 60_000_000_000L) {
+                    seedCacheFromStreams(accountKey)
+                    seededAt = System.nanoTime()
+                }
+                updateStats(accountKey, estimator)
+                val movies = cloud.catalogStatus("movie")
+                val series = cloud.catalogStatus("series")
+                _state.update { state ->
+                    state.copy(isRunning = false, waitingForRetry = false, estimatedRemainingMs = null,
+                        serverManaged = true, error = if (movies == null || series == null) "Estado do servidor indisponível." else null,
+                        vodTotal = movies?.total ?: state.vodTotal, seriesTotal = series?.total ?: state.seriesTotal,
+                        vodProcessed = movies?.prepared ?: state.vodProcessed, seriesProcessed = series?.prepared ?: state.seriesProcessed,
+                        totalItems = (movies?.total ?: state.vodTotal) + (series?.total ?: state.seriesTotal),
+                        processedItems = (movies?.prepared ?: state.vodProcessed) + (series?.prepared ?: state.seriesProcessed),
+                        failedItems = (movies?.failed ?: 0) + (series?.failed ?: 0))
+                }
+                delay(if (hasMore) 2_000L else 30_000L)
+                continue
+            }
+            if (_state.value.serverManaged) _state.update { it.copy(serverManaged = false, error = null) }
             val speed = _state.value.speed
             if (seededAt == 0L || System.nanoTime() - seededAt >= 60_000_000_000L) {
                 seedCacheFromStreams(accountKey)

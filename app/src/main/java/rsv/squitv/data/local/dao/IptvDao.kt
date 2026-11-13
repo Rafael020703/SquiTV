@@ -1,4 +1,4 @@
-﻿package rsv.squitv.data.local.dao
+package rsv.squitv.data.local.dao
 
 import androidx.room.Dao
 import androidx.room.Insert
@@ -186,6 +186,50 @@ interface IptvDao {
     @Query("SELECT * FROM favorites WHERE accountId = :accountId AND profileId = :profileId ORDER BY timestamp DESC")
     fun getScopedFavoritesFlow(accountId: String, profileId: String): kotlinx.coroutines.flow.Flow<List<FavoriteEntity>>
 
+    @Query("SELECT * FROM favorites WHERE accountId = :accountId AND profileId = :profileId")
+    suspend fun getScopedFavoritesSnapshot(accountId: String, profileId: String): List<FavoriteEntity>
+
+    @Transaction
+    suspend fun applyCloudFavorites(
+        accountId: String,
+        profileId: String,
+        expected: Set<Pair<String, Int>>,
+        cloudRows: List<rsv.squitv.shared.account.CloudFavorite>,
+    ): Boolean {
+        fun cloudKind(type: String) = when (type.lowercase()) {
+            "movie", "vod" -> "movie"
+            "live" -> "live"
+            "series" -> "series"
+            else -> null
+        }
+        val existing = getScopedFavoritesSnapshot(accountId, profileId)
+            .filter { it.streamId > 0 }
+            .groupBy { cloudKind(it.streamType) to it.streamId }
+        val existingKeys = existing.keys.mapNotNull { (kind, id) -> kind?.let { it to id } }.toSet()
+        if (existingKeys != expected) return false
+
+        for (row in cloudRows.filter { it.deleted }) {
+            existing[row.key].orEmpty().forEach { deleteScopedFavorite(accountId, profileId, it.streamId, it.streamType) }
+        }
+        val additions = cloudRows.filter { !it.deleted && it.key !in existingKeys }
+        val streams = additions.map { it.id }.distinct().chunked(400).flatMap { getStreamsByIds(it) }
+            .associateBy { cloudKind(it.streamType) to it.id }
+        if (additions.isNotEmpty()) {
+            insertFavorites(additions.map { row ->
+                val stream = streams[row.key]
+                FavoriteEntity(
+                    streamId = row.id, streamType = row.kind.uppercase(),
+                    name = stream?.name ?: row.title?.takeIf(String::isNotBlank) ?: "#${row.id}",
+                    logo = stream?.logo, rating = stream?.rating, releaseDate = stream?.releaseDate,
+                    url = stream?.url?.takeIf { row.kind == "live" },
+                    containerExtension = stream?.containerExtension, categoryId = stream?.categoryId,
+                    accountId = accountId, profileId = profileId,
+                )
+            })
+        }
+        return true
+    }
+
     @Query("SELECT * FROM favorites ORDER BY timestamp DESC")
     suspend fun getAllFavoritesForBackup(): List<FavoriteEntity>
 
@@ -280,13 +324,14 @@ interface IptvDao {
         UPDATE downloads
         SET status = :status, progress = :progress, size = :size,
             downloadedBytes = :downloadedBytes, downloadSpeedMbps = :downloadSpeedMbps
-        WHERE streamId = :streamId AND (
+        WHERE streamId = :streamId AND (type = :type OR (LOWER(:type) IN ('movie', 'vod') AND LOWER(type) IN ('movie', 'vod'))) AND (
             status != :status OR ABS(progress - :progress) >= 0.5
             OR downloadedBytes != :downloadedBytes OR :status IN ('COMPLETED', 'FAILED')
         )
     """)
     suspend fun updateDownloadProgress(
         streamId: Int,
+        type: String,
         status: String,
         progress: Float,
         size: Long,
@@ -294,14 +339,20 @@ interface IptvDao {
         downloadSpeedMbps: Double
     )
 
-    @Query("SELECT * FROM downloads")
+    @Query("SELECT * FROM downloads ORDER BY streamId DESC")
     fun getAllDownloadsFlow(): kotlinx.coroutines.flow.Flow<List<DownloadEntity>>
 
-    @Query("SELECT * FROM downloads WHERE streamId = :streamId")
-    suspend fun getDownload(streamId: Int): DownloadEntity?
+    @Query("SELECT * FROM downloads WHERE streamId = :streamId AND (type = :type OR (LOWER(:type) IN ('movie', 'vod') AND LOWER(type) IN ('movie', 'vod')))")
+    suspend fun getDownload(streamId: Int, type: String): DownloadEntity?
+
+    @Query("SELECT * FROM downloads WHERE streamId = :streamId LIMIT 1")
+    suspend fun getDownloadByStreamId(streamId: Int): DownloadEntity?
+
+    @Query("DELETE FROM downloads WHERE streamId = :streamId AND (type = :type OR (LOWER(:type) IN ('movie', 'vod') AND LOWER(type) IN ('movie', 'vod')))")
+    suspend fun deleteDownload(streamId: Int, type: String)
 
     @Query("DELETE FROM downloads WHERE streamId = :streamId")
-    suspend fun deleteDownload(streamId: Int)
+    suspend fun deleteDownloadByStreamId(streamId: Int)
 
     @Query("DELETE FROM watch_progress")
     suspend fun clearAllWatchProgress()

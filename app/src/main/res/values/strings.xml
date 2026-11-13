@@ -27,6 +27,8 @@
     <string name="username_label">Usuário</string>
     <string name="password_label">Senha</string>
     <string name="login_button">ENTRAR</string>
+    <string name="login_iptv_button">Entrar com IPTV</string>
+    <string name="login_iptv_alternative">Use a Conta Squi TV ou seu acesso IPTV.</string>
     <string name="server_label">Servidor</string>
     <string name="auto_server_label">Auto</string>
     <string name="error_fill_all_fields">Preencha todos os campos</string>
@@ -185,6 +187,8 @@
     <string name="sync_interval_label">Intervalo de Sincronização (Horas)</string>
     <string name="sync_interval_desc">Defina a frequência de atualização do catálogo.</string>
     <string name="force_sync_button">SINCRONIZAÇÃO TOTAL</string>
+    <string name="account_sync_now">Sincronizar agora</string>
+    <string name="metadata_credits">Créditos</string>
     <string name="app_settings_section">Aplicativo</string>
     <string name="language_label">Idioma</string>
     <string name="language_desc">Escolha o idioma da interface.</string>

@@ -51,16 +51,23 @@ object XtreamCatalogParser {
     fun account(body: String, fallbackUsername: String, nowSeconds: Long): ServerAccount {
         val root = obj(body)
         val user = root["user_info"] as? JsonObject ?: throw IllegalArgumentException("Resposta de login inválida.")
-        if (user.text("auth") != "1") throw ServerAccountException("Usuário ou senha recusados pelo servidor.")
         val status = user.text("status") ?: "Active"
-        if (!status.equals("Active", ignoreCase = true)) throw ServerAccountException("A conta não está ativa no servidor.")
         val expiry = user.text("exp_date")?.toLongOrNull()?.takeIf { it in 1L..253402300799L }
-        if (expiry != null && expiry <= nowSeconds) throw ServerAccountException("A conta está expirada.")
+        validateProviderLogin(user.text("auth"), status, expiry, nowSeconds)
         val server = root["server_info"] as? JsonObject
         return ServerAccount(user.text("username") ?: fallbackUsername, status, expiry,
             user.text("active_cons")?.toIntOrNull(), user.text("max_connections")?.toIntOrNull(),
             server?.text("timezone"), server?.text("time_now"),
             (user["allowed_output_formats"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty())
+    }
+
+    fun validateProviderLogin(auth: String?, status: String?, expiry: Long?, nowSeconds: Long) {
+        if (auth == null) throw IllegalArgumentException("Resposta de login inválida.")
+        if (status.equals("Expired", ignoreCase = true) || expiry != null && expiry in 1..nowSeconds)
+            throw ServerAccountException("A conta IPTV está expirada.")
+        if (auth != "1") throw ServerAccountException("Usuário ou senha IPTV recusados pelo servidor.")
+        if (!status.isNullOrBlank() && !status.equals("Active", ignoreCase = true))
+            throw ServerAccountException("A conta IPTV não está ativa no servidor.")
     }
 
     fun categories(body: String): List<LiveCategory> = array(body).mapNotNull { element ->

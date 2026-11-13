@@ -11,6 +11,7 @@ import rsv.squitv.shared.xtream.ServerCredentials
 import java.nio.file.Path
 import rsv.squitv.shared.catalog.PreparationProgress
 import rsv.squitv.shared.catalog.PreparationBatchPolicy
+import rsv.squitv.shared.account.FavoriteCloudSession
 import kotlin.math.min
 import kotlin.random.Random
 
@@ -23,7 +24,7 @@ internal data class DesktopPreparationState(val kind: CatalogKind? = null, val t
     val withGenre: Int = 0, val noData: Int = 0, val failed: Int = 0, val running: Boolean = false,
     val paused: Boolean = false, val speed: PreparationSpeed = PreparationSpeed.NORMAL,
     val message: String? = null, val error: String? = null,
-    val inFlight: Int = 0, val estimatedRemainingMs: Long? = null)
+    val inFlight: Int = 0, val estimatedRemainingMs: Long? = null, val serverManaged: Boolean = false)
 
 /** Windows transport/lifecycle adapter for Android's economical preparation policy. */
 internal class DesktopCatalogPreparation(private val client: XtreamClient, private val directory: Path,
@@ -150,9 +151,49 @@ internal class DesktopCatalogPreparation(private val client: XtreamClient, priva
     }
 
     private suspend fun prepare(credentials: ServerCredentials, kind: CatalogKind, items: List<CatalogItem>, token: Long) {
-        val cache = store(requireNotNull(liveCategoryScope(credentials)), kind)
+        val key = requireNotNull(liveCategoryScope(credentials))
+        val cache = store(key, kind)
         cache.load()
         if (cache.error.value != null) { mutable.value = mutable.value.copy(error = cache.error.value); return }
+        val cloud = FavoriteCloudSession.catalogClient(key)
+        if (cloud != null) {
+            val catalog = if (kind == CatalogKind.MOVIES) "movie" else "series"
+            val ids = items.map { it.id }.toSet()
+            var cursor = 0L
+            while (currentCoroutineContext().isActive && token == revision &&
+                FavoriteCloudSession.catalogClient(key) === cloud) {
+                val records = mutableMapOf<Int, DesktopGenreRecord>()
+                var hasMore = false
+                for (batch in 0 until 8) {
+                    val page = cloud.catalogGenres(catalog, cursor)?.takeIf { it.available } ?: break
+                    if (token != revision || FavoriteCloudSession.catalogClient(key) !== cloud) return
+                    val now = System.currentTimeMillis()
+                    for (item in page.items) {
+                        val genre = item.genre?.takeIf { GenreUtils.extractNormalizedGenres(it).isNotEmpty() }
+                        if (genre != null && item.id in ids && cache.state.value.records[item.id]?.genre != genre) {
+                            records[item.id] = DesktopGenreRecord(item.id, genre, "SUCCESS", now)
+                        }
+                    }
+                    hasMore = page.hasMore && page.next > cursor
+                    cursor = page.next
+                    if (!hasMore) break
+                }
+                if (records.isNotEmpty()) {
+                    if (!cache.update { it.copy(records = it.records + records) }) return
+                    if (token != revision || FavoriteCloudSession.catalogClient(key) !== cloud) return
+                    publish(kind, cache.state.value.records)
+                }
+                val known = ids.count { cache.state.value.records[it]?.genre != null }
+                val status = cloud.catalogStatus(catalog)
+                if (token != revision || FavoriteCloudSession.catalogClient(key) !== cloud) return
+                mutable.value = DesktopPreparationState(kind = kind, total = status?.total ?: ids.size,
+                    done = status?.prepared ?: known, withGenre = known, failed = status?.failed ?: 0,
+                    speed = speed, serverManaged = true, message = "Preparação no servidor",
+                    error = if (status == null) "Estado do servidor indisponível." else null)
+                delay(if (hasMore) 2_000L else 30_000L)
+            }
+            return
+        }
         val ordered = withContext(Dispatchers.Default) { items.distinctBy { it.id }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }) }
         val ready = java.util.ArrayDeque<CatalogItem>()
         val waiting = java.util.TreeMap<Long, MutableList<CatalogItem>>()
