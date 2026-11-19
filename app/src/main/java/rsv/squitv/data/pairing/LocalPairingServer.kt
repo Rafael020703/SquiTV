@@ -6,6 +6,7 @@ import timber.log.Timber
 import java.io.BufferedInputStream
 import java.io.OutputStream
 import java.net.Inet4Address
+import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
@@ -34,7 +35,14 @@ class LocalPairingServer(
 
     suspend fun start(): Int = withContext(Dispatchers.IO) {
         if (isRunning.get()) return@withContext actualPort
-        val listener = ServerSocket(port).apply { reuseAddress = true }
+        val listener = ServerSocket()
+        try {
+            listener.reuseAddress = true
+            listener.bind(InetSocketAddress(port))
+        } catch (failure: Exception) {
+            runCatching { listener.close() }
+            throw failure
+        }
         require(listener.isBound && !listener.isClosed && (port == 0 || listener.localPort == port))
         serverSocket = listener
         actualPort = listener.localPort
