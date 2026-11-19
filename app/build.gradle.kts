@@ -15,6 +15,7 @@ plugins {
 
 android {
     sourceSets.getByName("main").kotlin.directories.add(rootProject.file("uiCommon/src/main/kotlin").absolutePath)
+    sourceSets.getByName("main").assets.directories.add(rootProject.file("account-service/portal/profile-avatars").absolutePath)
     namespace = "rsv.squitv"
     compileSdk = 37
 
@@ -22,8 +23,8 @@ android {
         applicationId = "rsv.squitv"
         minSdk = 24
         targetSdk = 35
-        versionCode = 31
-        versionName = "1.28"
+        versionCode = 32
+        versionName = "1.29"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

@@ -51,7 +51,7 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
     var volumeNotice by remember { mutableStateOf<Int?>(null) }
     var volumeRevision by remember { mutableIntStateOf(0) }
     LaunchedEffect(volumeRevision) { delay(1500); volumeNotice = null }
-    val accountScope = remember(account) { liveCategoryScope(account) }
+    val accountScope = controller.profileDataScope(account)
     val catalogKind = if (session.series) CatalogKind.SERIES else CatalogKind.MOVIES
     val isFavorite = preferences.isCatalogFavorite(accountScope, catalogKind, session.catalogId)
     val historyError = controller.watchHistory?.error?.collectAsState()?.value
@@ -161,7 +161,7 @@ internal fun VodPlayerScreen(session: VodSession, account: ServerCredentials, co
         controller.awaitWatchSave()
         val saved = accountScope?.let { controller.watchHistory?.resume(it, session) }
         val address = if (session.localDownloadKey != null) {
-            val file = accountScope?.let { controller.downloads?.localFile(session.localDownloadKey, it) }
+            val file = liveCategoryScope(account)?.let { controller.downloads?.localFile(session.localDownloadKey, it) }
             if (file == null) {
                 engine.localMediaUnavailable(session.id)
                 return@LaunchedEffect

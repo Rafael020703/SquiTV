@@ -78,6 +78,7 @@
     <string name="row_fav_movies">Películas Favoritas</string>
     <string name="row_fav_series">Series Favoritas</string>
     <string name="row_continue_watching">Continuar Viendo</string>
+    <string name="remove_from_continue_watching">Quitar de Continuar viendo</string>
     <string name="row_recommended">Recomendado para Ti</string>
     <string name="row_featured_channels">Canales Destacados</string>
     <string name="permissions_label">Permisos</string>
@@ -633,4 +634,7 @@
     <string name="category_section_genres">FILTROS POR GÉNERO</string>
     <string name="category_section_server">CATEGORÍAS DEL SERVIDOR</string>
     <string name="updater_signature_unavailable">No se pudieron leer los certificados de firma en este dispositivo. La instalación no se ha iniciado. Puedes abrir la publicación en GitHub para obtener el APK oficial.</string>
+    <string name="remove_continue_watching_failed">No se pudo quitar de Continuar viendo.</string>
+    <string name="search_in_category">Buscar en esta categoría</string>
+    <string name="app_dns_settings">DNS de la aplicación</string>
 </resources>

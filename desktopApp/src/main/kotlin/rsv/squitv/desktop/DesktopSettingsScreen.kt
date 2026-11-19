@@ -72,10 +72,11 @@ private enum class DesktopSetting(val label: String, val icon: ImageVector) {
     ZOOM("Zoom da Interface", Icons.Rounded.ZoomIn),
     AUTO_PLAY("Auto-reprodução de Episódios", Icons.AutoMirrored.Rounded.PlaylistPlay),
     LIVE_CHANNELS("Canais ao vivo", Icons.Rounded.Tune),
-    SYNC_CATALOG("Atualizar categorias ao vivo", Icons.Rounded.Sync),
+    SYNC_CATALOG("Sincronizar catálogo", Icons.Rounded.Sync),
     ACCOUNT_SYNC("Sincronizar agora", Icons.Rounded.CloudSync),
     CREDITS("Créditos", Icons.Rounded.Info),
     UPDATES("Atualizações", Icons.Rounded.SystemUpdate),
+    APP_DNS("DNS do aplicativo", Icons.Rounded.Dns),
     DNS("Testador de DNS", Icons.Rounded.Dns),
     CLEAR_CACHE("Limpar cache de catálogos", Icons.Rounded.Brush)
 }
@@ -87,6 +88,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
     val catalogState by controller.catalog.state.collectAsState()
     val scope = rememberCoroutineScope()
     val accountScope = remember(state.credentials) { liveCategoryScope(state.credentials) }
+    val categoryScope = controller.profileDataScope(state.credentials)
     var showAccountSync by remember { mutableStateOf(false) }
     val error by store.error.collectAsState()
     val loaded by store.loaded.collectAsState()
@@ -138,7 +140,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
     val customizationCategories = customizationKind?.let { catalogState.browse[it]?.categories }.orEmpty()
         .let { if (customizationKind == null) state.categories else it }
     val categoryScroll = key(customizationKind) { rememberLazyListState() }
-    val categoryFocus = remember(accountScope, customizationKind) { mutableMapOf<String, FocusRequester>() }
+    val categoryFocus = remember(categoryScope, customizationKind) { mutableMapOf<String, FocusRequester>() }
     var movingCategory by remember { mutableStateOf(false) }
     var confirmCategoryReset by remember(accountScope, customizationKind) { mutableStateOf(false) }
     LaunchedEffect(selected, customizationKind, state.credentials) {
@@ -148,7 +150,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
     }
     fun moveCategory(id: String, offset: Int = 0, position: Int? = null) {
         if (movingCategory) return
-        val key = accountScope ?: return
+        val key = categoryScope ?: return
         val targetKind = customizationKind
         val available = customizationCategories
         movingCategory = true
@@ -201,6 +203,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                             when (category) {
                                 DesktopSetting.SIGN_OUT -> controller.disconnect()
                                 DesktopSetting.UPDATES -> controller.openUpdates()
+                                DesktopSetting.APP_DNS -> controller.openAppDns()
                                 DesktopSetting.ACCOUNT_SYNC -> showAccountSync = true
                                 DesktopSetting.SYNC_CATALOG -> {
                                     controller.syncCatalog()
@@ -225,13 +228,14 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
     if (showAccountSync) {
         val session by FavoriteCloudSession.state.collectAsState()
         val active = session?.takeIf { it.localAccount == accountScope }
-        val local = remember(active, store, controller) {
+        val local = remember(active, store, controller, categoryScope) {
             active?.let { account ->
-                store.favoriteCloudStore(account.localAccount, account.client.scopeId, onProgressApplied = { boundAt, rows ->
+                val dataScope = categoryScope ?: return@let null
+                store.favoriteCloudStore(dataScope, account.client.scopeId, onProgressApplied = { boundAt, rows ->
                     if (FavoriteCloudSession.state.value !== account ||
-                        liveCategoryScope(controller.state.value.credentials) != account.localAccount)
+                        controller.profileDataScope(controller.state.value.credentials) != dataScope)
                         throw IllegalStateException("A conta ativa mudou.")
-                    controller.watchHistory?.applyCloudProgress(account.localAccount, boundAt, rows)
+                    controller.watchHistory?.applyCloudProgress(dataScope, boundAt, rows)
                 }) { kind, id ->
                     val type = when (kind) {
                         "live" -> DesktopSearchType.LIVE
@@ -281,7 +285,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                             state.accountError?.let { Text(it, color = palette.error) }
                             if (state.managingAccounts) LinearProgressIndicator(Modifier.fillMaxWidth())
                             OutlinedButton(controller::refreshAccountInfo, enabled = !state.managingAccounts && !state.busy) { Text("Atualizar dados da conta") }
-                            Text("CONTAS SALVAS", style = MaterialTheme.typography.labelSmall, color = palette.primary)
+                            Text("Contas salvas", style = MaterialTheme.typography.labelSmall, color = palette.primary)
                             state.savedAccounts.forEach { saved ->
                                 val id = liveCategoryScope(saved).orEmpty()
                                 val name = rsv.squitv.shared.account.AccountPresentation.displayName(preferences.displayNamesByAccount[id], saved.username)
@@ -303,7 +307,9 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
 
                             state.account?.let { account ->
                                 val savedName = preferences.displayNamesByAccount[accountScope].orEmpty()
-                                val shownName = rsv.squitv.shared.account.AccountPresentation.displayName(savedName, account.username)
+                                val portalIdentity = state.portalLinkId != null || !state.portalDisplayName.isNullOrBlank()
+                                val shownName = rsv.squitv.shared.account.AccountPresentation.displayName(
+                                    if (portalIdentity) state.portalDisplayName else savedName, state.credentials?.username ?: account.username)
                                 var nameInput by remember(accountScope, savedName) { mutableStateOf(savedName) }
                                 var savingName by remember { mutableStateOf(false) }
                                 var nameNotice by remember(accountScope) { mutableStateOf<String?>(null) }
@@ -338,28 +344,30 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                                         Spacer(Modifier.width(12.dp))
                                         Column(Modifier.weight(1f)) {
                                             Text(
-                                                shownName.uppercase(Locale.ROOT),
+                                                shownName,
                                                 style = MaterialTheme.typography.titleMedium,
                                                 fontWeight = FontWeight.Bold,
                                                 color = palette.onSurface,
                                                 maxLines = 1, overflow = TextOverflow.Ellipsis
                                             )
                                             Text(
-                                                "STATUS: ${account.status.uppercase(Locale.ROOT)}",
+                                                "Status: ${account.status}",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = palette.primary
                                             )
                                         }
                                     }
                                 }
-                                OutlinedTextField(nameInput, { nameInput = it; nameNotice = null },
+                                if (portalIdentity) Text("O nome de exibição desta conta é gerenciado no site Squi TV.",
+                                    color = palette.onSurfaceVariant)
+                                if (!portalIdentity) OutlinedTextField(nameInput, { nameInput = it; nameNotice = null },
                                     label = { Text("Nome de exibição") }, singleLine = true,
                                     placeholder = { Text(account.username) },
                                     supportingText = { Text("Deixe vazio para usar o usuário do servidor. Até 256 caracteres.") },
                                     isError = nameInput.trim().length > 256,
                                     enabled = loaded && accountScope != null && !savingName,
                                     modifier = Modifier.fillMaxWidth())
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                if (!portalIdentity) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Button(onClick = { saveName(nameInput) },
                                         enabled = loaded && accountScope != null && !savingName && nameInput.trim().length <= 256) {
                                         Text(if (savingName) "Salvando…" else "Salvar nome")
@@ -455,13 +463,14 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                             }
                         }
                         DesktopSetting.SYNC_CATALOG -> {
-                            Text("Atualiza as categorias ao vivo do servidor. As listas de filmes e séries continuam sob demanda.",
+                            Text("Busca as listas e categorias de canais ao vivo, filmes e séries no servidor.",
                                 style = MaterialTheme.typography.bodyMedium)
-                            when {
-                                state.refreshingCatalog -> LinearProgressIndicator(Modifier.fillMaxWidth())
-                                state.catalogSyncError != null -> Text(state.catalogSyncError, color = palette.error)
-                                state.notice != null -> Text(state.notice, color = palette.onSurfaceVariant)
+                            if (state.refreshingCatalog) {
+                                state.catalogSyncStage?.let { Text("Atualizando $it…") }
+                                LinearProgressIndicator(Modifier.fillMaxWidth())
                             }
+                            state.catalogSyncResult?.let { Text(it, color = palette.onSurfaceVariant) }
+                            state.catalogSyncError?.let { Text(it, color = palette.error) }
                             Button(controller::syncCatalog, enabled = !state.refreshingCatalog) {
                                 Text(if (state.refreshingCatalog) "Atualizando…" else "Atualizar agora")
                             }
@@ -574,15 +583,15 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                             CatalogKind.entries.forEach { kind ->
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Text(kind.title, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-                                    CatalogModeSelector(preferences.catalogMode(accountScope.orEmpty(), kind), accountScope != null) { mode ->
-                                        accountScope?.let { key -> store.update { it.withCatalogMode(key, kind, mode) } }
+                                    CatalogModeSelector(preferences.catalogMode(categoryScope.orEmpty(), kind), categoryScope != null) { mode ->
+                                        categoryScope?.let { key -> store.update { it.withCatalogMode(key, kind, mode) } }
                                     }
                                 }
                             }
                         }
                         DesktopSetting.CATALOG_CATEGORIES -> {
                             val targetKind = customizationKind
-                            val key = accountScope.orEmpty()
+                            val key = categoryScope.orEmpty()
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf(null to "Ao vivo", CatalogKind.MOVIES to "Filmes", CatalogKind.SERIES to "Séries").forEach { (kind, label) ->
                                     FilterChip(targetKind == kind, { customizationKind = kind }, { Text(label) }, enabled = !movingCategory)
@@ -596,7 +605,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                             val options = targetKind?.let { catalogState.browse[it] }
                             val loading = if (targetKind == null) state.busy || state.refreshingCatalog
                                 else options == null || options.loadingCategories
-                            val optionsError = if (targetKind == null) state.catalogSyncError else options?.error
+                            val optionsError = if (targetKind == null) state.liveCatalogSyncError else options?.error
                             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                             optionsError?.let { Text(it, color = palette.error, style = MaterialTheme.typography.bodySmall) }
                             val hidden = preferences.hiddenCategories(key, targetKind)
@@ -608,7 +617,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                                 Row {
                                     TextButton({ confirmCategoryReset = false }) { Text("Cancelar") }
                                     TextButton({
-                                        val key = accountScope ?: return@TextButton
+                                        val key = categoryScope ?: return@TextButton
                                         movingCategory = true
                                         scope.launch {
                                             try {
@@ -621,7 +630,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                                 }
                             } else Row {
                                 TextButton({ store.update {
-                                    val key = accountScope ?: return@update it
+                                    val key = categoryScope ?: return@update it
                                     it.withHiddenCategories(key, targetKind, emptySet())
                                 } }, enabled = hidden.isNotEmpty() && !movingCategory) { Text("Mostrar todas") }
                                 TextButton({ confirmCategoryReset = true }, enabled = !movingCategory) { Text("Restaurar padrão") }
@@ -629,7 +638,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                             if (categories.isEmpty() && !loading) {
                                 Text("Nenhuma categoria carregada no momento.", style = MaterialTheme.typography.bodySmall, color = palette.onSurfaceVariant)
                                 TextButton({
-                                    if (targetKind == null) controller.syncCatalog()
+                                    if (targetKind == null) controller.refreshLiveCatalog()
                                     else state.credentials?.let { controller.catalog.loadCategoryOptions(targetKind, it, force = true) }
                                 }) { Text("Tentar novamente") }
                             } else {
@@ -640,7 +649,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                                         Row(
                                             Modifier.fillMaxWidth().clickable {
                                                 store.update { p ->
-                                                    val key = accountScope ?: return@update p
+                                                    val key = categoryScope ?: return@update p
                                                     val old = p.hiddenCategories(key, targetKind)
                                                     val next = if (cat.id in old) old - cat.id else old + cat.id
                                                     p.withHiddenCategories(key, targetKind, next)
@@ -666,7 +675,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                                             }
                                             Switch(checked = !hidden, modifier = Modifier.focusRequester(toggleFocus), onCheckedChange = { visible ->
                                                 store.update { p ->
-                                                    val key = accountScope ?: return@update p
+                                                    val key = categoryScope ?: return@update p
                                                     val old = p.hiddenCategories(key, targetKind)
                                                     val next = if (!visible) old + cat.id else old - cat.id
                                                     p.withHiddenCategories(key, targetKind, next)
@@ -691,7 +700,7 @@ internal fun DesktopSettingsScreen(state: DesktopState, controller: DesktopContr
                                 Text(if (state.testingDns) "Testando…" else "Testar novamente")
                             }
                         }
-                        DesktopSetting.SIGN_OUT, DesktopSetting.UPDATES, DesktopSetting.ACCOUNT_SYNC -> Unit
+                        DesktopSetting.SIGN_OUT, DesktopSetting.UPDATES, DesktopSetting.ACCOUNT_SYNC, DesktopSetting.APP_DNS -> Unit
                     }
                 }
             })

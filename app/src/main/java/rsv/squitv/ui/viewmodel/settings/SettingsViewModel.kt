@@ -72,9 +72,4 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.resetHiddenSections() }
     }
 
-    fun updateProfilePicture(url: String) {
-        viewModelScope.launch {
-            settingsRepository.updateProfilePicture(url)
-        }
-    }
 }

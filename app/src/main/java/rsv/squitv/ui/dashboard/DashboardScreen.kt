@@ -16,11 +16,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import rsv.squitv.R
@@ -34,11 +34,8 @@ import rsv.squitv.core.ui.components.navigation.AppHeader
 import rsv.squitv.core.ui.theme.*
 import rsv.squitv.core.ui.components.common.DigitalClock
 import rsv.squitv.ui.viewmodel.MainViewModel
-import rsv.squitv.ui.viewmodel.library.LibraryViewModel
 import rsv.squitv.data.model.UserInfo
 import rsv.squitv.data.model.XtreamCredentials
-import rsv.squitv.domain.model.ContentType
-import rsv.squitv.domain.model.IptvItem
 import rsv.squitv.domain.model.SessionStatus
 import rsv.squitv.domain.model.UserProfile
 import rsv.squitv.core.ui.components.common.DigitalDate
@@ -46,31 +43,75 @@ import rsv.squitv.util.DeviceType
 import rsv.squitv.util.WindowInfo
 import rsv.squitv.util.rememberWindowInfo
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
+
+@Composable
+private fun profilePhoto(avatar: String?): androidx.compose.ui.graphics.ImageBitmap? {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    return remember(avatar, context) {
+        rsv.squitv.shared.account.ProfileAvatar.photoBytes(avatar)?.let { bytes ->
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        } ?: rsv.squitv.shared.account.ProfileAvatar.animalPhotoName(avatar)?.let { name ->
+            runCatching { context.assets.open(name).use { android.graphics.BitmapFactory.decodeStream(it)?.asImageBitmap() } }.getOrNull()
+        }
+    }
+}
 
 @UnstableApi
 @Composable
 fun DashboardScreen(
     viewModel: MainViewModel,
-    libraryViewModel: LibraryViewModel = hiltViewModel(),
     onNavigateToCategory: (String, String?) -> Unit,
     onNavigateToMultiView: () -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
-    onNavigateToAccount: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToDownloads: () -> Unit = {},
-    onNavigateToUpdates: () -> Unit = {},
-    onNavigateToAppDns: () -> Unit = {}
+    onNavigateToUpdates: () -> Unit = {}
 ) {
     val windowInfo = rememberWindowInfo()
     val accountInfo by viewModel.accountInfo.collectAsStateWithLifecycle()
     val sessionStatus by viewModel.sessionStatus.collectAsStateWithLifecycle()
     val activeProfile by viewModel.activeProfile.collectAsStateWithLifecycle()
+    val profiles by viewModel.profiles.collectAsStateWithLifecycle()
+    var showProfiles by remember { mutableStateOf(false) }
+    var editProfile by remember { mutableStateOf<UserProfile?>(null) }
+    var editingProfile by remember { mutableStateOf(false) }
+    val cloudSession by rsv.squitv.shared.account.FavoriteCloudSession.state.collectAsStateWithLifecycle()
+    val profile = activeProfile
+    val activePhoto = key(cloudSession, profile?.id, profile?.avatar) {
+        produceState<androidx.compose.ui.graphics.ImageBitmap?>(null) {
+            if (cloudSession == null || profile == null || !profile.avatar.startsWith("data:image/png;")) return@produceState
+            try {
+                val photo = viewModel.activePortalProfilePhoto(profile) ?: return@produceState
+                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeByteArray(photo, 0, photo.size, bounds)
+                    if (bounds.outWidth != 1080 || bounds.outHeight != 1080) return@withContext null
+                    val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = 2 }
+                    android.graphics.BitmapFactory.decodeByteArray(photo, 0, photo.size, options)?.asImageBitmap()
+                }
+            } catch (failure: kotlinx.coroutines.CancellationException) {
+                throw failure
+            } catch (_: Exception) { /* Keep the locally available avatar. */ }
+        }.value
+    }
+    var portalProfiles by remember(cloudSession) { mutableStateOf<List<Pair<UserProfile, rsv.squitv.shared.account.CloudProfile>>>(emptyList()) }
+    var profileBusy by remember { mutableStateOf(false) }
+    var profileError by remember { mutableStateOf<String?>(null) }
+    val profileScope = rememberCoroutineScope()
+    LaunchedEffect(showProfiles, cloudSession) {
+        if (!showProfiles || cloudSession == null) return@LaunchedEffect
+        profileBusy = true
+        profileError = null
+        try { portalProfiles = viewModel.portalProfiles() }
+        catch (failure: kotlinx.coroutines.CancellationException) { throw failure }
+        catch (failure: Exception) { profileError = failure.message ?: "Não foi possível carregar os perfis da conta." }
+        finally { profileBusy = false }
+    }
     val progress by viewModel.syncProgress.collectAsStateWithLifecycle()
     val isContentReady by viewModel.isContentReady.collectAsStateWithLifecycle()
-    val newlyAdded by viewModel.newlyAdded.collectAsStateWithLifecycle()
-    val watchProgress by libraryViewModel.watchProgress.collectAsStateWithLifecycle()
     val availableUpdatePrompt by viewModel.availableUpdatePrompt.collectAsStateWithLifecycle()
     val customDisplayName by viewModel.customDisplayName.collectAsStateWithLifecycle()
     val hiddenSections by viewModel.hiddenSections.collectAsStateWithLifecycle()
@@ -97,12 +138,55 @@ fun DashboardScreen(
         onNavigateToCategory = onNavigateToCategory,
         onNavigateToMultiView = onNavigateToMultiView,
         onNavigateToSearch = onNavigateToSearch,
-        onNavigateToAccount = onNavigateToAccount,
         onNavigateToSettings = onNavigateToSettings,
         onNavigateToDownloads = onNavigateToDownloads,
-        onNavigateToAppDns = onNavigateToAppDns,
-        onRefresh = { viewModel.loadData(force = true) }
+        onRefresh = { viewModel.loadData(force = true) },
+        onProfiles = { showProfiles = true },
     )
+
+    if (showProfiles) {
+        val available = (portalProfiles.map { it.first } + profiles).distinctBy { it.id }
+        rsv.squitv.core.ui.components.ProfilePickerDialog(
+            available.map { rsv.squitv.core.ui.components.ProfileCardEntry(it.id, it.name, it.avatar,
+                if (portalProfiles.any { (profile, _) -> profile.id == it.id }) "Conta Squi TV" else "Neste aparelho") },
+            activeProfile?.id, profileBusy, profileError,
+            onSelect = { id ->
+                val profile = available.firstOrNull { it.id == id }
+                val cloud = portalProfiles.firstOrNull { it.first.id == id }?.second
+                if (id == activeProfile?.id) showProfiles = false
+                else if (profile != null && cloud == null) {
+                    viewModel.selectProfile(profile)
+                    showProfiles = false
+                } else if (profile != null && cloud != null && !profileBusy) profileScope.launch {
+                    profileBusy = true
+                    profileError = null
+                    try {
+                        viewModel.selectPortalProfile(profile, cloud)
+                        showProfiles = false
+                    } catch (failure: kotlinx.coroutines.CancellationException) {
+                        throw failure
+                    } catch (failure: Exception) {
+                        profileError = failure.message ?: "Não foi possível trocar de perfil."
+                    } finally { profileBusy = false }
+                }
+            },
+            onEdit = { id -> editProfile = available.firstOrNull { it.id == id }; editingProfile = true; showProfiles = false },
+            onCreate = { editProfile = null; editingProfile = true; showProfiles = false },
+            onDismiss = { showProfiles = false },
+            photo = { profilePhoto(it) },
+        )
+    }
+    if (editingProfile) {
+        rsv.squitv.core.ui.components.ProfileAppearanceDialog(editProfile?.name.orEmpty(), editProfile?.avatar,
+            onDismiss = { editingProfile = false; showProfiles = true },
+            photo = { profilePhoto(it) },
+            onSave = { name, avatar ->
+                val cloud = portalProfiles.firstOrNull { it.first.id == editProfile?.id }?.second
+                if (cloud != null || editProfile == null && cloudSession != null)
+                    viewModel.personalizePortalProfile(cloud, name, avatar)
+                else viewModel.personalizeProfile(editProfile, name, avatar)
+            })
+    }
 
     PortalBackground(showAtmosphere = true) {
         DashboardContent(
@@ -110,9 +194,8 @@ fun DashboardScreen(
             sessionStatus = sessionStatus,
             syncProgress = progress,
             isContentReady = isContentReady,
-            newlyAdded = newlyAdded,
-            watchProgress = watchProgress,
             activeProfile = activeProfile,
+            activePhoto = activePhoto,
             accountInfo = accountInfo,
             credentials = credentials,
             customDisplayName = customDisplayName,
@@ -144,11 +227,10 @@ data class DashboardActions(
     val onNavigateToCategory: (String, String?) -> Unit,
     val onNavigateToMultiView: () -> Unit,
     val onNavigateToSearch: () -> Unit,
-    val onNavigateToAccount: () -> Unit,
     val onNavigateToSettings: () -> Unit,
     val onNavigateToDownloads: () -> Unit,
     val onRefresh: () -> Unit,
-    val onNavigateToAppDns: () -> Unit = {}
+    val onProfiles: () -> Unit = {},
 )
 
 @UnstableApi
@@ -158,9 +240,8 @@ fun DashboardContent(
     sessionStatus: SessionStatus,
     syncProgress: AppSyncProgress,
     isContentReady: Boolean,
-    newlyAdded: Map<ContentType, List<IptvItem>>,
-    watchProgress: Map<Int, Float>,
     activeProfile: UserProfile?,
+    activePhoto: androidx.compose.ui.graphics.ImageBitmap? = null,
     accountInfo: UserInfo?,
     credentials: XtreamCredentials?,
     customDisplayName: String? = null,
@@ -171,7 +252,6 @@ fun DashboardContent(
     val tokens = AppDesignSystem
     val responsive = tokens.responsive
     val firstItemFocusRequester = remember { FocusRequester() }
-    val scrollState = rememberScrollState()
     
     // Use responsive metrics instead of fixed screen width checks
     val isNarrow = responsive.widthDp < 600.dp
@@ -208,31 +288,23 @@ fun DashboardContent(
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        modifier = Modifier.size(responsive.dp(if (isNarrow) 48.dp else 64.dp)),
-                        shape = CircleShape,
-                        color = tokens.colors.primary.copy(alpha = 0.1f),
-                        border = BorderStroke(responsive.dp(2.dp), tokens.colors.primary.copy(alpha = 0.3f))
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Rounded.Person,
-                                contentDescription = null,
-                                tint = tokens.colors.primary,
-                                modifier = Modifier.size(responsive.dp(if (isNarrow) 32.dp else 40.dp))
-                            )
-                        }
-                    }
+                    rsv.squitv.core.ui.components.ProfileAvatarBadge(activeProfile?.avatar, activeProfile?.name.orEmpty(),
+                        Modifier.size(responsive.dp(if (isNarrow) 48.dp else 64.dp)),
+                        activePhoto ?: profilePhoto(activeProfile?.avatar), onClick = actions.onProfiles)
                     Spacer(Modifier.width(responsive.dp(tokens.spacing.large)))
                     Column {
                         val nameToDisplay = rsv.squitv.shared.account.AccountPresentation.displayName(
-                            customDisplayName, accountInfo?.username ?: credentials?.username ?: activeProfile?.name ?: "USUÁRIO")
+                            customDisplayName, credentials?.username ?: accountInfo?.username ?: "Usuário")
                         Text(
-                            text = "OLÁ, ${nameToDisplay.uppercase()}",
+                            text = "Olá, $nameToDisplay",
                             style = tokens.typography.display.copy(fontSize = titleSize),
                             fontWeight = FontWeight.Black,
-                            color = tokens.colors.textPrimary
+                            color = tokens.colors.textPrimary,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         )
+                        activeProfile?.let { Text("Perfil: ${it.name}", style = tokens.typography.caption, maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
                         Text(
                             text = "PLANO PREMIUM • EXPIRA EM: $expDate",
                             style = tokens.typography.caption.copy(fontSize = subtitleSize * 0.8f),
@@ -256,19 +328,11 @@ fun DashboardContent(
                         onClick = actions.onNavigateToSearch,
                         modifier = Modifier.size(responsive.dp(48.dp))
                     )
-                    if (!isNarrow) {
-                        AppIconButton(
-                            icon = Icons.Rounded.Notifications, 
-                            onClick = { /* Notifications */ },
-                            modifier = Modifier.size(responsive.dp(48.dp))
-                        )
-                    }
                     AppIconButton(
                         icon = Icons.Rounded.Settings, 
                         onClick = actions.onNavigateToSettings,
                         modifier = Modifier.size(responsive.dp(48.dp))
                     )
-                    FilledTonalButton(onClick = actions.onNavigateToAppDns) { Text("DNS") }
                     
                     Spacer(Modifier.width(responsive.dp(tokens.spacing.medium)))
                     

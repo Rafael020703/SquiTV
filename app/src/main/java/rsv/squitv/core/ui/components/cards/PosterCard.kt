@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material3.*
@@ -24,6 +25,7 @@ fun PosterCard(
     modifier: Modifier = Modifier,
     progress: Float? = null,
     onToggleFavorite: (() -> Unit)? = null,
+    onRemoveFromContinueWatching: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
@@ -53,13 +55,20 @@ fun PosterCard(
             }
         },
         badges = {
-            if (onToggleFavorite != null) {
-                CardFavoriteButton(
-                    isFavorite = item.isFavorite,
-                    contentName = item.name,
-                    onClick = onToggleFavorite,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(badgePadding)
+            if (onRemoveFromContinueWatching != null) {
+                CompactCardActionButton(
+                    icon = Icons.Rounded.Close,
+                    description = "${item.name}: ${androidx.compose.ui.res.stringResource(rsv.squitv.R.string.remove_from_continue_watching)}",
+                    onClick = onRemoveFromContinueWatching,
+                    background = tokens.colors.background.copy(alpha = .68f),
+                    foreground = tokens.colors.textPrimary,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(badgePadding)
+                        .adaptiveFocus(shape = CircleShape, focusedScale = 1f),
                 )
+            }
+            if (onToggleFavorite != null) {
+                CardFavoriteButton(item.isFavorite, item.name, onToggleFavorite,
+                    Modifier.align(Alignment.TopEnd).padding(badgePadding))
             } else if (item.isFavorite) {
                 Surface(
                     color = tokens.colors.background.copy(alpha = 0.6f),

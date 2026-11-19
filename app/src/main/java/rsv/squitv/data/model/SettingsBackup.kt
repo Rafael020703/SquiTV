@@ -53,7 +53,8 @@ data class BackupAccount(
 data class BackupCategories(val order: List<String>? = null, val hidden: Set<String>? = null)
 
 @Serializable
-data class BackupProfile(val id: String, val name: String, val iconUrl: String? = null, val isChild: Boolean = false)
+data class BackupProfile(val id: String, val name: String, val iconUrl: String? = null, val isChild: Boolean = false,
+    val avatar: String? = null, val portalManaged: Boolean? = null)
 
 enum class BackupOption(val preferenceKey: String? = null) {
     GROUP_CHANNELS("groupLiveChannels"), CHANNEL_QUALITY("preferredChannelQuality"),
@@ -89,6 +90,22 @@ object SettingsBackupCodec {
             fingerprint(key) to key
         }
 
+    // The default profile owns the legacy account-wide keys. Other profiles start independently.
+    private fun categoryScope(accountKey: String, profileId: String): String {
+        val account = accountKey.lowercase(Locale.ROOT).trim()
+        return if (profileId == "default") account else "profile:${fingerprint("$account\u0000$profileId")}"
+    }
+
+    fun categoryKey(accountKey: String, profileId: String, type: String): String =
+        "${categoryScope(accountKey, profileId)}_${type.lowercase(Locale.ROOT).trim()}"
+
+    internal fun configuredCategoryScopes(settings: SettingsRepository.AppSettings, extraProfiles: List<String>): Map<String, String> {
+        val profileIds = (settings.profiles.map { it.id } + extraProfiles + "default").distinct()
+        return configuredAccounts(settings).values.flatMap { account ->
+            profileIds.map { categoryScope(account, it) }
+        }.associateBy(::fingerprint)
+    }
+
     fun create(settings: SettingsRepository.AppSettings): SettingsBackup {
         val groups = linkedMapOf<String, MutableMap<String, BackupCategories>>()
         (settings.categoryOrderMap.keys + settings.hiddenCategoriesMap.keys).forEach { key ->
@@ -121,7 +138,7 @@ object SettingsBackupCodec {
             groups.map { (account, categories) ->
                 BackupAccount(fingerprint(account), categories, settings.displayNamesMap[account].orEmpty())
             }, settings.hiddenSections - "EPG",
-            profiles = settings.profiles.map { BackupProfile(it.id, it.name, it.iconUrl, it.isChild) },
+            profiles = settings.profiles.map { BackupProfile(it.id, it.name, it.iconUrl, it.isChild, it.avatar, it.portalManaged) },
             activeProfileId = settings.activeProfileId, profileImageUrl = settings.profileImageUrl.orEmpty()
         ).also(::validate)
     }
@@ -193,6 +210,7 @@ object SettingsBackupCodec {
             require(profiles.size in 1..256 && profiles.map { it.id }.distinct().size == profiles.size)
             require(profiles.all { it.id.isNotBlank() && it.id.length <= 128 && it.name.isNotBlank() && it.name.length <= 256 })
             require(profiles.all { it.iconUrl == null || it.iconUrl.length <= 16384 })
+            require(profiles.all { it.avatar == null || it.avatar.length <= 3400 })
         }
         backup.activeProfileId?.let { require(it.isNotBlank() && it.length <= 128) }
         backup.profileImageUrl?.let { require(it.length <= 16384) }

@@ -28,10 +28,40 @@ internal data class DesktopPreferences(val schema: Int = 1, val autoPlayEpisodes
     val favoriteCatalogItemsByScope: Map<String, Set<Int>> = emptyMap(),
     val displayNamesByAccount: Map<String, String> = emptyMap(),
     val browseMemory: rsv.squitv.shared.catalog.CatalogBrowseMemory = rsv.squitv.shared.catalog.CatalogBrowseMemory(),
-    val preferredAudioLanguage: String? = null, val preferredSubtitleLanguage: String? = null)
+    val preferredAudioLanguage: String? = null, val preferredSubtitleLanguage: String? = null,
+    val selectedProfileScopes: Map<String, String> = emptyMap())
 
 /** Variant-local preferences only. Credentials remain exclusively in the existing DPAPI store. */
 internal class DesktopPreferencesStore(private val directory: Path, private val scope: CoroutineScope) {
+    fun dataScope(account: String, link: String): String =
+        state.value.selectedProfileScopes[profileSelectionKey(account, link)] ?: account
+
+    internal suspend fun selectProfile(
+        active: rsv.squitv.shared.account.FavoriteCloudSession.Active,
+        profile: rsv.squitv.shared.account.CloudProfile,
+        history: DesktopWatchHistory,
+    ) {
+        val account = active.localAccount
+        val link = active.client.scopeId
+        val legacy = favoriteCloudStore(account, link) { _, _ -> null }.checkpoint()
+        val target = if (legacy?.profile == profile.id) account else profileSelectionKey(account, "$link/${profile.id}")
+        val local = favoriteCloudStore(target, link, { boundAt, rows ->
+            history.applyCloudProgress(target, boundAt, rows)
+        }) { _, _ -> null }
+        val checkpoint = local.checkpoint()
+        if (checkpoint == null) {
+            check(local.snapshot().isEmpty()) { "O perfil possui dados locais sem associação." }
+        }
+        active.client.sync(profile, local, allowImport = checkpoint == null)
+        active.client.reconcileCategories(profile, local)
+        active.client.syncProgress(profile, local)
+        check(rsv.squitv.shared.account.FavoriteCloudSession.state.value === active) { "A conta ativa mudou." }
+        check(updateAndAwait {
+            val key = profileSelectionKey(account, link)
+            it.copy(selectedProfileScopes = if (target == account) it.selectedProfileScopes - key
+                else it.selectedProfileScopes + (key to target))
+        }) { "Não foi possível salvar o perfil selecionado." }
+    }
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val mutex = Mutex()
     private val mutable = MutableStateFlow(DesktopPreferences())
@@ -258,6 +288,9 @@ internal class DesktopPreferencesStore(private val directory: Path, private val 
 }
 
 internal fun validateDesktopPreferences(value: DesktopPreferences) {
+    require(value.selectedProfileScopes.size <= 64 && value.selectedProfileScopes.all { (key, scope) ->
+        key.matches(Regex("[a-f0-9]{64}")) && scope.matches(Regex("[a-f0-9]{64}"))
+    })
     listOf(value.preferredAudioLanguage, value.preferredSubtitleLanguage).forEach {
         require(it == null || rsv.squitv.shared.player.TrackLanguage.normalize(it) == it)
     }
@@ -364,3 +397,7 @@ internal fun liveCategoryScope(account: rsv.squitv.shared.xtream.ServerCredentia
     val identity = "${address.length}:$address${it.username.length}:${it.username}"
     java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8)))
 }
+
+private fun profileSelectionKey(account: String, profile: String): String =
+    java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+        .digest("$account/$profile".toByteArray(Charsets.UTF_8)))

@@ -73,6 +73,7 @@ fun AccountScreen(
             serverUrl = credentials?.baseUrl ?: "N/A",
             username = credentials?.username ?: accountInfo?.username ?: "N/A",
             customDisplayName = customDisplayName,
+            usesPortalIdentity = appSettings.usesPortalIdentity,
             savedAccounts = appSettings.accounts,
             currentAccountIndex = appSettings.currentAccountIndex,
             dbStats = dbStats,
@@ -98,6 +99,7 @@ fun AccountContent(
     serverUrl: String,
     username: String,
     customDisplayName: String? = null,
+    usesPortalIdentity: Boolean = false,
     savedAccounts: List<XtreamCredentials> = emptyList(),
     currentAccountIndex: Int = 0,
     dbStats: Triple<Int, Int, Int> = Triple(0, 0, 0),
@@ -117,18 +119,18 @@ fun AccountContent(
 
     val statusText = remember(accountInfo?.status, sessionStatus) {
         if (sessionStatus == rsv.squitv.domain.model.SessionStatus.OFFLINE) {
-            "MODO OFFLINE"
+            "Modo offline"
         } else {
             val s = accountInfo?.status?.lowercase() ?: ""
-            if (s == "active" || s == "valid") "ATIVO"
-            else if (s == "expired") "EXPIRADO"
-            else if (s.isNotBlank()) s.uppercase()
-            else "CONECTADO"
+            if (s == "active" || s == "valid") "Ativo"
+            else if (s == "expired") "Expirado"
+            else if (s.isNotBlank()) s.replaceFirstChar { it.titlecase() }
+            else "Conectado"
         }
     }
 
-    val isStatusActive = statusText == "ATIVO" || statusText == "CONECTADO"
-    val isStatusOffline = statusText == "MODO OFFLINE"
+    val isStatusActive = statusText == "Ativo" || statusText == "Conectado"
+    val isStatusOffline = statusText == "Modo offline"
     val statusColor = when {
         isStatusActive -> tokens.colors.success
         isStatusOffline -> Color(0xFFFFC107)
@@ -143,7 +145,7 @@ fun AccountContent(
 
     Column(modifier = Modifier.fillMaxSize()) {
         AppHeader(
-            title = "CONTA",
+            title = "Conta",
             subtitle = "Painel da Conta e Servidor",
             actions = {
                 AppIconButton(icon = Icons.Rounded.Refresh, onClick = onRefresh)
@@ -209,7 +211,7 @@ fun AccountContent(
 
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = displayName.uppercase(),
+                                        text = displayName,
                                         style = tokens.typography.headline.copy(fontSize = 20.sp),
                                         fontWeight = FontWeight.Black,
                                         color = tokens.colors.textPrimary,
@@ -243,7 +245,10 @@ fun AccountContent(
                             }
 
                             // Action Row for Display Name Editing
-                            Row(
+                            if (usesPortalIdentity) {
+                                Text("O nome de exibição desta conta é gerenciado no site Squi TV.",
+                                    style = tokens.typography.caption, color = tokens.colors.textSecondary)
+                            } else Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.End,
                                 verticalAlignment = Alignment.CenterVertically
@@ -254,7 +259,7 @@ fun AccountContent(
                                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                                     ) {
                                         Text(
-                                            text = "RESTAURAR NOME PADRÃO",
+                                            text = "Restaurar nome padrão",
                                             fontSize = 11.sp,
                                             color = tokens.colors.error,
                                             fontWeight = FontWeight.Bold
@@ -264,7 +269,7 @@ fun AccountContent(
                                 }
 
                                 AppButton(
-                                    text = if (isEditingName) "CANCELAR" else "EDITAR NOME DE EXIBIÇÃO",
+                                    text = if (isEditingName) "Cancelar" else "Editar nome de exibição",
                                     icon = if (isEditingName) Icons.Rounded.Close else Icons.Rounded.Edit,
                                     onClick = { isEditingName = !isEditingName },
                                     useGradient = false,
@@ -273,7 +278,7 @@ fun AccountContent(
                             }
 
                             // Inline Name Editor Field
-                            if (isEditingName) {
+                            if (isEditingName && !usesPortalIdentity) {
                                 Surface(
                                     color = tokens.colors.surfaceElevated.copy(alpha = 0.5f),
                                     shape = tokens.shapes.medium,
@@ -285,7 +290,7 @@ fun AccountContent(
                                         verticalArrangement = Arrangement.spacedBy(tokens.spacing.small)
                                     ) {
                                         Text(
-                                            text = "INFORME O NOME DE EXIBIÇÃO DESEJADO:",
+                                            text = "Nome de exibição",
                                             style = tokens.typography.caption.copy(fontSize = 10.sp),
                                             color = tokens.colors.textSecondary,
                                             fontWeight = FontWeight.Bold
@@ -323,7 +328,7 @@ fun AccountContent(
                                                 colors = ButtonDefaults.buttonColors(containerColor = tokens.colors.primary, contentColor = Color.Black),
                                                 shape = tokens.shapes.medium
                                             ) {
-                                                Text("SALVAR NOME", fontWeight = FontWeight.Black)
+                                                Text("Salvar nome", fontWeight = FontWeight.Bold)
                                             }
                                         }
                                     }
@@ -333,7 +338,7 @@ fun AccountContent(
                     }
 
                     // SEÇÃO B — STATUS E DADOS DE ACESSO
-                    SectionHeader("STATUS DA ASSINATURA E SERVIDOR")
+                    SectionHeader("Assinatura e servidor")
                     Surface(
                         color = tokens.colors.surface.copy(alpha = 0.1f),
                         shape = tokens.shapes.large,
@@ -343,9 +348,9 @@ fun AccountContent(
                             modifier = Modifier.padding(tokens.spacing.medium),
                             verticalArrangement = Arrangement.spacedBy(tokens.spacing.small)
                         ) {
-                            AccountInfoRow("VALIDADE", formattedExpDate, Icons.Rounded.CalendarToday)
-                            AccountInfoRow("CONEXÕES", "${accountInfo.activeCons ?: "0"} de ${accountInfo.maxConnections ?: "0"} ativas", Icons.Rounded.Dns)
-                            AccountInfoRow("SERVIDOR", serverUrl, Icons.Rounded.CloudQueue)
+                            AccountInfoRow("Validade", formattedExpDate, Icons.Rounded.CalendarToday)
+                            AccountInfoRow("Conexões", "${accountInfo.activeCons ?: "0"} de ${accountInfo.maxConnections ?: "0"} ativas", Icons.Rounded.Dns)
+                            AccountInfoRow("Servidor", serverUrl, Icons.Rounded.CloudQueue)
                         }
                     }
 
@@ -386,7 +391,7 @@ fun AccountContent(
                                             Spacer(Modifier.width(10.dp))
                                             Column {
                                                 Text(
-                                                    text = account.username.uppercase(),
+                                                    text = account.username,
                                                     style = tokens.typography.label.copy(fontSize = 12.sp),
                                                     fontWeight = FontWeight.Bold,
                                                     color = tokens.colors.textPrimary,
@@ -413,7 +418,7 @@ fun AccountContent(
                                                     shape = tokens.shapes.small
                                                 ) {
                                                     Text(
-                                                        text = "SESSÃO ATIVA",
+                                                        text = "Sessão ativa",
                                                         style = tokens.typography.caption.copy(fontSize = 9.sp, fontWeight = FontWeight.Black),
                                                         color = tokens.colors.primary,
                                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -424,7 +429,7 @@ fun AccountContent(
                                                     onClick = { onSwitchAccount(index) },
                                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                                 ) {
-                                                    Text("ALTERAR", fontSize = 11.sp, color = tokens.colors.primary, fontWeight = FontWeight.Bold)
+                                                    Text("Alterar", fontSize = 11.sp, color = tokens.colors.primary, fontWeight = FontWeight.Bold)
                                                 }
                                             }
 
@@ -449,7 +454,7 @@ fun AccountContent(
                                             shape = tokens.shapes.extraLarge,
                                             title = {
                                                 Text(
-                                                    text = "REMOVER CONTA SALVA",
+                                                    text = "Remover conta salva",
                                                     style = tokens.typography.headline.copy(fontSize = 16.sp),
                                                     fontWeight = FontWeight.Black,
                                                     color = tokens.colors.error
@@ -470,12 +475,12 @@ fun AccountContent(
                                                     },
                                                     colors = ButtonDefaults.buttonColors(containerColor = tokens.colors.error)
                                                 ) {
-                                                    Text("REMOVER", fontWeight = FontWeight.Black, color = Color.White)
+                                                    Text("Remover", fontWeight = FontWeight.Black, color = Color.White)
                                                 }
                                             },
                                             dismissButton = {
                                                 TextButton(onClick = { showDeleteConfirm = false }) {
-                                                    Text("CANCELAR", color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold)
+                                                    Text("Cancelar", color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold)
                                                 }
                                             }
                                         )
@@ -486,7 +491,7 @@ fun AccountContent(
                     }
 
                     // SEÇÃO D — SISTEMA E CATÁLOGO
-                    SectionHeader("DISPOSITIVO E CATÁLOGO LOCAL")
+                    SectionHeader("Dispositivo e catálogo local")
                     Surface(
                         color = tokens.colors.surface.copy(alpha = 0.08f),
                         shape = tokens.shapes.large,
@@ -504,9 +509,9 @@ fun AccountContent(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                MiniSystemInfo("IP DE REDE", ipAddress, Icons.Rounded.Public)
-                                MiniSystemInfo("DISPOSITIVO ID", deviceId.take(8).uppercase(), Icons.Rounded.Fingerprint)
-                                MiniSystemInfo("VERSÃO APP", appVersion, Icons.Rounded.Info)
+                                MiniSystemInfo("IP de rede", ipAddress, Icons.Rounded.Public)
+                                MiniSystemInfo("ID do dispositivo", deviceId.take(8).uppercase(), Icons.Rounded.Fingerprint)
+                                MiniSystemInfo("Versão do app", appVersion, Icons.Rounded.Info)
                             }
 
                             if (dbStats.first > 0 || dbStats.second > 0 || dbStats.third > 0) {
@@ -515,7 +520,7 @@ fun AccountContent(
                                     modifier = Modifier.padding(vertical = 4.dp)
                                 )
                                 AccountInfoRow(
-                                    label = "CATÁLOGO SINCRONIZADO",
+                                    label = "Catálogo sincronizado",
                                     value = "${dbStats.first} Canais | ${dbStats.second} Filmes | ${dbStats.third} Séries",
                                     icon = Icons.Rounded.Storage
                                 )
@@ -526,7 +531,7 @@ fun AccountContent(
                     // SEÇÃO E — AÇÕES DA CONTA
                     Spacer(Modifier.height(tokens.spacing.small))
                     AppButton(
-                        text = "SAIR DA CONTA",
+                        text = "Sair da conta",
                         onClick = onLogout,
                         useGradient = false,
                         icon = Icons.AutoMirrored.Rounded.Logout,
@@ -597,7 +602,7 @@ fun AccountInfoRow(
             Text(text = label, style = tokens.typography.caption, color = tokens.colors.textSecondary, fontWeight = FontWeight.Bold)
         }
         Text(
-            text = value.uppercase(), 
+            text = value,
             style = tokens.typography.body.copy(fontSize = 13.sp), 
             color = tokens.colors.textPrimary, 
             fontWeight = FontWeight.Black,

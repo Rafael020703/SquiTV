@@ -19,6 +19,9 @@ class PreparationProgress {
         return ceil(samples.sumOf { it.milliseconds }.toDouble() / resolved * (total - done)).toLong()
     }
     companion object {
+        fun isComplete(total: Int, done: Int, failures: Int, hasError: Boolean): Boolean =
+            total > 0 && done >= total && failures == 0 && !hasError
+
         fun percent(total: Int, done: Int): Int = if (total <= 0) 0 else
             (done.coerceIn(0, total).toLong() * 100 / total).toInt()
         fun duration(milliseconds: Long): String {

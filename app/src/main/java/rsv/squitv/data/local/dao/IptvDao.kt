@@ -316,6 +316,9 @@ interface IptvDao {
     @Query("DELETE FROM watch_progress WHERE streamId = :streamId")
     suspend fun deleteWatchProgress(streamId: Int)
 
+    @Query("DELETE FROM watch_progress WHERE streamId = :streamId AND type = :type AND lastWatched = :lastWatched")
+    suspend fun deleteWatchProgressIfUnchanged(streamId: Int, type: String, lastWatched: Long)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDownload(download: DownloadEntity)
 

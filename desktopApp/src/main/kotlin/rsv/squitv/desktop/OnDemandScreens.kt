@@ -48,8 +48,9 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
     val preferences by store.state.collectAsState()
     val preferencesLoaded by store.loaded.collectAsState()
     val preferencesError by store.error.collectAsState()
-    val account = controller.state.value.credentials
-    val accountScope = remember(account) { liveCategoryScope(account).orEmpty() }
+    val desktopState by controller.state.collectAsState()
+    val account = desktopState.credentials
+    val accountScope = controller.profileDataScope(account).orEmpty()
     val mode = preferences.catalogMode(accountScope, kind)
     var selectedNav by rememberSaveable(accountScope, kind, mode) { mutableStateOf<String?>(null) }
     var selectionRestored by rememberSaveable(accountScope, kind, mode) { mutableStateOf(false) }
@@ -197,8 +198,8 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
             }
         }
     }
-    LaunchedEffect(items, favoriteSelected) {
-        if (favoriteSelected && useFocus && !editingSearch && gridMemory.hasInteracted && savedIndex < 0) {
+    LaunchedEffect(items, favoriteSelected, continueSelected) {
+        if ((favoriteSelected || continueSelected) && useFocus && !editingSearch && gridMemory.hasInteracted && savedIndex < 0) {
             withFrameNanos { }
             if (items.isNotEmpty() && grid.layoutInfo.visibleItemsInfo.none { it.index == focusIndex }) grid.scrollToItem(focusIndex)
             withFrameNanos { }
@@ -230,6 +231,7 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
             TextButton({ controller.catalog.loadAllItems(kind, force = true) }) { Text("Tentar contagens novamente") }
         }
         historyError?.let { StatusNotice(it, error = true) }
+        if (continueSelected) desktopState.notice?.let { StatusNotice(it, error = true) }
         if (favoriteSelected) favoriteSnapshot?.errors?.get(favoriteType)?.let { error ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { StatusNotice(error, error = true) }
@@ -306,7 +308,10 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
                                 CatalogPoster(item, images, modifier, progress = progressByCatalog[item.id]?.progress,
                                     isFavorite = preferences.isCatalogFavorite(accountScope, kind, item.id),
                                     favoriteEnabled = preferencesLoaded && accountScope.isNotEmpty(),
-                                    onToggleFavorite = { store.update { it.toggleCatalogFavorite(accountScope, kind, item.id) } }) {
+                                    onToggleFavorite = { store.update { it.toggleCatalogFavorite(accountScope, kind, item.id) } },
+                                    onRemoveFromContinueWatching = if (continueSelected) {
+                                        { progressByCatalog[item.id]?.let(controller::removeContinueEntry) }
+                                    } else null) {
                                     gridMemory.focusedItem = item.id.toString()
                                     gridMemory.focusedIndex = index
                                     gridMemory.hasInteracted = true
@@ -374,7 +379,8 @@ internal fun DesktopMetadataBadge(text: String) {
 @Composable
 internal fun CatalogPoster(item: CatalogItem, images: ChannelLogos, modifier: Modifier = Modifier,
     progress: Float? = null, isFavorite: Boolean = false, favoriteEnabled: Boolean = true,
-    onToggleFavorite: (() -> Unit)? = null, open: () -> Unit) {
+    onToggleFavorite: (() -> Unit)? = null, onRemoveFromContinueWatching: (() -> Unit)? = null,
+    open: () -> Unit) {
     val interaction = rememberVisualInteraction()
     Surface(onClick = open, interactionSource = interaction.source, modifier = modifier, color = Color.Transparent,
         shape = RoundedCornerShape(AppBrand.CARD_CORNER_DP.dp),
@@ -388,6 +394,18 @@ internal fun CatalogPoster(item: CatalogItem, images: ChannelLogos, modifier: Mo
             progress = progress,
             image = { CatalogImage(item.cover, images, it) },
             badges = {
+                if (onRemoveFromContinueWatching != null) {
+                    val removeInteraction = rememberVisualInteraction()
+                    rsv.squitv.core.ui.components.cards.CompactCardActionButton(
+                        icon = Icons.Rounded.Close,
+                        description = "${item.name}: Remover de Continuar assistindo",
+                        onClick = onRemoveFromContinueWatching,
+                        background = if (removeInteraction.emphasized) palette.primary else palette.background.copy(alpha = .68f),
+                        foreground = if (removeInteraction.emphasized) palette.onPrimary else palette.onSurface,
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp),
+                        interactionSource = removeInteraction.source,
+                    )
+                }
                 if (onToggleFavorite != null) DesktopCatalogFavoriteButton(item.name, isFavorite, favoriteEnabled,
                     onToggleFavorite, Modifier.align(Alignment.TopEnd).padding(4.dp))
                 item.rating?.takeIf { it.isNotBlank() && it != "0" }?.let { rating ->
@@ -437,12 +455,12 @@ internal fun OnDemandDetailScreen(detail: CatalogDetail, controller: DesktopCont
     val preferences by store.state.collectAsState()
     val preferencesLoaded by store.loaded.collectAsState()
     val preferencesError by store.error.collectAsState()
-    val accountScope = liveCategoryScope(controller.state.value.credentials)
+    val accountScope = controller.profileDataScope(controller.state.value.credentials)
     val isFavorite = preferences.isCatalogFavorite(accountScope, detail.kind, detail.item.id)
     val historyData = controller.watchHistory?.state?.collectAsState()?.value
     val historyError = controller.watchHistory?.error?.collectAsState()?.value
     val saved = remember(historyData, detail.item.id, detail.kind) {
-        liveCategoryScope(controller.state.value.credentials)?.let {
+        controller.profileDataScope(controller.state.value.credentials)?.let {
             controller.watchHistory?.latest(it, detail.kind == CatalogKind.SERIES, detail.item.id)
         }
     }

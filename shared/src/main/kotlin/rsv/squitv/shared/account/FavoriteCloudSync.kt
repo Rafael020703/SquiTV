@@ -37,7 +37,8 @@ data class CloudFavorite(
 }
 
 @Serializable
-data class CloudProfile(val id: String, val name: String, val revision: Long)
+data class CloudProfile(val id: String, val name: String, val revision: Long, val avatar: String = "default",
+    val hasPhoto: Boolean = false)
 
 @Serializable data class CloudGenre(val id: Int, val genre: String? = null)
 @Serializable data class CloudGenrePage(val available: Boolean, val items: List<CloudGenre> = emptyList(),
@@ -110,15 +111,26 @@ object FavoriteCloudSession {
     fun catalogClient(account: String?): FavoriteCloudClient? =
         state.value?.takeIf { it.localAccount == account }?.client
 
-    suspend fun recordProgress(local: FavoriteLocalStore, progress: CloudProgress) {
+    suspend fun recordProgress(local: FavoriteLocalStore, progress: CloudProgress) =
+        recordProgressBatch(local, listOf(progress))
+
+    suspend fun recordProgressBatch(local: FavoriteLocalStore, changes: List<CloudProgress>) {
+        if (changes.isEmpty()) return
         if (local.checkpoint() == null) return
         progressLock.withLock {
             val journal = local.progressJournal()
-            val previous = journal.pending.firstOrNull { it.key == progress.key }
-            if (previous != null && previous.observedAt >= progress.observedAt) return@withLock
-            val revision = journal.downloaded.firstOrNull { it.key == progress.key }?.revision ?: 0
+            val pending = journal.pending.associateBy { it.key }.toMutableMap()
+            val downloaded = journal.downloaded.associateBy { it.key }
+            var changed = false
+            for (progress in changes) {
+                if ((pending[progress.key]?.observedAt ?: 0) >= progress.observedAt) continue
+                pending.remove(progress.key)
+                pending[progress.key] = progress.copy(revision = downloaded[progress.key]?.revision ?: 0)
+                changed = true
+            }
+            if (!changed) return@withLock
             local.saveProgressJournal(journal.copy(
-                pending = (journal.pending.filterNot { it.key == progress.key } + progress.copy(revision = revision)).takeLast(5000),
+                pending = pending.values.toList().takeLast(5000),
             ))
             progressRevision.value += 1
             pendingProgressRevision.value += 1
@@ -163,6 +175,12 @@ class FavoriteCloudClient internal constructor(
         token == other.token && scopeId == other.scopeId && validUntil == other.validUntil
 
     companion object {
+        fun storedLinkId(encoded: String?): String? {
+            if (encoded.isNullOrBlank() || encoded.length > 2048) return null
+            return runCatching { Json.decodeFromString<StoredSession>(encoded).scopeId }.getOrNull()
+                ?.takeIf { it.matches(Regex("[a-f0-9-]{36}")) }
+        }
+
         internal fun restore(encoded: String?): FavoriteCloudClient? {
             if (encoded.isNullOrBlank() || encoded.length > 2048) return null
             val session = runCatching { Json.decodeFromString<StoredSession>(encoded) }.getOrNull() ?: return null
@@ -172,17 +190,31 @@ class FavoriteCloudClient internal constructor(
         }
     }
     @Serializable private data class ProgressBatch(val items: List<CloudProgress>)
-    @Serializable private data class ProgressPage(val items: List<CloudProgress>, val next: Long, val hasMore: Boolean)
+    @Serializable private data class ProgressPage(
+        val items: List<CloudProgress>, val next: Long, val hasMore: Boolean, val supportsDeletion: Boolean = false,
+    )
     @Serializable private data class Categories(val items: List<CloudCategories>)
     @Serializable private data class Profiles(val profiles: List<CloudProfile>)
     @Serializable private data class Page(val items: List<CloudFavorite>, val next: Long, val hasMore: Boolean)
-    @Serializable private data class ProfileRequest(val action: String, val name: String)
+    @Serializable private data class ProfileRequest(
+        val action: String, val name: String, val id: String? = null, val revision: Long? = null, val avatar: String? = null,
+    )
     @Serializable private data class FavoriteBatch(val action: String, val items: List<CloudFavorite>)
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val mutex = Mutex()
 
-    suspend fun profiles(): List<CloudProfile> = json.decodeFromString<Profiles>(call("profiles").toString()).profiles
+    suspend fun profiles(): List<CloudProfile> =
+        json.decodeFromString<Profiles>(call("profiles", responseLimit = 96L * 1024).toString()).profiles
+
+    suspend fun profilePhoto(profileId: String): ByteArray? {
+        require(profileId.length <= 36)
+        val response = call("profiles", query = listOf("view" to "photo", "id" to profileId), responseLimit = 720L * 1024)
+        val encoded = (response["photoJpeg"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return null
+        if (encoded.length !in 1..716800) return null
+        return try { java.util.Base64.getDecoder().decode(encoded) }
+        catch (_: IllegalArgumentException) { null }
+    }
 
     suspend fun catalogGenres(kind: String, after: Long): CloudGenrePage? = tryBackgroundCatalog {
         json.decodeFromJsonElement<CloudGenrePage>(catalogRequest(kind, "genres", "after" to after.toString()))
@@ -218,13 +250,21 @@ class FavoriteCloudClient internal constructor(
         null
     }
 
-    suspend fun createProfile(name: String): CloudProfile = json.decodeFromString(
-        call("profiles", body = json.encodeToJsonElement(ProfileRequest("create", name))).toString()
+    suspend fun createProfile(name: String, avatar: String? = null): CloudProfile = json.decodeFromString(
+        call("profiles", body = json.encodeToJsonElement(ProfileRequest("create", name, avatar = avatar))).toString()
     )
+
+    suspend fun personalizeProfile(profile: CloudProfile, name: String, avatar: String): CloudProfile =
+        json.decodeFromString(call("profiles", body = json.encodeToJsonElement(
+            ProfileRequest("rename", name, profile.id, profile.revision, avatar),
+        )).toString())
 
     /** The first association stays explicit. The caller owns the account and UI lifecycle. */
     @OptIn(FlowPreview::class)
-    suspend fun maintainAssociatedData(local: FavoriteLocalStore): Unit = coroutineScope {
+    suspend fun maintainAssociatedData(
+        local: FavoriteLocalStore,
+        syncCategories: Boolean = false,
+    ): Unit = coroutineScope {
         launch {
             FavoriteCloudSession.pendingProgressUpdates.debounce(15_000).collect {
                 tryBackgroundSync { syncPendingProgress(local) }
@@ -235,7 +275,8 @@ class FavoriteCloudClient internal constructor(
                 val association = local.checkpoint() ?: return@tryBackgroundSync
                 val profile = profiles().firstOrNull { it.id == association.profile } ?: return@tryBackgroundSync
                 tryBackgroundSync { sync(profile, local, allowImport = false) }
-                syncProgress(profile, local)
+                tryBackgroundSync { syncProgress(profile, local) }
+                if (syncCategories) reconcileCategories(profile, local)
             }
             delay(60_000)
         }
@@ -337,7 +378,8 @@ class FavoriteCloudClient internal constructor(
                 throw IOException("A organização mudou neste aparelho. Tente novamente.")
             receive.forEach { baseline[it.kind] = it }
         }
-        local.saveCheckpoint(checkpoint.copy(categoryBaseline = baseline.values.toList()))
+        val updated = checkpoint.copy(categoryBaseline = baseline.values.toList())
+        if (updated != checkpoint) local.saveCheckpoint(updated)
         conflicts
     }
 
@@ -365,19 +407,24 @@ class FavoriteCloudClient internal constructor(
         local: FavoriteLocalStore,
         pending: List<CloudProgress>,
     ): Int {
-        for (batch in pending.chunked(20)) {
+        val supportsDeletion = pending.none { it.deleted } || progressPage(checkpoint.profile, 0).supportsDeletion
+        val sent = if (supportsDeletion) pending else pending.filterNot { it.deleted }
+        for (batch in sent.chunked(20)) {
             call("progress", checkpoint.profile, body = json.encodeToJsonElement(ProgressBatch(batch)))
         }
         val rows = mutableListOf<CloudProgress>()
         var after = 0L
         repeat(125) {
-            val page = json.decodeFromString<ProgressPage>(call("progress", checkpoint.profile, after).toString())
+            val page = progressPage(checkpoint.profile, after)
             rows += page.items
             if (!page.hasMore) {
                 val merged = rows.associateBy(CloudProgress::key).values.toList()
                 if (pending.isNotEmpty() || merged != local.progressJournal().downloaded) {
-                    local.applyProgress(checkpoint.boundAt, merged)
-                    FavoriteCloudSession.mergeProgress(local, pending, merged)
+                    val deferredDeletes = if (supportsDeletion) emptyList() else pending.filter { it.deleted }
+                    val visible = if (deferredDeletes.isEmpty()) merged else (merged + deferredDeletes)
+                        .groupBy { it.key }.values.map { versions -> versions.maxBy { it.observedAt } }
+                    local.applyProgress(checkpoint.boundAt, visible)
+                    FavoriteCloudSession.mergeProgress(local, sent, merged)
                 }
                 return merged.count { !it.deleted }
             }
@@ -386,6 +433,9 @@ class FavoriteCloudClient internal constructor(
         }
         throw IOException("A lista de progresso excede o limite de sincronização.")
     }
+
+    private suspend fun progressPage(profile: String, after: Long): ProgressPage =
+        json.decodeFromString(call("progress", profile, after).toString())
 
     private suspend fun requireBinding(profile: CloudProfile, local: FavoriteLocalStore): FavoriteCheckpoint {
         val checkpoint = local.checkpoint()
@@ -415,14 +465,17 @@ class FavoriteCloudClient internal constructor(
         profile: String? = null,
         after: Long? = null,
         body: kotlinx.serialization.json.JsonElement? = null,
+        query: List<Pair<String, String>> = emptyList(),
+        responseLimit: Long = 64 * 1024,
     ): JsonObject {
         val url = "https://squitv.rafael020703.shop/api/sync/$endpoint".toHttpUrl().newBuilder().apply {
             profile?.let { addQueryParameter("profile", it) }
             after?.let { addQueryParameter("after", it.toString()) }
+            query.forEach { (key, value) -> addQueryParameter(key, value) }
         }.build()
         val request = Request.Builder().url(url).header("Authorization", "SquiSync " + token)
         if (body != null) request.post(body.toString().toRequestBody("application/json".toMediaType()))
-        val (status, response) = AccountPilot.execute(request.build())
+        val (status, response) = AccountPilot.execute(request.build(), responseLimit)
         if (status == 200) return response
         if (status == 401) throw IOException("A sessão de sincronização expirou. Entre novamente com a Conta Squi TV.")
         val message = (response["message"] as? kotlinx.serialization.json.JsonPrimitive)?.content

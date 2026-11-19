@@ -33,12 +33,14 @@ fun ContentGrid(
     targetItemId: String? = null,
     state: ContentGridState = rememberContentGridState("default"),
     onToggleFavorite: ((IptvItem, Boolean) -> Unit)? = null,
+    onRemoveFromContinueWatching: ((IptvItem) -> Unit)? = null,
     onItemFocused: (IptvItem) -> Unit = {},
+    autoFocus: Boolean = true,
     onItemClick: (IptvItem) -> Unit
 ) {
     val tokens = AppDesignSystem
     val responsive = tokens.responsive
-    val useFocus = rememberWindowInfo().isTv || LocalInputModeManager.current.inputMode == InputMode.Keyboard
+    val useFocus = autoFocus && (rememberWindowInfo().isTv || LocalInputModeManager.current.inputMode == InputMode.Keyboard)
     val isLive = items.firstOrNull()?.type == ContentType.LIVE
     val columns = when {
         responsive.widthDp > 1600.dp -> if (isLive) 7 else 8
@@ -143,7 +145,9 @@ fun ContentGrid(
             } else {
                 PosterCard(item.copy(isFavorite = isFavorite), modifier = itemModifier,
                     progress = watchProgress[item.id.toIntOrNull() ?: -1],
-                    onToggleFavorite = onFavorite, onClick = onOpen)
+                    onToggleFavorite = onFavorite,
+                    onRemoveFromContinueWatching = onRemoveFromContinueWatching?.let { remove -> { remove(item) } },
+                    onClick = onOpen)
             }
         }
     }

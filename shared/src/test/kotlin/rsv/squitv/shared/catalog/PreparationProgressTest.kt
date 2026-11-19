@@ -5,6 +5,14 @@ import org.junit.Test
 import rsv.squitv.domain.model.PreparationSpeed
 
 class PreparationProgressTest {
+    @Test fun completionRequiresAKnownTotalWithNoPendingFailures() {
+        assertTrue(PreparationProgress.isComplete(20, 20, 0, false))
+        assertFalse(PreparationProgress.isComplete(0, 0, 0, false))
+        assertFalse(PreparationProgress.isComplete(20, 19, 0, false))
+        assertFalse(PreparationProgress.isComplete(20, 20, 1, false))
+        assertFalse(PreparationProgress.isComplete(20, 20, 0, true))
+    }
+
     @Test fun cachedItemsDoNotCreateAnEstimateAndSamplesMustBeSufficient() {
         val meter = PreparationProgress()
         assertNull(meter.remainingMs(21000, 20000, 0))

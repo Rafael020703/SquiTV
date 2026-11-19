@@ -9,5 +9,7 @@ data class UserProfile(
     val id: String,
     val name: String,
     val iconUrl: String? = null,
-    val isChild: Boolean = false
+    val isChild: Boolean = false,
+    val avatar: String = "default",
+    val portalManaged: Boolean = false,
 )

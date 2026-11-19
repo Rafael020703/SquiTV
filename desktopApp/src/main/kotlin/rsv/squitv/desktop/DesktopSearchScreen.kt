@@ -28,7 +28,7 @@ internal fun DesktopSearchScreen(controller: DesktopController, store: DesktopPr
     val preferences by store.state.collectAsState()
     val preferencesLoaded by store.loaded.collectAsState()
     val preferencesError by store.error.collectAsState()
-    val accountScope = remember(desktop.credentials) { liveCategoryScope(desktop.credentials) }
+    val accountScope = controller.profileDataScope(desktop.credentials)
     val favoriteIds = preferences.favoriteLiveChannelsByAccount[accountScope].orEmpty()
     val grid = rememberLazyGridState()
     val inputFocus = remember { FocusRequester() }

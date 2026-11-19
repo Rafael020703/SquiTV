@@ -14,7 +14,8 @@ internal data class DesktopFavoritesState(val results: List<DesktopSearchItem> =
     val accountScope: String? = null, val requestedType: DesktopSearchType? = null)
 
 /** Explicit library access; resolve only types with saved IDs, never on login/dashboard. */
-internal class DesktopFavoritesController(private val client: XtreamClient, private val scope: CoroutineScope) {
+internal class DesktopFavoritesController(private val client: XtreamClient, private val scope: CoroutineScope,
+    private val dataScope: (ServerCredentials?) -> String? = ::liveCategoryScope) {
     private val mutable = MutableStateFlow(DesktopFavoritesState())
     val state = mutable.asStateFlow()
     private var account: ServerCredentials? = null
@@ -27,8 +28,11 @@ internal class DesktopFavoritesController(private val client: XtreamClient, priv
 
     fun open(credentials: ServerCredentials, settings: DesktopPreferences, force: Boolean = false,
         onlyType: DesktopSearchType? = null) {
-        if (account != credentials) { reset(); account = credentials }
-        val key = liveCategoryScope(credentials) ?: return
+        val key = dataScope(credentials) ?: return
+        if (account != credentials || mutable.value.accountScope != key) {
+            reset()
+            account = credentials
+        }
         val ids = mapOf(DesktopSearchType.LIVE to settings.favoriteLiveChannelsByAccount[key].orEmpty(),
             DesktopSearchType.MOVIES to settings.favoriteCatalogItemsByScope["$key/MOVIES"].orEmpty(),
             DesktopSearchType.SERIES to settings.favoriteCatalogItemsByScope["$key/SERIES"].orEmpty())

@@ -54,7 +54,7 @@ internal fun LivePlayerScreen(state: DesktopState, controller: DesktopController
     var volumeNotice by remember { mutableStateOf<Int?>(null) }
     var volumeRevision by remember { mutableIntStateOf(0) }
     LaunchedEffect(volumeRevision) { delay(1500); volumeNotice = null }
-    val accountScope = remember(credentials) { liveCategoryScope(credentials) }
+    val accountScope = controller.profileDataScope(credentials)
     LaunchedEffect(session.channel.id, session.sourceCategoryId, preferencesLoaded) {
         if (preferencesLoaded) settings.rememberCatalogPosition(accountScope, "live", session.sourceCategoryId,
             session.channel.id.toString(), immediate = true)

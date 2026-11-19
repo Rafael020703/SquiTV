@@ -96,6 +96,21 @@ class CategoryViewModel @Inject constructor(
         }
     }
 
+    /** Removes the exact movie progress, or every unfinished episode represented by a series card. */
+    fun removeFromContinueWatching(item: IptvItem) {
+        val scope = currentRequest?.account ?: return
+        viewModelScope.launch {
+            try {
+                userRepository.removeContinuing(item, scope)
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Exception) {
+                Timber.e(failure, "Falha ao remover progresso")
+                android.widget.Toast.makeText(context, R.string.remove_continue_watching_failed, android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     private data class BrowseOptions(
         val scope: String, val hidden: Set<String>, val order: List<String>,
         val grouped: Boolean, val quality: ChannelQuality, val language: String,
@@ -116,7 +131,7 @@ class CategoryViewModel @Inject constructor(
         val options = observedSettings.map { settings ->
             val normType = if (type == "movie") "vod" else type
             val accountKey = settings.credentials?.let { SettingsBackupCodec.accountKey(it) } ?: ""
-            val key = "${accountKey}_$normType"
+            val key = SettingsBackupCodec.categoryKey(accountKey, settings.activeProfileId, normType)
             val mode = when (type) {
                 "movie" -> settings.getMovieCategoryMode(accountKey, settings.activeProfileId)
                 "series" -> settings.getSeriesCategoryMode(accountKey, settings.activeProfileId)

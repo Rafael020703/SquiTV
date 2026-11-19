@@ -75,6 +75,7 @@
     <string name="row_fav_movies">Filmes Favoritos</string>
     <string name="row_fav_series">Séries Favoritas</string>
     <string name="row_continue_watching">Continuar Assistindo</string>
+    <string name="remove_from_continue_watching">Remover de Continuar assistindo</string>
     <string name="row_recommended">Recomendados para Você</string>
     <string name="row_featured_channels">Canais em Destaque</string>
     <string name="permissions_label">Permissões</string>
@@ -635,4 +636,7 @@
     <string name="backup_option_series_category_mode">Modo de categorias de séries</string>
     <string name="category_section_genres">FILTROS POR GÊNERO</string>
     <string name="category_section_server">CATEGORIAS DO SERVIDOR</string>
+    <string name="remove_continue_watching_failed">Não foi possível remover de Continuar assistindo.</string>
+    <string name="search_in_category">Buscar nesta categoria</string>
+    <string name="app_dns_settings">DNS do aplicativo</string>
 </resources>

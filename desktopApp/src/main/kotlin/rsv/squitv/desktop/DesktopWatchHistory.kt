@@ -36,6 +36,7 @@ internal class DesktopWatchHistory(directory: Path, scope: CoroutineScope) {
     val error = file.error
     private val saves = Mutex()
     var onNewProgress: (suspend (String, CloudProgress) -> Unit)? = null
+    var onRemoveProgress: (suspend (String, List<CloudProgress>) -> Unit)? = null
     private val lastSaved = mutableMapOf<String, Long>()
     init { scope.launch { file.load() } }
 
@@ -53,6 +54,28 @@ internal class DesktopWatchHistory(directory: Path, scope: CoroutineScope) {
         ready()
         return state.value.entries.firstOrNull { it.account == account && it.series == session.series &&
             it.streamId == session.id && WatchProgressUtils.isPendingWatchProgress(it.positionMs, it.durationMs) }
+    }
+
+    /** Removes the content represented by a continue-watching card and queues cloud tombstones. */
+    suspend fun removeContinuing(account: String, series: Boolean, catalogId: Int): Boolean = saves.withLock {
+        ready()
+        val removed = state.value.entries.filter {
+            it.account == account && it.series == series && it.catalogId == catalogId &&
+                WatchProgressUtils.isPendingWatchProgress(it.positionMs, it.durationMs)
+        }
+        if (removed.isEmpty()) return@withLock true
+        val removedKeys = removed.mapTo(HashSet()) { it.key }
+        val observedAt = System.currentTimeMillis()
+        onRemoveProgress?.invoke(account, removed.map { entry ->
+            CloudProgress(
+                kind = if (entry.series) "episode" else "movie", id = entry.streamId,
+                catalogId = entry.catalogId, positionMs = 0, observedAt = observedAt, deleted = true,
+            )
+        })
+        if (!file.update { old -> old.copy(entries = old.entries.filterNot { it.key in removedKeys }) }) {
+            return@withLock false
+        }
+        true
     }
 
     suspend fun applyCloudProgress(account: String, boundAt: Long, rows: List<CloudProgress>) = saves.withLock {

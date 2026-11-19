@@ -113,7 +113,6 @@ class MainViewModel @Inject constructor(
     
     val activeProfile = profileManager.activeProfile
     val profiles = profileManager.profiles
-    val profileImageUrl = profileManager.profileImageUrl
 
     val isContentReady = syncManager.isContentReady
     val syncProgress: StateFlow<AppSyncProgress> = syncManager.syncProgress
@@ -142,7 +141,7 @@ class MainViewModel @Inject constructor(
             val cleanUrl = baseUrl?.trim()?.lowercase()?.removeSuffix("/")
             val accountKey = if (!cleanUrl.isNullOrBlank()) "$cleanUrl#$simpleKey" else simpleKey
             val map = settings.displayNamesMap
-            settings.portalDisplayName ?: map[accountKey] ?: map[simpleKey]
+            if (settings.usesPortalIdentity) settings.portalDisplayName else map[accountKey] ?: map[simpleKey]
         } else null
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -258,8 +257,6 @@ class MainViewModel @Inject constructor(
     private val _cacheSize = MutableStateFlow("0 MB")
     val cacheSize: StateFlow<String> = _cacheSize.asStateFlow()
 
-    private val _newlyAdded = MutableStateFlow<Map<ContentType, List<IptvItem>>>(emptyMap())
-    val newlyAdded: StateFlow<Map<ContentType, List<IptvItem>>> = _newlyAdded.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -336,10 +333,90 @@ class MainViewModel @Inject constructor(
     }
 
     fun selectProfile(profile: UserProfile) = profileManager.selectProfile(profile)
+
+    internal suspend fun activePortalProfilePhoto(profile: UserProfile): ByteArray? {
+        val active = rsv.squitv.shared.account.FavoriteCloudSession.state.value ?: return null
+        val settings = settingsRepository.settingsFlow.first()
+        val account = settings.credentials?.let { rsv.squitv.data.model.SettingsBackupCodec.fingerprint(
+            rsv.squitv.data.model.SettingsBackupCodec.accountKey(it)) }
+        if (account != active.localAccount || settings.activeProfileId != profile.id) return null
+        val local = userRepository.favoriteCloudStore(active.localAccount, profile.id, profile.name, active.client.scopeId)
+        val id = local.checkpoint()?.profile ?: return null
+        return active.client.profilePhoto(id)
+    }
+
+    internal suspend fun portalProfiles(): List<Pair<UserProfile, rsv.squitv.shared.account.CloudProfile>> {
+        val active = rsv.squitv.shared.account.FavoriteCloudSession.state.value ?: return emptyList()
+        val settings = settingsRepository.settingsFlow.first()
+        val account = settings.credentials?.let { rsv.squitv.data.model.SettingsBackupCodec.fingerprint(
+            rsv.squitv.data.model.SettingsBackupCodec.accountKey(it)) }
+        if (account != active.localAccount) return emptyList()
+        val existing = settings.profiles.mapNotNull { profile ->
+            val local = userRepository.favoriteCloudStore(active.localAccount, profile.id, profile.name, active.client.scopeId)
+            local.checkpoint()?.profile?.let { it to profile }
+        }.toMap()
+        return active.client.profiles().map { cloud ->
+            (existing[cloud.id] ?: UserProfile(cloud.id, cloud.name, avatar = cloud.avatar, portalManaged = true))
+                .copy(name = cloud.name, avatar = cloud.avatar) to cloud
+        }
+    }
+
+    internal suspend fun selectPortalProfile(profile: UserProfile, cloud: rsv.squitv.shared.account.CloudProfile) {
+        val active = rsv.squitv.shared.account.FavoriteCloudSession.state.value ?: error("Entre novamente na Conta Squi TV.")
+        val settings = settingsRepository.settingsFlow.first()
+        val account = settings.credentials?.let { rsv.squitv.data.model.SettingsBackupCodec.fingerprint(
+            rsv.squitv.data.model.SettingsBackupCodec.accountKey(it)) }
+        check(account == active.localAccount) { "A conta ativa mudou." }
+        val local = userRepository.favoriteCloudStore(active.localAccount, profile.id, profile.name, active.client.scopeId)
+        val checkpoint = local.checkpoint()
+        if (checkpoint == null) {
+            check(profile.id == cloud.id && local.snapshot().isEmpty()) { "Este perfil precisa de associação manual." }
+            if (settings.profiles.none { it.id == profile.id }) settingsRepository.saveLocalProfile(profile)
+        }
+        settingsRepository.updateActiveProfileId(profile.id)
+        try {
+            active.client.sync(cloud, local, allowImport = checkpoint == null)
+            active.client.reconcileCategories(cloud, local)
+            active.client.syncProgress(cloud, local)
+        } catch (failure: Exception) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                if (rsv.squitv.shared.account.FavoriteCloudSession.state.value === active &&
+                    settingsRepository.settingsFlow.first().activeProfileId == profile.id) {
+                    settingsRepository.updateActiveProfileId(settings.activeProfileId)
+                }
+            }
+            throw failure
+        }
+    }
+
+    internal suspend fun personalizePortalProfile(profile: rsv.squitv.shared.account.CloudProfile?, name: String, avatar: String) {
+        val active = rsv.squitv.shared.account.FavoriteCloudSession.state.value ?: error("Entre novamente na Conta Squi TV.")
+        if (profile == null) active.client.createProfile(name, avatar)
+        else active.client.personalizeProfile(profile, name, avatar)
+    }
+
+    internal suspend fun personalizeProfile(profile: UserProfile?, name: String, avatar: String) {
+        if (profile == null) {
+            settingsRepository.saveLocalProfile(UserProfile(java.util.UUID.randomUUID().toString(), name, avatar = avatar))
+            return
+        }
+        val settings = settingsRepository.settingsFlow.first()
+        val active = rsv.squitv.shared.account.FavoriteCloudSession.state.value
+        val account = settings.credentials?.let { rsv.squitv.data.model.SettingsBackupCodec.fingerprint(
+            rsv.squitv.data.model.SettingsBackupCodec.accountKey(it)) }
+        if (active != null && active.localAccount == account) {
+            val local = userRepository.favoriteCloudStore(active.localAccount, profile.id, profile.name, active.client.scopeId)
+            local.checkpoint()?.profile?.let { id ->
+                val cloud = active.client.profiles().firstOrNull { it.id == id }
+                    ?: error("O perfil associado não está mais disponível.")
+                active.client.personalizeProfile(cloud, name, avatar)
+            }
+        }
+        settingsRepository.personalizeLocalProfile(profile.id, name, avatar)
+    }
     fun addProfile(name: String, iconUrl: String? = null, isChild: Boolean = false) = 
         profileManager.addProfile(name, iconUrl, isChild)
     fun deleteProfile(profileId: String) = profileManager.deleteProfile(profileId)
-    fun updateProfilePicture(url: String) = profileManager.updateProfilePicture(url)
 
     fun loadData(force: Boolean = false) = syncManager.startSync(force)
     fun loadAllLiveStreams() {
@@ -354,19 +431,6 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             _dbStats.value = catalogRepository.getStats()
             calculateCacheSize()
-            loadNewlyAdded()
-        }
-    }
-
-    private fun loadNewlyAdded() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val recent = catalogRepository.getRecentStreams(20)
-                val grouped = recent.groupBy { it.type }
-                _newlyAdded.value = grouped
-            } catch (e: Exception) {
-                Timber.e(e, "Error loading newly added content")
-            }
         }
     }
 

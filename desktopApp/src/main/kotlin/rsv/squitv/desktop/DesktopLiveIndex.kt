@@ -9,7 +9,7 @@ import rsv.squitv.shared.xtream.*
 internal data class DesktopLiveIndexState(val accountScope: String? = null, val channels: List<LiveChannel> = emptyList(),
     val loaded: Boolean = false, val loading: Boolean = false, val error: String? = null)
 
-/** One session index for category counts and Multi-view. Loaded only on explicit catalog access. */
+/** One session index for category counts and Multi-view. */
 internal class DesktopLiveIndex(private val client: XtreamClient, private val scope: CoroutineScope) {
     private val mutable = MutableStateFlow(DesktopLiveIndexState())
     val state = mutable.asStateFlow()
@@ -24,7 +24,7 @@ internal class DesktopLiveIndex(private val client: XtreamClient, private val sc
         mutable.value = mutable.value.copy(accountScope = key, loaded = if (force) false else mutable.value.loaded, loading = true, error = null)
         job = scope.launch {
             try {
-                val channels = withContext(Dispatchers.IO) { client.channels(account, null).distinctBy { it.id } }
+                val channels = fetchChannels(account)
                 ensureActive()
                 if (token == revision) mutable.value = DesktopLiveIndexState(key, channels, loaded = true)
             } catch (e: CancellationException) { throw e }
@@ -35,6 +35,15 @@ internal class DesktopLiveIndex(private val client: XtreamClient, private val sc
             }
         }
     }
+
+    suspend fun fetchChannels(account: ServerCredentials): List<LiveChannel> =
+        withContext(Dispatchers.IO) { client.channels(account, null).distinctBy { it.id } }
+
+    fun replace(account: ServerCredentials, channels: List<LiveChannel>) {
+        cancel()
+        mutable.value = DesktopLiveIndexState(liveCategoryScope(account), channels, loaded = true)
+    }
+
     fun cancel() { ++revision; job?.cancel(); mutable.value = mutable.value.copy(loading = false) }
     fun reset() { cancel(); mutable.value = DesktopLiveIndexState() }
 }

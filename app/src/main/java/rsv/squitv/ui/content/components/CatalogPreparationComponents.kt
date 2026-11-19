@@ -25,6 +25,7 @@ import rsv.squitv.core.ui.components.buttons.AppButton
 import rsv.squitv.core.ui.components.common.adaptiveFocus
 import rsv.squitv.core.ui.theme.AppDesignSystem
 import rsv.squitv.domain.model.CategoryMode
+import rsv.squitv.shared.catalog.PreparationProgress
 
 @Composable
 fun CatalogPreparationIndicator(
@@ -34,14 +35,15 @@ fun CatalogPreparationIndicator(
 ) {
     val tokens = AppDesignSystem
     if (state.totalItems <= 0) return
+    if (PreparationProgress.isComplete(state.totalItems, state.processedItems, state.failedItems, state.error != null)) return
 
     val text = when {
-        state.serverManaged -> "Catálogo no servidor · ${rsv.squitv.shared.catalog.PreparationProgress.percent(state.totalItems, state.processedItems)}%"
         state.error != null -> "Preparação interrompida"
-        state.isRunning -> "${stringResource(R.string.catalog_preparing_title)} · ${rsv.squitv.shared.catalog.PreparationProgress.percent(state.totalItems, state.processedItems)}%"
+        state.serverManaged -> "Catálogo no servidor · ${PreparationProgress.percent(state.totalItems, state.processedItems)}%"
+        state.isRunning -> "${stringResource(R.string.catalog_preparing_title)} · ${PreparationProgress.percent(state.totalItems, state.processedItems)}%"
         state.isPaused -> stringResource(R.string.catalog_prep_paused)
         state.waitingForRetry -> "Preparação · aguardando nova tentativa"
-        else -> stringResource(R.string.catalog_prep_completed)
+        else -> "${stringResource(R.string.catalog_preparing_title)} · ${PreparationProgress.percent(state.totalItems, state.processedItems)}%"
     }
 
     Surface(

@@ -302,7 +302,7 @@ fun CategoryCustomizerTab(
     val cleanUrl = credentials?.baseUrl?.trim()?.lowercase()?.removeSuffix("/") ?: ""
     val accountKey = if (cleanUrl.isNotBlank()) "$cleanUrl#$simpleUser" else simpleUser
     val normType = if (contentType == "movie") "vod" else contentType.lowercase()
-    val typeKey = "${accountKey}_${normType}"
+    val typeKey = rsv.squitv.data.model.SettingsBackupCodec.categoryKey(accountKey, appSettings.activeProfileId, normType)
 
     val customOrder = appSettings.categoryOrderMap[typeKey]
     val hiddenSet = appSettings.hiddenCategoriesMap[typeKey] ?: emptySet()

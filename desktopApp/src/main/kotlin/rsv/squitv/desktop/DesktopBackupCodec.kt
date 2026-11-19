@@ -12,8 +12,8 @@ internal object DesktopBackupCodec {
     private val fields = mapOf(
         DesktopBackupGroup.PLAYBACK to setOf("autoPlayEpisodes", "volume", "muted", "keepAudioOnMinimize",
             "preferredAudioLanguage", "preferredSubtitleLanguage"),
-        DesktopBackupGroup.INTERFACE to setOf("interfaceScale", "fullscreen", "hiddenSections", "language",
-            "alwaysOnTop", "ignoredUpdateVersion", "browseMemory"),
+        DesktopBackupGroup.INTERFACE to setOf("interfaceScale", "fullscreen", "hiddenSections",
+            "ignoredUpdateVersion", "browseMemory"),
         DesktopBackupGroup.CATEGORIES to setOf("preferredChannelQuality", "groupLiveChannels", "hiddenCategoryIds",
             "hiddenLiveCategoriesByAccount", "liveCategoryOrderByAccount", "catalogCategoryOrderByScope",
             "hiddenCatalogCategoriesByScope", "catalogModesByScope"),
@@ -57,7 +57,10 @@ internal object DesktopBackupCodec {
             groups = names.toSet()
             values = root["preferences"] as? JsonObject ?: error("Missing backup preferences")
             // A declared group must contain all its fields: defaults must never replace omitted data.
-            require(values.keys == keys(groups))
+            val expected = keys(groups)
+            val legacy = setOf("language", "alwaysOnTop")
+            require(values.keys == expected ||
+                DesktopBackupGroup.INTERFACE in groups && values.keys == expected + legacy)
         } else {
             // Existing Windows full exports included these defaults and no selection metadata.
             require("includedGroups" !in root)

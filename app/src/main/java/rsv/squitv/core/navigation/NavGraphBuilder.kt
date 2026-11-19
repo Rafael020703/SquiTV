@@ -105,11 +105,9 @@ fun NavGraphBuilder.appNavGraph(
             },
             onNavigateToMultiView = { appController.navigate(Route.MultiView) },
             onNavigateToSearch = { appController.navigate(Route.Search()) },
-            onNavigateToAccount = { appController.navigate(Route.Account) },
             onNavigateToSettings = { appController.navigate(Route.Settings) },
             onNavigateToDownloads = { appController.navigate(Route.Downloads) },
-            onNavigateToUpdates = { appController.navigate(Route.Updates) },
-            onNavigateToAppDns = { appController.navigate(Route.AppDns) }
+            onNavigateToUpdates = { appController.navigate(Route.Updates) }
         )
     }
 
@@ -167,14 +165,8 @@ fun NavGraphBuilder.appNavGraph(
             categoryViewModel = catViewModel,
             libraryViewModel = libraryViewModel,
             settingsViewModel = settingsViewModel,
-            onBack = { appController.goBack() },
-            onNavigateToSearch = { appController.navigate(Route.Search()) },
             onVodClick = { streamId, name, icon ->
                 appController.navigate(Route.VodDetail(streamId, name, icon))
-            },
-            onCategoryClick = { type, catId ->
-                if (catId != null) mainViewModel.saveLastCategory(type, catId)
-                appController.navigate(Route.Movies(catId, type), popUpToRoute = Route.Dashboard, inclusive = false)
             }
         )
     }
@@ -203,14 +195,8 @@ fun NavGraphBuilder.appNavGraph(
             categoryViewModel = catViewModel,
             libraryViewModel = libraryViewModel,
             settingsViewModel = settingsViewModel,
-            onBack = { appController.goBack() },
-            onNavigateToSearch = { appController.navigate(Route.Search()) },
             onSeriesClick = { streamId, name, icon ->
                 appController.navigate(Route.SeriesDetail(streamId, name, icon))
-            },
-            onCategoryClick = { type, catId ->
-                if (catId != null) mainViewModel.saveLastCategory(type, catId)
-                appController.navigate(Route.Series(catId, type), popUpToRoute = Route.Dashboard, inclusive = false)
             }
         )
     }
@@ -313,6 +299,7 @@ fun NavGraphBuilder.appNavGraph(
             onBack = { appController.goBack() },
             onNavigateToAccount = { appController.navigate(Route.Account) },
             onNavigateToDnsTester = { appController.navigate(Route.DnsTester) },
+            onNavigateToAppDns = { appController.navigate(Route.AppDns) },
             onNavigateToUpdates = { appController.navigate(Route.Updates) },
             onNavigateToContentCustomization = { appController.navigate(Route.ContentCustomization) }
         )

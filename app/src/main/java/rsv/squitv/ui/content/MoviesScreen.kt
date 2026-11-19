@@ -39,12 +39,17 @@ fun MoviesScreen(
     categoryViewModel: CategoryViewModel,
     libraryViewModel: LibraryViewModel,
     settingsViewModel: SettingsViewModel,
-    onBack: () -> Unit,
-    onVodClick: (Int, String, String?) -> Unit,
-    onCategoryClick: (String, String?) -> Unit,
-    onNavigateToSearch: () -> Unit
+    onVodClick: (Int, String, String?) -> Unit
 ) {
     val contentRows by categoryViewModel.currentContentRows.collectAsStateWithLifecycle()
+    val searchQuery by categoryViewModel.searchQuery.collectAsStateWithLifecycle()
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    fun closeSearch() {
+        searchOpen = false
+        categoryViewModel.onSearchQueryChanged("")
+    }
+    androidx.activity.compose.BackHandler(enabled = searchOpen, onBack = ::closeSearch)
+    val gridItems = remember(contentRows) { contentRows.flatMap { it.items } }
     val categories by categoryViewModel.navigationCategories.collectAsStateWithLifecycle()
     val isLoading by categoryViewModel.isLoading.collectAsStateWithLifecycle()
     val sortOrder by categoryViewModel.sortOrder.collectAsStateWithLifecycle()
@@ -104,10 +109,14 @@ fun MoviesScreen(
                         onClick = { showPrepDialog = true }
                     )
                     AppIconButton(Icons.AutoMirrored.Rounded.Sort, { showSortMenu = true })
-                    AppIconButton(Icons.Rounded.Search, onNavigateToSearch)
+                    AppIconButton(if (searchOpen) Icons.Rounded.Close else Icons.Rounded.Search,
+                        { if (searchOpen) closeSearch() else searchOpen = true })
                 }
             )
 
+            if (searchOpen) {
+                rsv.squitv.ui.content.components.CategorySearchField(searchQuery, categoryViewModel::onSearchQueryChanged)
+            }
             if (isCompact) {
                 rsv.squitv.ui.content.components.ContentCategoryStrip(
                     categories, selectedCategoryId, handleCategorySelect
@@ -148,11 +157,14 @@ fun MoviesScreen(
                         )
                     } else {
                         ContentGrid(
-                            items = contentRows.flatMap { it.items },
+                            items = gridItems,
                             gridFocusRequester = gridFocusRequester,
                             sidebarFocusRequester = sidebarFocusRequester,
                             state = gridState,
+                            autoFocus = !searchOpen,
                             onToggleFavorite = libraryViewModel::toggleFavorite,
+                            onRemoveFromContinueWatching = if (selectedCategoryId == "CONTINUE_WATCHING")
+                                categoryViewModel::removeFromContinueWatching else null,
                             favorites = favorites,
                             watchProgress = watchProgress,
                             targetItemId = selectedCategoryId?.let { browsePosition?.itemsByCategory?.get(it) }

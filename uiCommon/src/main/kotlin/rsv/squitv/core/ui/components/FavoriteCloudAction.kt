@@ -75,15 +75,25 @@ private fun FavoriteCloudDialog(
     }
 
     suspend fun syncProfile(profile: CloudProfile) {
-        val favoriteConflicts = client.sync(profile, local, allowImport = boundId == null)
-        boundId = profile.id
-        val completed = mutableListOf("Favoritos")
+        val completed = mutableListOf<String>()
         val failures = mutableListOf<String>()
+        val favoriteConflicts = try {
+            client.sync(profile, local, allowImport = boundId == null).also {
+                boundId = profile.id
+                completed += "Favoritos"
+            }
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (failure: Exception) {
+            if (boundId != profile.id) throw failure
+            failures += "Favoritos · ${failure.message ?: "Falha na sincronização."}"
+            0
+        }
         var progressEmpty = false
         try {
             val progressCount = client.syncProgress(profile, local)
             progressEmpty = progressCount == 0
-            if (!progressEmpty) completed += "progresso ($progressCount)"
+            completed += "progresso ($progressCount)"
         } catch (failure: CancellationException) {
             throw failure
         } catch (failure: Exception) {
@@ -97,7 +107,7 @@ private fun FavoriteCloudDialog(
         } catch (failure: Exception) {
             failures += "Categorias · ${failure.message ?: "Falha na sincronização."}"
         }
-        success = completed.joinToString() + " — sincronização concluída."
+        success = completed.takeIf { it.isNotEmpty() }?.let { "${it.joinToString()} — sincronização concluída." }
         if (progressEmpty) success += " Ainda não há progresso novo no perfil. O histórico anterior à associação fica no aparelho."
         if (favoriteConflicts > 0) success += " Nos favoritos em conflito, prevaleceram as alterações do painel."
         error = failures.joinToString("\n").ifEmpty { null }

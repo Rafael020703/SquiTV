@@ -13,7 +13,7 @@ val isDebug = variant == "debug"
 val installerMode = providers.gradleProperty("desktopInstaller").orElse(if (isDebug) "offline" else "online").get()
 require(installerMode in setOf("online", "offline")) { "desktopInstaller must be online or offline" }
 val onlineInstaller = installerMode == "online"
-val desktopVersion = "1.28.0"
+val desktopVersion = "1.29.0"
 val appName = if (isDebug) "Squi TV Debug" else "Squi TV"
 val dataFolder = if (isDebug) "SquiTVDebug" else "SquiTV"
 layout.buildDirectory.set(layout.projectDirectory.dir("build/$variant"))
@@ -75,6 +75,10 @@ val desktopAssets = tasks.register<rsv.squitv.build.GenerateDesktopAssets>("gene
 }
 tasks.named<ProcessResources>("processResources") {
     from(desktopAssets.flatMap { it.outputDirectory })
+    from(rootProject.file("account-service/portal/profile-avatars")) {
+        include("*.jpg")
+        into("profile-avatars")
+    }
 }
 val nativeResources = rootProject.layout.buildDirectory.dir("desktopNativeResources/vlc-3.0.23")
 val prepareVlc = tasks.register<rsv.squitv.build.PrepareVlcRuntime>("prepareVlcRuntime") {

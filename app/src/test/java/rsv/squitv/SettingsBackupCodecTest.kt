@@ -27,6 +27,27 @@ class SettingsBackupCodecTest {
         assertEquals(BackupOption.entries.toSet(), SettingsBackupCodec.available(backup))
         assertEquals(listOf("80", "2", "1"), backup.accounts.single().categories["vod"]!!.order)
     }
+
+    @Test fun profileCategoryBackup_preservesLegacyDefaultAndKeepsOtherProfilesSeparate() {
+        val profiles = listOf(UserProfile("default", "Principal"), UserProfile("room", "Quarto", avatar = "fox"))
+        val primary = SettingsBackupCodec.categoryKey(key, "default", "vod")
+        val room = SettingsBackupCodec.categoryKey(key, "room", "vod")
+        assertEquals("${key}_vod", primary)
+        assertNotEquals(primary, room)
+        val settings = SettingsRepository.AppSettings(
+            credentials = credentials, accounts = listOf(credentials), lastSyncTimestamp = 0L, syncIntervalHours = 24,
+            profiles = profiles, categoryOrderMap = mapOf(primary to listOf("1"), room to listOf("2")),
+            hiddenCategoriesMap = mapOf(room to setOf("3")),
+        )
+        val encoded = SettingsBackupCodec.encode(SettingsBackupCodec.create(settings))
+        val restored = SettingsBackupCodec.decode(encoded)
+        val scopes = SettingsBackupCodec.configuredCategoryScopes(settings, restored.profiles.orEmpty().map { it.id })
+        val byScope = restored.accounts.associateBy { scopes[it.fingerprint] }
+        assertEquals(listOf("1"), byScope[key]?.categories?.get("vod")?.order)
+        assertEquals(listOf("2"), byScope[room.substringBeforeLast('_')]?.categories?.get("vod")?.order)
+        assertEquals(setOf("3"), byScope[room.substringBeforeLast('_')]?.categories?.get("vod")?.hidden)
+        assertEquals("fox", restored.profiles?.firstOrNull { it.id == "room" }?.avatar)
+    }
     @Test fun loginPasswordAndPin_areExcluded() {
         val text = SettingsBackupCodec.encode(backup())
         assertFalse(text.contains("do-not-export-this-password"))

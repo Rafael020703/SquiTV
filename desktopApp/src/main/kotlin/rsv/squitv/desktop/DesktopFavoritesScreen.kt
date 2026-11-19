@@ -21,7 +21,7 @@ internal fun DesktopFavoritesScreen(controller: DesktopController, store: Deskto
     val error by store.error.collectAsState()
     val state by controller.favorites.state.collectAsState()
     val account = controller.state.value.credentials ?: return
-    val accountKey = liveCategoryScope(account) ?: return
+    val accountKey = controller.profileDataScope(account) ?: return
     var type by rememberSaveable(accountKey) { mutableStateOf(DesktopSearchType.ALL) }
     var query by rememberSaveable(accountKey) { mutableStateOf("") }
     var editing by remember { mutableStateOf(false) }

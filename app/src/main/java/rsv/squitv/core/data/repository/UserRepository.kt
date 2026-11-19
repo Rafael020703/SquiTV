@@ -3,6 +3,8 @@ package rsv.squitv.core.data.repository
 import rsv.squitv.data.local.dao.IptvDao
 import rsv.squitv.data.local.entities.*
 import rsv.squitv.domain.model.IptvItem
+import rsv.squitv.domain.model.ContentType
+import rsv.squitv.domain.usecase.WatchProgressUtils
 import rsv.squitv.shared.account.CloudProgress
 import rsv.squitv.shared.account.CloudProgressJournal
 import rsv.squitv.shared.account.FavoriteCloudSession
@@ -82,7 +84,7 @@ class UserRepository @Inject constructor(
                 rsv.squitv.shared.account.CloudFavorite(kind, row.streamId, title)
             }
             override suspend fun applyProfile(profile: rsv.squitv.shared.account.CloudProfile) =
-                settingsRepository.applyCloudProfileName(accountId, profileId, profile.name)
+                settingsRepository.applyCloudProfileAppearance(accountId, profileId, profile.name, profile.avatar)
             override suspend fun progressJournal() = settingsRepository.loadCloudProgress(key)
             override suspend fun saveProgressJournal(journal: CloudProgressJournal) = settingsRepository.saveCloudProgress(key, journal)
             override suspend fun applyProgress(boundAt: Long, rows: List<CloudProgress>) {
@@ -133,16 +135,27 @@ class UserRepository @Inject constructor(
     }
 
     class CloudPlaybackScope internal constructor(
-        val account: String, val profile: String, val link: String,
+        val account: String, val profile: String, val link: String?, val portalManaged: Boolean = false,
     )
 
     internal suspend fun cloudPlaybackScope(credentials: rsv.squitv.data.model.XtreamCredentials): CloudPlaybackScope? {
-        val active = FavoriteCloudSession.state.value ?: return null
+        val active = FavoriteCloudSession.state.value
         val account = SettingsBackupCodec.fingerprint(SettingsBackupCodec.accountKey(credentials))
         val settings = settingsRepository.settingsFlow.first()
         val current = settings.credentials?.let { SettingsBackupCodec.fingerprint(SettingsBackupCodec.accountKey(it)) }
-        if (account != active.localAccount || current != account) return null
-        return CloudPlaybackScope(account, settings.activeProfileId, active.client.scopeId)
+        if (current != account) return null
+        return CloudPlaybackScope(account, settings.activeProfileId,
+            active?.takeIf { it.localAccount == account }?.client?.scopeId, settings.portalManagedProfile())
+    }
+
+    private fun SettingsRepository.AppSettings.portalManagedProfile() =
+        profiles.any { it.id == activeProfileId && it.portalManaged }
+
+    internal suspend fun progressIdentity(scope: CloudPlaybackScope?): Pair<List<String>, Boolean> {
+        if (scope != null) return listOf(scope.account, scope.profile, scope.link.orEmpty()) to !scope.portalManaged
+        val settings = settingsRepository.settingsFlow.first()
+        return listOf(settings.credentials?.let(SettingsBackupCodec::accountKey).orEmpty(), settings.activeProfileId) to
+            !settings.portalManagedProfile()
     }
 
     internal suspend fun recordNewCloudProgress(
@@ -155,9 +168,10 @@ class UserRepository @Inject constructor(
             else -> return
         }
         if (streamId <= 0 || duration !in 1..172800000) return
+        val link = scope.link ?: return
         val active = FavoriteCloudSession.state.value ?: return
-        if (active.localAccount != scope.account || active.client.scopeId != scope.link) return
-        val local = favoriteCloudStore(scope.account, scope.profile, "", scope.link)
+        if (active.localAccount != scope.account || active.client.scopeId != link) return
+        val local = favoriteCloudStore(scope.account, scope.profile, "", link)
         FavoriteCloudSession.recordProgress(local, CloudProgress(
             kind = kind, id = streamId, catalogId = if (kind == "movie") streamId else seriesId?.takeIf { it > 0 },
             title = title?.filterNot(Char::isISOControl)?.take(180)?.trimEnd { Character.isHighSurrogate(it) },
@@ -170,19 +184,21 @@ class UserRepository @Inject constructor(
         entries: List<WatchProgressEntity>,
         settings: SettingsRepository.AppSettings,
     ): List<WatchProgressEntity> {
-        val local = activeProgressStore(settings) ?: return entries
+        val scopedEntries = if (settings.portalManagedProfile()) emptyList() else entries
+        val local = activeProgressStore(settings) ?: return scopedEntries
         val (checkpoint, journal) = try {
-            (local.checkpoint() ?: return entries) to local.progressJournal()
+            (local.checkpoint() ?: return scopedEntries) to local.progressJournal()
         } catch (failure: kotlinx.coroutines.CancellationException) {
             throw failure
         } catch (_: Exception) {
-            return entries
+            return scopedEntries
         }
         val newest = (journal.downloaded + journal.pending).groupBy { it.id }
             .mapValues { (_, rows) -> rows.maxBy { it.observedAt } }
-        val result = entries.associateBy { it.streamId }.toMutableMap()
+        val result = scopedEntries.associateBy { it.streamId }.toMutableMap()
         for ((id, row) in newest) {
             val old = result[id]
+            if (old != null && (ContentType.fromString(old.type) == ContentType.MOVIE) != (row.kind == "movie")) continue
             if (old != null && old.lastWatched > row.observedAt) continue
             val duration = row.durationMs
             if (row.completed || row.deleted) {
@@ -215,6 +231,38 @@ class UserRepository @Inject constructor(
     suspend fun deleteWatchProgress(streamId: Int) {
         Timber.tag("SquiTV_E2E").i("[PROGRESS_ROOM_DELETE] streamId=$streamId")
         iptvDao.deleteWatchProgress(streamId)
+    }
+
+    suspend fun removeContinuing(item: IptvItem, browseScope: String) {
+        val id = item.id.toIntOrNull()?.takeIf { it > 0 } ?: return
+        val kind = when (item.type) {
+            ContentType.MOVIE -> "movie"
+            ContentType.SERIES -> "episode"
+            else -> return
+        }
+        val settings = settingsRepository.settingsFlow.first()
+        if (PlaybackSourceRepository.scope(settings) != browseScope) return
+        val entries = if (settings.portalManagedProfile()) emptyList() else iptvDao.getAllWatchProgressFlow().first()
+        fun matches(row: WatchProgressEntity) =
+            ContentType.fromString(row.type) == item.type &&
+                (if (kind == "episode") row.seriesId ?: row.streamId else row.streamId) == id &&
+                WatchProgressUtils.isPendingWatchProgress(row.position, row.duration)
+        val localRows = entries.filter(::matches)
+        val cloud = activeProgressStore(settings)
+        if (cloud != null && cloud.checkpoint() != null) {
+            val journal = cloud.progressJournal()
+            val observed = System.currentTimeMillis()
+            val remoteRows = (journal.downloaded + journal.pending).filter {
+                it.kind == kind && (if (kind == "episode") it.catalogId ?: it.id else it.id) == id
+            }.groupBy { it.key }.values.map { rows -> rows.maxBy { it.observedAt } }
+                .filter { !it.deleted && !it.completed && WatchProgressUtils.isPendingWatchProgress(it.positionMs, it.durationMs ?: 0) }
+            val ids = remoteRows.map { it.id }.distinct()
+            FavoriteCloudSession.recordProgressBatch(cloud, ids.map { streamId ->
+                CloudProgress(kind = kind, id = streamId, catalogId = id, positionMs = 0,
+                    observedAt = observed, deleted = true)
+            })
+        }
+        for (row in localRows) iptvDao.deleteWatchProgressIfUnchanged(row.streamId, row.type, row.lastWatched)
     }
     
     suspend fun clearAllWatchProgress() = iptvDao.clearAllWatchProgress()

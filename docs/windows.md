@@ -197,7 +197,11 @@ A imagem debug contém Java e VLC; mova a pasta inteira, não apenas o EXE. Dado
 
 ## Dados e manutenção
 
-Preferências, favoritos e organização têm escopo por conta/tipo. Histórico e cache de preparação usam arquivos próprios validados, limites de tamanho e escrita atômica. Arquivo inválido não autoriza apagar dados ou atribuir IDs legados a uma conta por suposição. Perfis/sincronização Android e cache offline completo de favoritos continuam pendentes.
+Preferências, favoritos e organização têm escopo por conta/tipo. Histórico e cache de preparação usam arquivos próprios validados, limites de tamanho e escrita atômica. Arquivo inválido não autoriza apagar dados ou atribuir IDs legados a uma conta por suposição.
+
+Com a Conta Squi TV e um perfil associado, o Windows sincroniza automaticamente favoritos, progresso novo e organização das categorias com o painel. A organização inclui ordem, categorias ocultas e modo do catálogo, quando aplicável. Configurações → Sincronizar agora mostra o resultado de cada etapa e permite escolher a organização do painel ou do aparelho se houver edições divergentes. Se a sessão expirar, o progresso novo do perfil já associado permanece na fila local até entrar novamente. O histórico anterior à associação permanece no aparelho.
+
+Configurações → Sincronizar catálogo busca no provedor as categorias e as listas completas de canais ao vivo, filmes e séries. A tela mostra qual seção está sendo atualizada e a contagem ou erro de cada seção ao concluir. Uma falha preserva os dados da seção já carregados em memória e a atualização prossegue nas outras. A atualização reutiliza o cache de metadados e a organização do perfil.
 
 O `.gitignore` conserva planos, auditorias, registros de manutenção, dados privados, caches e builds localmente. Documentação pública permanente e notas de versões são versionadas; binários/checksums/manifesto são assets da release. Não publicar diretórios inteiros de staging nem relatórios contendo caminhos/dados pessoais.
 

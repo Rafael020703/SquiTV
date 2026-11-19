@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import rsv.squitv.domain.model.CategoryMode
 import rsv.squitv.domain.model.PreparationSpeed
+import rsv.squitv.shared.catalog.PreparationProgress
 
 @Composable
 internal fun CatalogModeSelector(mode: CategoryMode, enabled: Boolean = true, choose: (CategoryMode) -> Unit) {
@@ -62,11 +63,12 @@ internal fun CatalogFirstChoice(account: String, kind: CatalogKind, store: Deskt
 
 @Composable
 internal fun CatalogPreparationPanel(state: DesktopPreparationState, preparation: DesktopCatalogPreparation, refresh: () -> Unit) {
+    if (PreparationProgress.isComplete(state.total, state.done, state.failed, state.error != null)) return
     var expanded by remember { mutableStateOf(false) }
     Surface(color = palette.surface.copy(alpha = .7f), shape = RoundedCornerShape(12.dp)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                val percent = rsv.squitv.shared.catalog.PreparationProgress.percent(state.total, state.done)
+                val percent = PreparationProgress.percent(state.total, state.done)
                 Text(if (state.serverManaged) "Catálogo no servidor · $percent%" else if (state.running) "Preparando catálogo · $percent%" else "Catálogo · $percent% · ${state.done}/${state.total} preparados",
                     Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = palette.onSurfaceVariant)
                 TextButton({ expanded = !expanded }) { Text(if (expanded) "Recolher" else "Detalhes") }

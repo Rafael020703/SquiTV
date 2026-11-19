@@ -71,6 +71,7 @@ enum class SettingsCategory(val labelRes: Int, val icon: ImageVector) {
     ACCOUNT_SYNC(R.string.account_sync_now, Icons.Rounded.CloudSync),
     CREDITS(R.string.metadata_credits, Icons.Rounded.Info),
     APP_UPDATES(R.string.app_updates_title, Icons.Rounded.SystemUpdate),
+    APP_DNS(R.string.app_dns_settings, Icons.Rounded.Dns),
     DNS_TESTER(R.string.dns_tester_title, Icons.Rounded.Dns),
     CLEAR_CACHE(R.string.clear_cache_label, Icons.Rounded.Brush),
     CLEAR_CATALOG(R.string.reset_database_label, Icons.Rounded.DeleteSweep)
@@ -85,6 +86,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onNavigateToAccount: () -> Unit,
     onNavigateToDnsTester: () -> Unit = {},
+    onNavigateToAppDns: () -> Unit = {},
     onNavigateToUpdates: () -> Unit = {},
     onNavigateToContentCustomization: () -> Unit = {}
 ) {
@@ -166,6 +168,7 @@ fun SettingsScreen(
                             showSyncDialog = true
                         }
                         SettingsCategory.APP_UPDATES -> onNavigateToUpdates()
+                        SettingsCategory.APP_DNS -> onNavigateToAppDns()
                         SettingsCategory.DNS_TESTER -> onNavigateToDnsTester()
                         SettingsCategory.CLEAR_CACHE -> mainViewModel.clearCache()
                         SettingsCategory.CLEAR_CATALOG -> showResetDialog = true
@@ -346,12 +349,12 @@ fun SettingsScreen(
                         SettingsCategory.CREDITS -> rsv.squitv.core.ui.components.EditorialCredits()
                         SettingsCategory.ACCOUNT -> {
                             SettingsActionItem(
-                                label = "CONTA ATIVA: ${credentials?.username ?: "NENHUM"}",
+                                label = "Conta ativa · ${credentials?.username ?: "Nenhuma"}",
                                 icon = Icons.Rounded.AccountCircle,
                                 onClick = onNavigateToAccount
                             )
                             SettingsActionItem(
-                                label = "GERENCIAR PERFIS E CONEXÕES",
+                                label = "Gerenciar conta e conexões",
                                 icon = Icons.Rounded.People,
                                 onClick = onNavigateToAccount
                             )

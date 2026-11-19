@@ -44,6 +44,7 @@ internal data class OnDemandState(val kind: CatalogKind = CatalogKind.MOVIES,
 
 /** On-demand requests are separate from live state, so browsing cannot change the zapping source. */
 internal class OnDemandController(private val client: XtreamClient, private val scope: CoroutineScope,
+    private val dataScope: (ServerCredentials?) -> String? = ::liveCategoryScope,
     private val history: () -> DesktopWatchHistory? = { null }) {
     var beforePlaybackChange: (() -> Unit)? = null
     var preparation: DesktopCatalogPreparation? = null
@@ -160,6 +161,33 @@ internal class OnDemandController(private val client: XtreamClient, private val 
         }
     }
 
+    internal suspend fun syncCatalog(account: ServerCredentials, kind: CatalogKind): Int {
+        val categories = withContext(Dispatchers.IO) { client.catalogCategories(account, kind == CatalogKind.SERIES) }
+        val items = fetchAllItems(account, kind)
+        currentCoroutineContext().ensureActive()
+
+        if (credentials != account) { reset(); credentials = account }
+        categoryOptionsJobs.remove(kind)?.cancel()
+        fullJobs.remove(kind)?.cancel()
+        if (mutable.value.kind == kind) browseJob?.cancel()
+        knownDetails.keys.removeAll { it.first == kind }
+        change(kind) { old ->
+            CatalogBrowse(categories = categories,
+                category = categories.firstOrNull { it.id == old.category?.id }, categoriesLoaded = true,
+                allItems = items, allItemsLoaded = true)
+        }
+        preparation?.source(account, kind, items)
+        return items.size
+    }
+
+    private suspend fun fetchAllItems(account: ServerCredentials, kind: CatalogKind): List<CatalogItem> {
+        val items = withContext(Dispatchers.IO) {
+            if (kind == CatalogKind.MOVIES) client.movies(account, null).mapNotNull { it.toCatalogItem() }.distinctBy { it.id }
+            else client.series(account, null).mapNotNull { it.toCatalogItem() }.distinctBy { it.id }
+        }
+        return preparation?.enrich(account, kind, items) ?: items
+    }
+
     fun clearSelection(kind: CatalogKind) {
         if (mutable.value.kind == kind) browseJob?.cancel()
         change(kind) { it.copy(category = null, items = emptyList(), loading = false, itemsLoaded = false, error = null) }
@@ -173,12 +201,7 @@ internal class OnDemandController(private val client: XtreamClient, private val 
         change(kind) { it.copy(loadingAll = true, allError = null) }
         fullJobs[kind] = scope.launch {
             try {
-                val raw = withContext(Dispatchers.IO) {
-                    if (kind == CatalogKind.MOVIES) client.movies(account, null).mapNotNull { it.toCatalogItem() }
-                    else client.series(account, null).mapNotNull { it.toCatalogItem() }
-                }
-                ensureActive()
-                val items = preparation?.enrich(account, kind, raw.distinctBy { it.id }) ?: raw.distinctBy { it.id }
+                val items = fetchAllItems(account, kind)
                 ensureActive()
                 change(kind) { it.copy(allItems = items, allItemsLoaded = true, loadingAll = false) }
                 preparation?.source(account, kind, items)
@@ -277,7 +300,7 @@ internal class OnDemandController(private val client: XtreamClient, private val 
                 preparation?.rememberGenre(account, kind, item.id,
                     result.movie?.info?.genre ?: result.series?.info?.genre ?: item.genre)
                 history()?.ready()
-                val saved = liveCategoryScope(account)?.let { history()?.latest(it, kind == CatalogKind.SERIES, item.id) }
+                val saved = dataScope(account)?.let { history()?.latest(it, kind == CatalogKind.SERIES, item.id) }
                 mutable.update { it.copy(detail = result.copy(item = enriched, lastPlayedSeason = saved?.season,
                     lastPlayedEpisodeId = saved?.takeIf { it.series }?.streamId?.toString())) }
                 try {
@@ -388,7 +411,7 @@ internal class OnDemandController(private val client: XtreamClient, private val 
 
     fun resumePlayback() {
         val detail = mutable.value.detail ?: return
-        val account = liveCategoryScope(credentials) ?: return
+        val account = dataScope(credentials) ?: return
         val saved = history()?.latest(account, detail.kind == CatalogKind.SERIES, detail.item.id) ?: return
         if (detail.kind == CatalogKind.MOVIES) { playMovie(); return }
         val info = detail.series ?: return

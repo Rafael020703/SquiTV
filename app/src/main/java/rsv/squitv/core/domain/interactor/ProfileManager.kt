@@ -18,16 +18,13 @@ class ProfileManager @Inject constructor(private val settingsRepository: Setting
     val profiles = _profiles.asStateFlow()
     private val _activeProfile = MutableStateFlow<UserProfile?>(null)
     val activeProfile = _activeProfile.asStateFlow()
-    private val _profileImageUrl = MutableStateFlow<String?>(null)
-    val profileImageUrl = _profileImageUrl.asStateFlow()
 
     init {
         managerScope.launch {
-            settingsRepository.settingsFlow.map { Triple(it.profiles, it.activeProfileId, it.profileImageUrl) }
-                .distinctUntilChanged().collect { (profiles, activeId, picture) ->
+            settingsRepository.settingsFlow.map { it.profiles to it.activeProfileId }
+                .distinctUntilChanged().collect { (profiles, activeId) ->
                     _profiles.value = profiles
                     _activeProfile.value = profiles.find { it.id == activeId } ?: profiles.firstOrNull()
-                    _profileImageUrl.value = picture
                 }
         }
     }
@@ -38,5 +35,4 @@ class ProfileManager @Inject constructor(private val settingsRepository: Setting
         managerScope.launch { settingsRepository.saveLocalProfile(UserProfile(UUID.randomUUID().toString(), name.trim(), iconUrl, isChild)) }
     }
     fun deleteProfile(profileId: String) { managerScope.launch { settingsRepository.deleteLocalProfile(profileId) } }
-    fun updateProfilePicture(url: String) { managerScope.launch { settingsRepository.updateProfilePicture(url) } }
 }

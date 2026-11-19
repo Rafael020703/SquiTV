@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -22,6 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.focus.*
@@ -41,11 +43,120 @@ private data class DashboardTile(val title: String, val description: String, val
     val type: HomeCardType, val color: Color)
 
 @Composable
+private fun desktopProfilePhoto(avatar: String?): androidx.compose.ui.graphics.ImageBitmap? = remember(avatar) {
+    val bytes = rsv.squitv.shared.account.ProfileAvatar.photoBytes(avatar)
+    val asset = rsv.squitv.shared.account.ProfileAvatar.animalPhotoName(avatar)
+    runCatching {
+        val stream = bytes?.inputStream() ?: asset?.let {
+            DesktopController::class.java.getResourceAsStream("/profile-avatars/$it")
+        }
+        stream?.use { javax.imageio.ImageIO.read(it)?.toComposeImageBitmap() }
+    }.getOrNull()
+}
+
+@Composable
 internal fun Dashboard(state: DesktopState, controller: DesktopController, store: DesktopPreferencesStore, modifier: Modifier) {
     val preferences by store.state.collectAsState()
     val account = state.account ?: return
+    val session by rsv.squitv.shared.account.FavoriteCloudSession.state.collectAsState()
+    val cloud = session?.takeIf { it.localAccount == liveCategoryScope(state.credentials) }
+    var profileAppearance by remember(cloud) { mutableStateOf<rsv.squitv.shared.account.CloudProfile?>(null) }
+    var cloudProfiles by remember(cloud) { mutableStateOf<List<rsv.squitv.shared.account.CloudProfile>>(emptyList()) }
+    var showProfiles by remember(cloud) { mutableStateOf(false) }
+    var editing by remember(cloud) { mutableStateOf(false) }
+    var editAppearance by remember(cloud) { mutableStateOf<rsv.squitv.shared.account.CloudProfile?>(null) }
+    var busyProfiles by remember(cloud) { mutableStateOf(false) }
+    var profilesError by remember(cloud) { mutableStateOf<String?>(null) }
+    val profileScope = remember(cloud, preferences.selectedProfileScopes) {
+        cloud?.let { store.dataScope(it.localAccount, it.client.scopeId) }
+    }
+    val profileForPhoto = profileAppearance
+    val activePhoto = key(cloud, profileScope, profileForPhoto?.id, profileForPhoto?.revision) {
+        produceState<androidx.compose.ui.graphics.ImageBitmap?>(null) {
+            if (cloud == null || profileForPhoto?.hasPhoto != true) return@produceState
+            try {
+                val bytes = cloud.client.profilePhoto(profileForPhoto.id) ?: return@produceState
+                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    javax.imageio.stream.MemoryCacheImageInputStream(bytes.inputStream()).use { input ->
+                        val readers = javax.imageio.ImageIO.getImageReaders(input)
+                        if (!readers.hasNext()) return@use null
+                        val reader = readers.next()
+                        try {
+                            reader.input = input
+                            if (reader.getWidth(0) != 1080 || reader.getHeight(0) != 1080) return@use null
+                            val params = reader.defaultReadParam.apply { setSourceSubsampling(2, 2, 0, 0) }
+                            reader.read(0, params).toComposeImageBitmap()
+                        } finally { reader.dispose() }
+                    }
+                }
+            } catch (failure: kotlinx.coroutines.CancellationException) {
+                throw failure
+            } catch (_: Exception) { /* Keep the locally available avatar. */ }
+        }.value
+    }
+    val profileActions = rememberCoroutineScope()
+    suspend fun reloadProfiles() {
+        if (cloud == null) return
+        val currentScope = store.dataScope(cloud.localAccount, cloud.client.scopeId)
+        val local = store.favoriteCloudStore(currentScope, cloud.client.scopeId) { _, _ -> null }
+        val id = local.checkpoint()?.profile
+        cloudProfiles = cloud.client.profiles()
+        profileAppearance = cloudProfiles.firstOrNull { it.id == id }
+    }
+    LaunchedEffect(cloud, profileScope) {
+        if (cloud == null) return@LaunchedEffect
+        while (true) {
+            try {
+                reloadProfiles()
+            } catch (failure: kotlinx.coroutines.CancellationException) {
+                throw failure
+            } catch (_: Exception) { /* Keep the last confirmed appearance while offline. */ }
+            delay(60_000)
+        }
+    }
+    if (showProfiles && cloud != null) {
+        rsv.squitv.core.ui.components.ProfilePickerDialog(
+            cloudProfiles.map { rsv.squitv.core.ui.components.ProfileCardEntry(it.id, it.name, it.avatar) },
+            profileAppearance?.id, busyProfiles, profilesError,
+            onSelect = { id ->
+                val candidate = cloudProfiles.firstOrNull { it.id == id }
+                if (candidate != null && !busyProfiles) profileActions.launch {
+                    if (candidate.id == profileAppearance?.id) { showProfiles = false; return@launch }
+                    busyProfiles = true
+                    profilesError = null
+                    try {
+                        controller.awaitWatchSave()
+                        store.selectProfile(cloud, candidate, requireNotNull(controller.watchHistory))
+                        profileAppearance = candidate
+                        showProfiles = false
+                    } catch (failure: kotlinx.coroutines.CancellationException) {
+                        throw failure
+                    } catch (failure: Exception) {
+                        profilesError = failure.message ?: "Não foi possível trocar de perfil."
+                    } finally { busyProfiles = false }
+                }
+            },
+            onEdit = { id -> editAppearance = cloudProfiles.firstOrNull { it.id == id }; editing = true; showProfiles = false },
+            onCreate = { editAppearance = null; editing = true; showProfiles = false },
+            onDismiss = { showProfiles = false },
+            photo = { desktopProfilePhoto(it) },
+        )
+    }
+    if (editing && cloud != null) {
+        val profile = editAppearance
+        rsv.squitv.core.ui.components.ProfileAppearanceDialog(profile?.name.orEmpty(), profile?.avatar,
+            onDismiss = { editing = false; showProfiles = true },
+            photo = { desktopProfilePhoto(it) },
+            onSave = { name, avatar ->
+                val updated = if (profile == null) cloud.client.createProfile(name, avatar)
+                    else cloud.client.personalizeProfile(profile, name, avatar)
+                cloudProfiles = (cloudProfiles.filterNot { it.id == updated.id } + updated).sortedBy { it.name.lowercase() }
+                if (profileAppearance?.id == updated.id) profileAppearance = updated
+            })
+    }
     val displayName = rsv.squitv.shared.account.AccountPresentation.displayName(
-        state.portalDisplayName ?: preferences.displayNamesByAccount[liveCategoryScope(state.credentials)], account.username)
+        state.portalDisplayName ?: preferences.displayNamesByAccount[liveCategoryScope(state.credentials)]
+            .takeIf { state.portalLinkId == null }, state.credentials?.username ?: account.username)
     val windowDragArea = LocalWindowDragArea.current
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     // Match Android's HH:mm clock without a second date row.
@@ -80,7 +191,7 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
 
     val visibleTilesCount = main.size + secondary.size
     val cardFocus = remember(visibleTilesCount) { List(visibleTilesCount) { FocusRequester() } }
-    val headerFocus = remember { List(4) { FocusRequester() } }
+    val headerFocus = remember { List(3) { FocusRequester() } }
     var lastFocused by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(main, secondary) {
         withFrameNanos { }
@@ -103,18 +214,29 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
                 val profile: @Composable (Modifier) -> Unit = { profileModifier ->
                     windowDragArea(profileModifier) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Surface(Modifier.size((if (narrow) 48.dp else 64.dp) * viewport), shape = CircleShape,
-                            color = palette.primary.copy(alpha = .1f), border = BorderStroke(2.dp, palette.primary.copy(alpha = .3f))) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Rounded.Person, null, Modifier.size((if (narrow) 32.dp else 40.dp) * viewport), tint = palette.primary)
+                        rsv.squitv.core.ui.components.ProfileAvatarBadge(profileAppearance?.avatar,
+                            profileAppearance?.name ?: displayName, Modifier.size((if (narrow) 48.dp else 64.dp) * viewport),
+                            activePhoto ?: desktopProfilePhoto(profileAppearance?.avatar)) {
+                            if (cloud == null) controller.openSettings() else {
+                                showProfiles = true
+                                profileActions.launch {
+                                    busyProfiles = true
+                                    profilesError = null
+                                    try { reloadProfiles() }
+                                    catch (failure: kotlinx.coroutines.CancellationException) { throw failure }
+                                    catch (failure: Exception) { profilesError = failure.message ?: "Não foi possível carregar os perfis." }
+                                    finally { busyProfiles = false }
+                                }
                             }
                         }
                         Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("OLÁ, ${displayName.uppercase(Locale.ROOT)}",
+                            Text("Olá, $displayName",
                                 style = MaterialTheme.typography.displayLarge.copy(fontSize =
                                     maxOf(MaterialTheme.typography.displayLarge.fontSize.value * textScale, 10f).sp),
                                 fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            profileAppearance?.let { Text("Perfil: ${it.name}", style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis) }
                             Text("EXPIRA EM: " + (account.expiresAt?.let {
                                 Instant.ofEpochSecond(it).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
                             } ?: "Não informado"), color = palette.onSurfaceVariant,
@@ -128,12 +250,10 @@ internal fun Dashboard(state: DesktopState, controller: DesktopController, store
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         DashboardAction(Icons.Rounded.Search, "Buscar", controller::openSearch, modifier = Modifier.focusRequester(headerFocus[0])
                             .focusProperties { down = firstCardFocus })
-                        DashboardAction(Icons.Rounded.Notifications, "Notificações", controller::openNotifications,
+                        DashboardAction(Icons.Rounded.Info, "Diagnóstico ao vivo", controller::openNotifications,
                             modifier = Modifier.focusRequester(headerFocus[1]).focusProperties { down = cardFocus.getOrElse(1) { firstCardFocus } })
                         DashboardAction(Icons.Rounded.Settings, "Configurações", controller::openSettings,
                             Modifier.focusRequester(headerFocus[2]).focusProperties { down = cardFocus.getOrElse(2) { firstCardFocus } })
-                        FilledTonalButton(controller::openAppDns, modifier = Modifier.focusRequester(headerFocus[3])
-                            .focusProperties { down = firstCardFocus }) { Text("DNS") }
                         Spacer(Modifier.width(12.dp))
                         Text(now.format(DateTimeFormatter.ofPattern("HH:mm")), style = MaterialTheme.typography.displayLarge.copy(fontSize =
                                 maxOf(MaterialTheme.typography.displayLarge.fontSize.value * textScale, 10f).sp),

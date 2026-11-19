@@ -190,7 +190,8 @@ class SettingsRepository @Inject constructor(
         val seriesPromptDismissedMap: Map<String, Boolean> = emptyMap(),
         val preparationSpeed: String = "NORMAL",
         val browseMemory: rsv.squitv.shared.catalog.CatalogBrowseMemory = rsv.squitv.shared.catalog.CatalogBrowseMemory(),
-        val portalDisplayName: String? = null
+        val portalDisplayName: String? = null,
+        val usesPortalIdentity: Boolean = false,
     ) {
         fun catalogPosition(type: String) = browseMemory.position(
             rsv.squitv.core.data.repository.PlaybackSourceRepository.scope(this), type)
@@ -378,6 +379,8 @@ class SettingsRepository @Inject constructor(
             ignoredVersion = ignoredVersion,
             displayNamesMap = displayNamesMap,
             portalDisplayName = preferences[PreferencesKeys.PORTAL_DISPLAY_NAME],
+            usesPortalIdentity = preferences[PreferencesKeys.PORTAL_SYNC_SESSION] != null ||
+                !preferences[PreferencesKeys.PORTAL_DISPLAY_NAME].isNullOrBlank(),
             hiddenSections = hiddenSections,
             categoryOrderMap = categoryOrderMap,
             hiddenCategoriesMap = hiddenCategoriesMap,
@@ -391,16 +394,16 @@ class SettingsRepository @Inject constructor(
 
     val credentialsFlow: Flow<XtreamCredentials?> = settingsFlow.map { it.credentials }
 
-    internal suspend fun applyCloudProfileName(accountId: String, profileId: String, name: String) {
+    internal suspend fun applyCloudProfileAppearance(accountId: String, profileId: String, name: String, avatar: String) {
         require(name.isNotBlank() && name.length <= 80)
         context.dataStore.edit { prefs ->
             val settings = readSettings(prefs)
             val key = settings.credentials?.let(SettingsBackupCodec::accountKey) ?: return@edit
             if (SettingsBackupCodec.fingerprint(key) != accountId || settings.activeProfileId != profileId) return@edit
             val profile = settings.profiles.firstOrNull { it.id == profileId } ?: return@edit
-            if (profile.name != name) {
+            if (profile.name != name || profile.avatar != avatar) {
                 prefs[PreferencesKeys.LOCAL_PROFILES] = Json.encodeToString(
-                    settings.profiles.map { if (it.id == profileId) it.copy(name = name) else it },
+                    settings.profiles.map { if (it.id == profileId) it.copy(name = name, avatar = avatar) else it },
                 )
             }
         }
@@ -413,7 +416,7 @@ class SettingsRepository @Inject constructor(
     ): List<rsv.squitv.shared.account.CloudCategories> =
         listOf("live", "movie", "series").map { kind ->
             val localType = if (kind == "movie") "vod" else kind
-            val key = "${accountKey.lowercase().trim()}_$localType"
+            val key = SettingsBackupCodec.categoryKey(accountKey, profileId, localType)
             val mode = when (kind) {
                 "movie" -> settings.getMovieCategoryMode(accountKey, profileId).name.lowercase()
                 "series" -> settings.getSeriesCategoryMode(accountKey, profileId).name.lowercase()
@@ -441,7 +444,7 @@ class SettingsRepository @Inject constructor(
             val modeKey = "${accountKey}_$profileId"
             for (row in rows) {
                 val localType = if (row.kind == "movie") "vod" else row.kind
-                val key = "${accountKey.lowercase().trim()}_$localType"
+                val key = SettingsBackupCodec.categoryKey(accountKey, profileId, localType)
                 order[key] = row.order
                 hidden[key] = row.hidden.toSet()
                 when (row.kind) {
@@ -954,7 +957,7 @@ class SettingsRepository @Inject constructor(
     suspend fun updateCategoryOrder(accountKey: String, contentType: String, order: List<String>) {
         context.dataStore.edit { preferences ->
             val map = readOrderMap(preferences)
-            val key = "${accountKey.lowercase().trim()}_${contentType.lowercase().trim()}"
+            val key = SettingsBackupCodec.categoryKey(accountKey, preferences[PreferencesKeys.ACTIVE_PROFILE_ID] ?: "default", contentType)
             map[key] = order
             preferences[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(map)
         }
@@ -963,7 +966,7 @@ class SettingsRepository @Inject constructor(
     suspend fun updateHiddenCategories(accountKey: String, contentType: String, hiddenSet: Set<String>) {
         context.dataStore.edit { preferences ->
             val map = readHiddenMap(preferences)
-            val key = "${accountKey.lowercase().trim()}_${contentType.lowercase().trim()}"
+            val key = SettingsBackupCodec.categoryKey(accountKey, preferences[PreferencesKeys.ACTIVE_PROFILE_ID] ?: "default", contentType)
             map[key] = hiddenSet
             preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP] = Json.encodeToString(map)
         }
@@ -974,7 +977,7 @@ class SettingsRepository @Inject constructor(
             val orderMap = readOrderMap(preferences)
             val hiddenMap = readHiddenMap(preferences)
 
-            val key = "${accountKey.lowercase().trim()}_${contentType.lowercase().trim()}"
+            val key = SettingsBackupCodec.categoryKey(accountKey, preferences[PreferencesKeys.ACTIVE_PROFILE_ID] ?: "default", contentType)
             orderMap.remove(key)
             hiddenMap.remove(key)
 
@@ -1007,7 +1010,7 @@ class SettingsRepository @Inject constructor(
         var matched = 0
         context.dataStore.edit { preferences ->
             val current = readSettings(preferences)
-            val configured = SettingsBackupCodec.configuredAccounts(current)
+            val configured = SettingsBackupCodec.configuredCategoryScopes(current, backup.profiles.orEmpty().map { it.id })
             val orders = readOrderMap(preferences)
             val hidden = readHiddenMap(preferences)
             val names = readDisplayNamesMap(preferences)
@@ -1038,7 +1041,9 @@ class SettingsRepository @Inject constructor(
             backup.profiles?.let { incoming ->
                 val profiles = readProfiles(preferences).associateBy { it.id }.toMutableMap()
                 incoming.forEach { profile ->
-                    profiles[profile.id] = UserProfile(profile.id, profile.name, profile.iconUrl, profile.isChild)
+                    val existing = profiles[profile.id]
+                    profiles[profile.id] = UserProfile(profile.id, profile.name, profile.iconUrl, profile.isChild,
+                        profile.avatar ?: existing?.avatar ?: "default", profile.portalManaged ?: existing?.portalManaged ?: false)
                 }
                 preferences[PreferencesKeys.LOCAL_PROFILES] = Json.encodeToString(profiles.values.toList())
                 backup.activeProfileId?.takeIf { it in profiles }?.let { preferences[PreferencesKeys.ACTIVE_PROFILE_ID] = it }
@@ -1056,7 +1061,7 @@ class SettingsRepository @Inject constructor(
         availableIds: List<String>, offset: Int = 0, position: Int? = null) {
         context.dataStore.edit { preferences ->
             val orders = readOrderMap(preferences)
-            val key = "${accountKey.lowercase().trim()}_${contentType.lowercase().trim()}"
+            val key = SettingsBackupCodec.categoryKey(accountKey, preferences[PreferencesKeys.ACTIVE_PROFILE_ID] ?: "default", contentType)
             orders[key] = rsv.squitv.shared.catalog.CategoryCustomization.move(
                 orders[key].orEmpty(), availableIds, categoryId, offset, position) ?: return@edit
             preferences[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(orders)
@@ -1066,7 +1071,7 @@ class SettingsRepository @Inject constructor(
     suspend fun toggleHiddenCategory(accountKey: String, contentType: String, categoryId: String) {
         context.dataStore.edit { preferences ->
             val hidden = readHiddenMap(preferences)
-            val key = "${accountKey.lowercase().trim()}_${contentType.lowercase().trim()}"
+            val key = SettingsBackupCodec.categoryKey(accountKey, preferences[PreferencesKeys.ACTIVE_PROFILE_ID] ?: "default", contentType)
             val values = hidden[key].orEmpty().toMutableSet()
             if (!values.add(categoryId)) values.remove(categoryId)
             hidden[key] = values
@@ -1086,9 +1091,9 @@ class SettingsRepository @Inject constructor(
             val orders = readOrderMap(preferences)
             val hidden = readHiddenMap(preferences)
             val names = readDisplayNamesMap(preferences)
-            for (type in listOf("live", "vod", "series")) {
-                val source = "${oldKey}_$type"
-                val destination = "${newKey}_$type"
+            for (profile in readProfiles(preferences)) for (type in listOf("live", "vod", "series")) {
+                val source = SettingsBackupCodec.categoryKey(oldKey, profile.id, type)
+                val destination = SettingsBackupCodec.categoryKey(newKey, profile.id, type)
                 if (destination !in orders) orders[source]?.let { orders[destination] = it }
                 if (destination !in hidden) hidden[source]?.let { hidden[destination] = it }
             }
@@ -1123,9 +1128,14 @@ class SettingsRepository @Inject constructor(
         }
     }
 
-    suspend fun updateProfilePicture(url: String) {
-        context.dataStore.edit { it[PreferencesKeys.PROFILE_PICTURE] = url }
+    internal suspend fun personalizeLocalProfile(id: String, name: String, avatar: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.LOCAL_PROFILES] = Json.encodeToString(
+                readProfiles(preferences).map { if (it.id == id) it.copy(name = name, avatar = avatar) else it },
+            )
+        }
     }
+
 
     suspend fun updateMovieCategoryMode(accountKey: String, profileId: String, mode: rsv.squitv.domain.model.CategoryMode) {
         val key = "${accountKey}_$profileId"

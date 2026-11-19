@@ -35,13 +35,14 @@ internal fun DesktopMultiViewScreen(controller: DesktopController, store: Deskto
     var picking by remember { mutableStateOf<Int?>(null) }
     val pickerState = remember(picking) { ChannelPickerState() }
     val index by controller.liveIndex.state.collectAsState()
-    val accountKey = liveCategoryScope(credentials).orEmpty()
+    val providerScope = liveCategoryScope(credentials).orEmpty()
+    val accountKey = controller.profileDataScope(credentials).orEmpty()
     var view by remember(accountKey) { mutableStateOf(LiveCatalogView()) }
     var scaleMode by remember { mutableStateOf(VideoScaleMode.FIT) }
     LaunchedEffect(index, preferences.groupLiveChannels, preferences.preferredChannelQuality,
         preferences.categoryOrder(accountKey, null), preferences.hiddenCategories(accountKey, null), desktop.categories) {
         view = withContext(Dispatchers.Default) {
-            if (index.accountScope != accountKey || !index.loaded) LiveCatalogView() else
+            if (index.accountScope != providerScope || !index.loaded) LiveCatalogView() else
                 LiveCatalogView.build(desktop.categories, index.channels, accountKey,
                     preferences.groupLiveChannels, rsv.squitv.domain.model.ChannelQuality.fromPreference(preferences.preferredChannelQuality),
                     preferences.categoryOrder(accountKey, null), preferences.hiddenCategories(accountKey, null))

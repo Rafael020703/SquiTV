@@ -78,6 +78,7 @@
     <string name="row_fav_movies">Favorite Movies</string>
     <string name="row_fav_series">Favorite Series</string>
     <string name="row_continue_watching">Continue Watching</string>
+    <string name="remove_from_continue_watching">Remove from Continue Watching</string>
     <string name="row_recommended">Recommended for You</string>
     <string name="row_featured_channels">Featured Channels</string>
     <string name="permissions_label">Permissions</string>
@@ -633,4 +634,7 @@
     <string name="category_section_genres">GENRE FILTERS</string>
     <string name="category_section_server">SERVER CATEGORIES</string>
     <string name="updater_signature_unavailable">Could not read the signing certificates on this device. Installation has not started. Open the GitHub release to get the official APK.</string>
+    <string name="remove_continue_watching_failed">Could not remove from Continue Watching.</string>
+    <string name="search_in_category">Search this category</string>
+    <string name="app_dns_settings">App DNS</string>
 </resources>

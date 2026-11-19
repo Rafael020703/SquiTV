@@ -58,7 +58,8 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
     val logos = rememberDesktopImages(DesktopImageKind.CHANNELS)
     val categoriesState = rememberLazyListState()
     var editingSearch by remember { mutableStateOf(false) }
-    val accountScope = remember(state.credentials) { liveCategoryScope(state.credentials) }
+    val providerScope = liveCategoryScope(state.credentials)
+    val accountScope = controller.profileDataScope(state.credentials)
     var favoriteCategory by rememberSaveable(accountScope) { mutableStateOf(false) }
     var selectionRestored by rememberSaveable(accountScope) { mutableStateOf(false) }
     val savedPosition = preferences.browseMemory.position(accountScope.orEmpty(), "live")
@@ -90,7 +91,7 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
     DisposableEffect(controller) { onDispose { controller.liveIndex.cancel() } }
     LaunchedEffect(accountScope, index, state.categories, hidden, categoryOrder, preferences.groupLiveChannels, preferences.preferredChannelQuality) {
         projection = withContext(Dispatchers.Default) {
-            if (!index.loaded || index.accountScope != accountScope) null else {
+            if (!index.loaded || index.accountScope != providerScope) null else {
                 val quality = ChannelQuality.fromPreference(preferences.preferredChannelQuality)
                 val all = index.channels.filter { it.categoryId !in hidden }
                 val recent = RecentlyAddedCatalog.select(all,
@@ -267,7 +268,7 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
         }
         state.notice?.let { StatusNotice(it) }
         state.error?.let { StatusNotice(it, error = true) }
-        state.catalogSyncError?.let { StatusNotice(it, error = true) }
+        state.liveCatalogSyncError?.let { StatusNotice(it, error = true) }
         BoxWithConstraints(Modifier.weight(1f)) {
         val sidebarWidth = if (maxWidth < 1000.dp) 220.dp else AppBrand.SIDEBAR_WIDTH_DP.dp
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
@@ -284,7 +285,7 @@ internal fun LiveCatalogScreen(state: DesktopState, controller: DesktopControlle
                     if (!state.busy && !state.refreshingCatalog && categories.isEmpty()) {
                         Text(if (allHidden) "Todas as categorias estão ocultas." else "Nenhuma categoria disponível.", style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(8.dp))
-                        TextButton(onClick = if (allHidden) showAll else controller::syncCatalog) {
+                        TextButton(onClick = if (allHidden) showAll else controller::refreshLiveCatalog) {
                             Text(if (allHidden) "Mostrar todas" else "Tentar novamente")
                         }
                     }

@@ -64,30 +64,45 @@ private fun runApplication() {
                     it.liveDiagnostics = liveDiagnostics
                 } }
         val preferences = remember { DesktopPreferencesStore(directory, scope) }
+        SideEffect { controller.preferences = preferences }
         val preferencesLoaded by preferences.loaded.collectAsState()
-        DisposableEffect(history, preferences) {
+        val profilePreferences by preferences.state.collectAsState()
+        DisposableEffect(history, preferences, controller) {
+            fun progressStore(account: String): rsv.squitv.shared.account.FavoriteLocalStore? {
+                val current = controller.state.value
+                val link = current.portalLinkId ?: return null
+                if (controller.profileDataScope(current.credentials) != account) return null
+                return preferences.favoriteCloudStore(account, link) { _, _ -> null }
+            }
             history.onNewProgress = { account, progress ->
-                val active = FavoriteCloudSession.state.value
-                if (active?.localAccount == account) {
-                    val local = preferences.favoriteCloudStore(account, active.client.scopeId) { _, _ -> null }
-                    FavoriteCloudSession.recordProgress(local, progress)
+                progressStore(account)?.let { FavoriteCloudSession.recordProgress(it, progress) }
+            }
+            history.onRemoveProgress = { account, changes ->
+                progressStore(account)?.let { local ->
+                    val journal = local.progressJournal()
+                    val linked = (journal.downloaded + journal.pending).mapTo(HashSet()) { it.key }
+                    FavoriteCloudSession.recordProgressBatch(local, changes.filter { it.key in linked })
                 }
             }
-            onDispose { history.onNewProgress = null }
+            onDispose { history.onNewProgress = null; history.onRemoveProgress = null }
         }
         val cloudSession by FavoriteCloudSession.state.collectAsState()
-        LaunchedEffect(cloudSession, preferencesLoaded) {
+        val selectedScope = remember(cloudSession, profilePreferences.selectedProfileScopes) {
+            cloudSession?.let { preferences.dataScope(it.localAccount, it.client.scopeId) }
+        }
+        LaunchedEffect(cloudSession, preferencesLoaded, selectedScope) {
             if (!preferencesLoaded) return@LaunchedEffect
             val active = cloudSession ?: return@LaunchedEffect
-            val local = preferences.favoriteCloudStore(active.localAccount, active.client.scopeId,
+            val dataScope = selectedScope ?: return@LaunchedEffect
+            val local = preferences.favoriteCloudStore(dataScope, active.client.scopeId,
                 onProgressApplied = { boundAt, rows ->
                     if (FavoriteCloudSession.state.value !== active ||
-                        liveCategoryScope(controller.state.value.credentials) != active.localAccount)
+                        controller.profileDataScope(controller.state.value.credentials) != dataScope)
                         throw CancellationException("A conta ativa mudou.")
-                    history.applyCloudProgress(active.localAccount, boundAt, rows)
+                    history.applyCloudProgress(dataScope, boundAt, rows)
                 },
             ) { _, _ -> null }
-            active.client.maintainAssociatedData(local)
+            active.client.maintainAssociatedData(local, syncCategories = true)
         }
         val updates = remember { DesktopUpdateController(directory.resolve("updates"), preferences, scope) }
         val updateState by updates.state.collectAsState()
@@ -163,7 +178,9 @@ private fun runApplication() {
                         current.playback != null -> controller.stopPlayback()
                         catalog.playback != null -> controller.catalog.stopPlayback()
                         catalog.detail != null -> controller.catalog.closeDetail()
-                        current.page == DesktopPage.APP_DNS -> controller.home()
+                        current.page == DesktopPage.APP_DNS -> {
+                            if (current.account == null) controller.home() else controller.openSettings()
+                        }
                         current.page == DesktopPage.DOWNLOADS && current.account == null -> controller.home()
                         current.account != null && current.page == DesktopPage.UPDATES -> controller.openSettings()
                         current.account != null && current.page != DesktopPage.DASHBOARD -> controller.home()

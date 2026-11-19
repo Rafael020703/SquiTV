@@ -71,7 +71,7 @@ class MultiViewViewModel @Inject constructor(
     private val playJobs = arrayOfNulls<Job>(MultiViewPolicy.SLOT_COUNT)
     val pickerCatalog = combine(catalogRepository.observeBrowseCatalog("live"), settingsRepository.settingsFlow) { (categories, streams), settings ->
         val credentials = settings.credentials ?: return@combine LiveCatalogView()
-        val key = "${SettingsBackupCodec.accountKey(credentials)}_live"
+        val key = SettingsBackupCodec.categoryKey(SettingsBackupCodec.accountKey(credentials), settings.activeProfileId, "live")
         LiveCatalogView.build(categories.map { LiveCategory(it.id, it.name) }, streams.filter { it.id > 0 }.map {
             LiveChannel(it.id, it.name, it.categoryId, it.logo, it.url)
         }, PlaybackSourceRepository.scope(settings), settings.groupLiveChannels,

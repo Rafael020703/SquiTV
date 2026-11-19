@@ -72,7 +72,7 @@ fun ContentRow(
         if (title.isNotEmpty()) {
             AppSectionHeader(
                 title = title,
-                onActionClick = { /* Can navigate to specific view if needed */ }
+                actionText = null
             )
             Spacer(modifier = Modifier.height(responsive.dp(tokens.spacing.medium)))
         }
