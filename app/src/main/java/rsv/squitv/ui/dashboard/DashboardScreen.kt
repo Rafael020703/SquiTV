@@ -303,7 +303,7 @@ fun DashboardContent(
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         )
-                        activeProfile?.let { Text("Perfil: ${it.name}", style = tokens.typography.caption, maxLines = 1,
+                        activeProfile?.let { Text(stringResource(R.string.active_profile_label, it.name), style = tokens.typography.caption, maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
                         Text(
                             text = "PLANO PREMIUM • EXPIRA EM: $expDate",

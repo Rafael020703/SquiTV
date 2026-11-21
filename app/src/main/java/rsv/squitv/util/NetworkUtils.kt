@@ -25,7 +25,7 @@ object NetworkUtils {
                 val addrs = Collections.list(intf.inetAddresses)
                 for (addr in addrs) {
                     if (!addr.isLoopbackAddress) {
-                        val sAddr = addr.hostAddress
+                        val sAddr = addr.hostAddress ?: continue
                         val isIPv4 = sAddr.indexOf(':') < 0
                         if (useIPv4) {
                             if (isIPv4) return sAddr

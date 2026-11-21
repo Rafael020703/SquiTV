@@ -246,7 +246,7 @@ fun AccountContent(
 
                             // Action Row for Display Name Editing
                             if (usesPortalIdentity) {
-                                Text("O nome de exibição desta conta é gerenciado no site Squi TV.",
+                                Text(stringResource(R.string.account_display_name_portal),
                                     style = tokens.typography.caption, color = tokens.colors.textSecondary)
                             } else Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -299,7 +299,7 @@ fun AccountContent(
                                         OutlinedTextField(
                                             value = nameInput,
                                             onValueChange = { nameInput = it },
-                                            placeholder = { Text("Ex: Rafael Casa") },
+                                            placeholder = { Text(stringResource(R.string.account_display_name_example)) },
                                             singleLine = true,
                                             modifier = Modifier.fillMaxWidth(),
                                             colors = OutlinedTextFieldDefaults.colors(
@@ -328,7 +328,7 @@ fun AccountContent(
                                                 colors = ButtonDefaults.buttonColors(containerColor = tokens.colors.primary, contentColor = Color.Black),
                                                 shape = tokens.shapes.medium
                                             ) {
-                                                Text("Salvar nome", fontWeight = FontWeight.Bold)
+                                                Text(stringResource(R.string.account_display_name_save), fontWeight = FontWeight.Bold)
                                             }
                                         }
                                     }
@@ -480,7 +480,7 @@ fun AccountContent(
                                             },
                                             dismissButton = {
                                                 TextButton(onClick = { showDeleteConfirm = false }) {
-                                                    Text("Cancelar", color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold)
+                                                    Text(stringResource(R.string.cancel), color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold)
                                                 }
                                             }
                                         )

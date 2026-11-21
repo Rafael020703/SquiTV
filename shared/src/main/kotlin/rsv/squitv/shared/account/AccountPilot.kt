@@ -32,6 +32,13 @@ object AccountPilot {
 
     data class LinkChoice(val slot: Int, val username: String)
     class LinkSelectionExpired : IOException("A seleção IPTV expirou. Entre novamente.")
+    enum class LoginFailure(val portuguese: String) {
+        INVALID_CREDENTIALS("Usuário ou senha da Conta Squi TV inválidos."),
+        TOO_MANY_ATTEMPTS("Muitas tentativas. Aguarde e tente novamente."),
+        UNAVAILABLE("O login da Conta Squi TV está temporariamente indisponível."),
+        NO_IPTV_LINK("Vincule sua conta IPTV no portal Squi TV antes de entrar."),
+    }
+    class LoginRejected(val reason: LoginFailure) : IOException(reason.portuguese)
 
     sealed interface LoginResult {
         class Connected internal constructor(val credentials: LinkedLogin) : LoginResult
@@ -140,10 +147,12 @@ object AccountPilot {
 
     private fun parseLinkedLogin(response: Pair<Int, JsonObject>): LinkedLogin {
         val (status, body) = response
-        if (status == 401) throw IOException("Usuário ou senha da Conta Squi TV inválidos.")
-        if (status == 429) throw IOException("Muitas tentativas. Aguarde e tente novamente.")
-        if (status == 503) throw IOException("O login da Conta Squi TV está temporariamente indisponível.")
-        if (status == 404) throw IOException("Vincule sua conta IPTV no portal Squi TV antes de entrar.")
+        when (status) {
+            401 -> throw LoginRejected(LoginFailure.INVALID_CREDENTIALS)
+            429 -> throw LoginRejected(LoginFailure.TOO_MANY_ATTEMPTS)
+            503 -> throw LoginRejected(LoginFailure.UNAVAILABLE)
+            404 -> throw LoginRejected(LoginFailure.NO_IPTV_LINK)
+        }
         if (status != 200) throw IOException("Não foi possível carregar o vínculo IPTV (HTTP $status).")
         val username = body.value("username")?.takeIf { it.isNotBlank() && it.length <= 256 }
         val password = body.value("password")?.takeIf { it.isNotBlank() && it.length <= 256 }

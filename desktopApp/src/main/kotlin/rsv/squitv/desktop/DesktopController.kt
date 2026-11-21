@@ -227,6 +227,9 @@ class DesktopController(
             mutable.value = mutable.value.copy(error = "Usuário ou senha excedem o tamanho permitido.")
             return
         }
+        val rememberedAccount = mutable.value.savedCredentials?.takeIf {
+            automatic && remember && it.username == username.trim() && it.password == password
+        }
         mutable.value = mutable.value.copy(busy = true, automaticLogin = automatic, error = null, notice = null)
         connectionJob = scope.launch {
             try {
@@ -235,7 +238,8 @@ class DesktopController(
                 for (baseUrl in candidates) {
                     ensureActive()
                     mutable.value = mutable.value.copy(connectingServer = baseUrl)
-                    val credentials = ServerCredentials(baseUrl, username.trim(), password)
+                    val credentials = ServerCredentials(baseUrl, username.trim(), password,
+                        localIdentityBaseUrl = rememberedAccount?.baseUrl?.takeUnless { it == baseUrl })
                     try {
                         val account = withTimeoutOrNull(15_000L) {
                             withContext(Dispatchers.IO) { client.login(credentials) }
@@ -252,12 +256,13 @@ class DesktopController(
                 var portalSession = rsv.squitv.desktop.data.RememberedPortalSession(
                     linkedLogin?.displayName, linkedLogin?.favoriteClient?.encodeForProtectedStorage(),
                 )
+                val credentialsToRemember = rememberedAccount ?: credentials
                 credentialWrites.withLock { withContext(Dispatchers.IO) {
                     try {
                         if (remember) {
-                            store.save(credentials)
+                            store.save(credentialsToRemember)
                             if (automatic) {
-                                store.loadPortalSession(credentials)?.let { portalSession = it }
+                                store.loadPortalSession(credentialsToRemember)?.let { portalSession = it }
                             } else {
                                 store.savePortalSession(credentials, portalSession)
                             }
@@ -273,7 +278,7 @@ class DesktopController(
                 val operation = java.util.UUID.randomUUID().toString()
                 mutable.value = mutable.value.copy(restoring = false, credentials = credentials, account = account, portalDisplayName = portalSession.displayName,
                     portalLinkId = rsv.squitv.shared.account.FavoriteCloudClient.storedLinkId(portalSession.syncSession),
-                    savedCredentials = if (remember) credentials else null, notice = notice, busy = true,
+                    savedCredentials = if (remember) credentialsToRemember else null, notice = notice, busy = true,
                     connectingServer = null, error = null, categories = emptyList(), channels = emptyList(),
                     selectedCategory = null, channelsLoaded = false, channelError = null, automaticLogin = false,
                     page = DesktopPage.DASHBOARD, loginSync = newLoginSync(operation))
@@ -560,22 +565,26 @@ class DesktopController(
             fun isCurrent() = mutable.value.credentials == account && catalogSyncRevision == revision
             val completed = mutableListOf<String>()
             val errors = mutableListOf<String>()
-            suspend fun refresh(label: String, live: Boolean = false, fetch: suspend () -> Int) {
+            suspend fun refresh(type: DesktopSearchType, label: String, fetch: suspend () -> Int) {
                 ensureActive()
                 if (!isCurrent()) throw CancellationException()
                 mutable.value = mutable.value.copy(catalogSyncStage = label)
                 try {
-                    completed += "$label: ${fetch()}"
+                    val count = fetch()
+                    ensureActive()
+                    if (!isCurrent()) throw CancellationException()
+                    search.invalidateCatalog(type, searchVisible = mutable.value.page == DesktopPage.SEARCH)
+                    completed += "$label: $count"
                 } catch (e: CancellationException) { throw e }
                 catch (e: Exception) {
                     ensureActive()
                     val message = "$label: ${friendly(e)}"
                     errors += message
-                    if (live && isCurrent()) mutable.value = mutable.value.copy(liveCatalogSyncError = message)
+                    if (type == DesktopSearchType.LIVE && isCurrent()) mutable.value = mutable.value.copy(liveCatalogSyncError = message)
                 }
             }
             try {
-                refresh("Canais ao vivo", live = true) {
+                refresh(DesktopSearchType.LIVE, "Canais ao vivo") {
                     val categories = withContext(Dispatchers.IO) { client.categories(account) }
                     val channels = liveIndex.fetchChannels(account)
                     ensureActive()
@@ -584,8 +593,8 @@ class DesktopController(
                     channels.size
                 }
                 if (includeOnDemand) {
-                    refresh("Filmes") { catalog.syncCatalog(account, CatalogKind.MOVIES) }
-                    refresh("Séries") { catalog.syncCatalog(account, CatalogKind.SERIES) }
+                    refresh(DesktopSearchType.MOVIES, "Filmes") { catalog.syncCatalog(account, CatalogKind.MOVIES) }
+                    refresh(DesktopSearchType.SERIES, "Séries") { catalog.syncCatalog(account, CatalogKind.SERIES) }
                 }
                 if (isCurrent()) mutable.value = mutable.value.copy(
                     catalogSyncResult = completed.takeIf { it.isNotEmpty() }?.joinToString("\n"),

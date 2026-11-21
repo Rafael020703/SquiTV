@@ -16,7 +16,7 @@ git diff --check
 
 ## 2. Numeração e APK real
 
-- Para uma NOVA publicação autorizada, escolher tag inédita e incrementar versionName/versionCode acima do distribuído. Nunca reutilizar a versão/tag pública anterior. A v1.22 já foi distribuída com Android 1.22/code 23 e Windows 1.22.0; não reutilizar esses números para binários alterados.
+- Para uma NOVA publicação autorizada, escolher tag inédita e incrementar versionName/versionCode acima do distribuído. Nunca reutilizar a versão/tag pública anterior. Confira a última publicação e as referências em `updates/stable/` antes de numerar a candidata.
 - Conferir pacote rsv.squitv, SDK mínimo, ABIs e ausência de debuggable.
 - Verificar assinatura com apksigner e comparar certificado com o APK anterior arquivado/distribuído.
 - Gerar staging com tools/generate_manifest.py; nunca fornecer dados falsos para corresponder à tag.
@@ -57,8 +57,8 @@ CI executa testes/compilações sem publicar nem acessar segredos de assinatura.
 
 ```powershell
 .\gradlew.bat :app:assembleRelease :desktopApp:writeUpdateMetadata --console=plain
-python -B tools/prepare_release.py --android app/build/outputs/apk/release/app-release.apk --windows desktopApp/build/release/compose/binaries/main/exe/SquiTV-1.22.0.exe --windows-metadata desktopApp/build/release/update-metadata/windows-release.json --android-notes docs/releases/v1.22-android.md --windows-notes docs/releases/v1.22-windows.md --output-dir .artifacts/release-v1.22-candidate
-.\gradlew.bat :shared:validateUpdateManifest '-Pmanifest=.artifacts/release-v1.22-candidate/upload/squitv-update.json' --console=plain
+python -B tools/prepare_release.py --android app/build/outputs/apk/release/app-release.apk --windows desktopApp/build/release/compose/binaries/main/exe/SquiTV-1.29.0.exe --windows-metadata desktopApp/build/release/update-metadata/windows-release.json --android-notes docs/releases/v1.29-android.md --windows-notes docs/releases/v1.29-windows.md --output-dir .artifacts/release-v1.29-exemplo
+.\gradlew.bat :shared:validateUpdateManifest '-Pmanifest=.artifacts/release-v1.29-exemplo/upload/squitv-update.json' --console=plain
 ```
 
 - Publicação somente Android omite --windows/--windows-metadata/--windows-notes; somente Windows omite --android/--android-notes. Tag é derivada do binário e modo; --tag opcional precisa concordar. Saída existente diferente é recusada.

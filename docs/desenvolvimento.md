@@ -25,14 +25,13 @@ Para acompanhar alterações sem reinstalar:
 
 ```powershell
 .\gradlew.bat :desktopApp:createDistributable '-PdesktopVariant=debug' --console=plain
-.\tools\deploy-windows-debug.ps1
 ```
 
-O deploy atualiza o atalho da debug sem iniciar/encerrar processos ou alterar a release instalada. Para empacotar produção, use `:desktopApp:writeUpdateMetadata -PdesktopVariant=release`; isso não autoriza executar o instalador.
+No Windows local, `createDistributable` na variante debug ativa a build nova pelo inicializador fixo do menu Iniciar. O deploy cria o atalho e o ícone na instalação inicial ou ao migrar um atalho antigo. Depois, só troca a referência da build ativa. A build aberta usa sua própria pasta até sair e cópias antigas sem uso são removidas nos próximos builds. Para empacotar produção, use `:desktopApp:writeUpdateMetadata -PdesktopVariant=release`.
 
 ## 4. Documentação e arquivos locais
 
-Atualize README, arquitetura e guia Windows quando o comportamento mudar. Novidades públicas ficam em `docs/releases/` com notas separadas por plataforma. Planos Gemini, auditorias e `docs/manutencao-*.md` permanecem locais conforme o `.gitignore`; não desapareceram só por não entrarem no commit.
+Atualize README, arquitetura e guia Windows quando o comportamento mudar. Novidades públicas ficam em `docs/releases/` com notas separadas por plataforma. Os registros `docs/manutencao-*.md` permanecem no local de trabalho.
 
 Na distribuição, fontes, recursos, Gradle Wrapper, schemas Room, scripts e documentação permanente vão ao Git. APK/EXE/checksums/manifesto vão aos assets da release. Dados locais, credenciais, chaves de assinatura, caches e diretórios de staging nunca devem ser adicionados. Conferir arquivos já rastreados: `.gitignore` sozinho não os remove.
 
@@ -69,7 +68,7 @@ Windows mantém quatro slots/cache limitado e passa a resolver redirecionamentos
 
 Downloads Windows agora distinguem MOVIE/EPISODE e conservam os registros antigos como filmes por valor padrão. Temporadas são filas manuais, um arquivo por vez, canceladas/interrompidas no fechamento/logout/erro. O endpoint continua sendo construído por OnDemandPlayback; sem credenciais/URLs no índice. Reprodução de séries locais usa somente arquivos completos verificados da conta/série; sem fallback de rede. Android já possuía download de episódio/temporada e não teve motor/índice de downloads alterado nesta etapa.
 
-Verificações: assembleDebug Android, compileReleaseKotlin Android, createDistributable Windows debug e diff --check. Detalhes/evidências no relatório local docs/revisao-previews-series-downloads-2026-11-03.md e .artifacts/previews-series-downloads-2026-11-03/verification.json. Nenhum teste novo/executado, imagem real/provedor/decodificador/player observado ou release instalada alterada.
+Verificações: assembleDebug Android, compileReleaseKotlin Android, createDistributable Windows debug e diff --check. Nenhum teste novo/executado, imagem real/provedor/decodificador/player observado ou release instalada alterada.
 
 ## Reprodução e histórico — v1.24
 

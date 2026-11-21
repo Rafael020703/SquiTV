@@ -77,6 +77,17 @@ internal class DesktopSearchController(private val client: XtreamClient, private
 
     fun retry() = runSearch(0, preserveResults = true)
 
+    fun invalidateCatalog(type: DesktopSearchType, searchVisible: Boolean) {
+        cache.remove(type)
+        val input = mutable.value
+        if (input.query.isBlank() || (input.type != DesktopSearchType.ALL && input.type != type)) return
+        if (searchVisible) runSearch(0)
+        else {
+            leave()
+            resumeNeeded = true
+        }
+    }
+
     private fun runSearch(debounceMs: Long, preserveResults: Boolean = false) {
         job?.cancel()
         val currentRevision = ++revision

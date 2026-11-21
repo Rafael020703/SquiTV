@@ -94,11 +94,11 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
     val categories = remember(browse.categories, hidden, categoryOrder) {
         CategoryCustomization.apply(browse.categories, categoryOrder, hidden) { it.id }
     }
-    var navigation by remember(accountScope, kind, mode) {
-        mutableStateOf<List<rsv.squitv.shared.catalog.CatalogCategoryEntry<CatalogItem>>?>(null)
+    var baseNavigation by remember(accountScope, kind, mode) {
+        mutableStateOf<Pair<List<rsv.squitv.shared.catalog.CatalogCategoryEntry<CatalogItem>>, List<CatalogItem>>?>(null)
     }
-    LaunchedEffect(accountScope, kind, categories, browse.allItems, browse.allItemsLoaded, mode, hidden, continuing, favoriteResults, favoriteIds.isNotEmpty()) {
-        navigation = withContext(Dispatchers.Default) {
+    LaunchedEffect(accountScope, kind, categories, browse.allItems, browse.allItemsLoaded, mode, hidden) {
+        baseNavigation = withContext(Dispatchers.Default) {
             val visible = browse.allItems.filter { it.categoryId !in hidden }
             val base = if (!browse.allItemsLoaded && mode == rsv.squitv.domain.model.CategoryMode.PROVIDER) categories.map {
                 rsv.squitv.shared.catalog.CatalogCategoryEntry<CatalogItem>(it.id, it.name, emptyList())
@@ -108,13 +108,18 @@ internal fun OnDemandCatalogScreen(state: OnDemandState, controller: DesktopCont
                     "Todos", "Sem classificação", "FILTROS POR GÊNERO", "CATEGORIAS DO SERVIDOR", mode,
                     Locale.forLanguageTag("pt-BR"), { it.categoryId }, { it.genre })
             }
+            val recent = if (browse.allItemsLoaded) RecentlyAddedCatalog.select(visible, 100, added = { it.added }, id = { it.id })
+                else emptyList()
+            base to recent
+        }
+    }
+    val hasFavorites = favoriteIds.isNotEmpty()
+    val navigation = remember(baseNavigation, continuing, favoriteResults, hasFavorites) {
+        baseNavigation?.let { (base, recent) ->
             val special = buildList {
                 if (continuing.isNotEmpty()) add(rsv.squitv.shared.catalog.CatalogCategoryEntry("CONTINUE_WATCHING", "Continuar assistindo", continuing.map { it.item() }))
-                if (favoriteIds.isNotEmpty()) add(rsv.squitv.shared.catalog.CatalogCategoryEntry("FAVORITES", "Favoritos", favoriteResults.mapNotNull { it.catalogItem }))
-                if (browse.allItemsLoaded) {
-                    val recent = RecentlyAddedCatalog.select(visible, 100, added = { it.added }, id = { it.id })
-                    if (recent.isNotEmpty()) add(rsv.squitv.shared.catalog.CatalogCategoryEntry("RECENTS", "Adicionados recentemente", recent))
-                }
+                if (hasFavorites) add(rsv.squitv.shared.catalog.CatalogCategoryEntry("FAVORITES", "Favoritos", favoriteResults.mapNotNull { it.catalogItem }))
+                if (recent.isNotEmpty()) add(rsv.squitv.shared.catalog.CatalogCategoryEntry("RECENTS", "Adicionados recentemente", recent))
             }
             if (base.firstOrNull()?.id == "ALL") base.take(1) + special + base.drop(1) else special + base
         }

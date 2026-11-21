@@ -4,7 +4,7 @@ Disponível na [v1.26](https://github.com/Rafael020703/SquiTV/releases/tag/v1.26
 
 ## Acesso e escolhas
 
-O login e a dashboard abrem diretamente esta tela, inclusive sem uma conta conectada. A escolha fica salva por instalação/variante. Abrir DNS não apaga o formulário de login; Voltar retorna sem alterar fullscreen.
+A tela de entrada oferece acesso direto ao DNS. Após entrar, abra **Configurações → DNS do aplicativo**. A escolha fica salva por instalação/variante. Abrir DNS não apaga o formulário de login; Voltar retorna sem alterar fullscreen.
 
 | Opção | Comportamento |
 | --- | --- |

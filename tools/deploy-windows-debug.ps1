@@ -79,24 +79,28 @@ if (Test-Path -LiteralPath $shortcutFile -PathType Leaf) {
     $existingTarget = $shell.CreateShortcut($shortcutFile).TargetPath
     $localBoundary = [IO.Path]::GetFullPath($env:LOCALAPPDATA).TrimEnd('\') + '\'
     if ($existingTarget.StartsWith($localBoundary, [StringComparison]::OrdinalIgnoreCase) -and
-        $existingTarget.EndsWith('\SquiTVDebugPortable\current\SquiTVDebug.exe', [StringComparison]::OrdinalIgnoreCase) -and
+        $existingTarget -match '\\SquiTVDebugPortable\\(?:current|builds\\[a-f0-9]{16})\\SquiTVDebug\.exe$' -and
         (Test-Path -LiteralPath $existingTarget -PathType Leaf)) {
-        $portableHome = Split-Path -Parent (Split-Path -Parent (Get-PhysicalFilePath $existingTarget))
+        $physicalParent = Split-Path -Parent (Get-PhysicalFilePath $existingTarget)
+        $portableHome = Split-Path -Parent $physicalParent
+        if ((Split-Path -Leaf $portableHome) -eq 'builds') { $portableHome = Split-Path -Parent $portableHome }
+    } elseif ($existingTarget.StartsWith($localBoundary, [StringComparison]::OrdinalIgnoreCase) -and
+        $existingTarget.EndsWith('\SquiTVDebugPortable\SquiTVDebugLauncher.exe', [StringComparison]::OrdinalIgnoreCase) -and
+        (Test-Path -LiteralPath $existingTarget -PathType Leaf)) {
+        $portableHome = Split-Path -Parent (Get-PhysicalFilePath $existingTarget)
     }
 }
 New-Item -ItemType Directory -Path $portableHome -Force | Out-Null
 # Serialize deploys and resolve the host's redirected directory before any cleanup.
 $deployLock = [IO.File]::Open((Join-Path $portableHome '.deploy.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
-$instanceGuard = $null
 try {
     $portableHome = Split-Path -Parent (Get-PhysicalFilePath -OpenStream $deployLock)
     # The desktop host can merge old real-LOCALAPPDATA entries with its redirected view.
     # Enumerate that view for legacy cleanup, but deploy the new image at a physical path.
     $portableRoots = @($portableHome, $logicalPortableHome) | Select-Object -Unique
-    $buildsHome = Join-Path $logicalPortableHome 'builds'
-    $debugBuild = Join-Path $portableHome 'current'
+    $buildsHome = Join-Path $portableHome 'builds'
+    $debugBuild = Join-Path $buildsHome $buildHash.Substring(0, 16)
     $pendingBuild = Join-Path $portableHome 'pending'
-    $previousBuild = Join-Path $portableHome 'previous'
 
     function Assert-PortableTree([string]$Path) {
         $absolute = [IO.Path]::GetFullPath($Path).TrimEnd('\')
@@ -164,35 +168,22 @@ try {
         Remove-Item -LiteralPath $Path -Recurse -Force
     }
 
+    Assert-PortableTree $buildsHome
+    New-Item -ItemType Directory -Path $buildsHome -Force | Out-Null
     Assert-PortableTree $debugBuild
-    if ((Test-Path -LiteralPath $debugBuild) -and -not (Get-CompletedBuildHash $debugBuild)) {
-        throw 'Pasta current nao reconhecida como build completo. Nenhum arquivo foi substituido.'
-    }
-    if ((Get-CompletedBuildHash $debugBuild) -ne $buildHash) {
-        # Same kernel object used by SingleInstance.kt: keep new launches out during replacement.
-        $createdInstanceGuard = $false
-        $instanceGuard = [Threading.Mutex]::new($false, 'Local\SquiTV-SquiTVDebug', [ref]$createdInstanceGuard)
-        if ((Test-Path -LiteralPath $debugBuild) -and
-            ((-not $createdInstanceGuard) -or (Test-BuildInUse $debugBuild))) {
-            throw 'Feche o Squi TV Debug antes de substituir a pasta current e execute o deploy novamente.'
+    if (Test-Path -LiteralPath $debugBuild) {
+        if ((Get-CompletedBuildHash $debugBuild) -ne $buildHash) {
+            throw 'A pasta da build existente não corresponde ao pacote.'
         }
-        foreach ($temporary in @($pendingBuild, $previousBuild)) {
-            if (Test-Path -LiteralPath $temporary) {
-                Assert-PortableTree $temporary
-                $ownedMarker = Join-Path $temporary '.deploy-owned'
-                if (-not (Get-CompletedBuildHash $temporary) -and
-                    (-not (Test-Path -LiteralPath $ownedMarker -PathType Leaf) -or
-                    ([IO.File]::ReadAllText($ownedMarker)).Trim() -ne 'SquiTVDebugPortable-v1')) {
-                    throw "Pasta temporaria nao reconhecida: $temporary"
-                }
-                # Recover the last valid copy if promotion was interrupted after the rename.
-                if ($temporary -eq $previousBuild -and -not (Test-Path -LiteralPath $debugBuild) -and
-                    (Get-CompletedBuildHash $temporary)) {
-                    Assert-PortableTree $debugBuild
-                    if (Test-BuildInUse $temporary) { throw 'Copia de recuperacao em uso. Feche o Squi TV Debug e repita o deploy.' }
-                    Move-Item -LiteralPath $temporary -Destination $debugBuild
-                } else { Remove-PortableTree $temporary }
+    } else {
+        Assert-PortableTree $pendingBuild
+        if (Test-Path -LiteralPath $pendingBuild) {
+            $ownedMarker = Join-Path $pendingBuild '.deploy-owned'
+            if (-not (Test-Path -LiteralPath $ownedMarker -PathType Leaf) -or
+                ([IO.File]::ReadAllText($ownedMarker)).Trim() -ne 'SquiTVDebugPortable-v1') {
+                throw 'Pasta temporária não reconhecida.'
             }
+            Remove-PortableTree $pendingBuild
         }
         New-Item -ItemType Directory -Path $pendingBuild | Out-Null
         Set-Content -LiteralPath (Join-Path $pendingBuild '.deploy-owned') -Value 'SquiTVDebugPortable-v1' -Encoding UTF8
@@ -201,63 +192,73 @@ try {
         }
         Set-Content -LiteralPath (Join-Path $pendingBuild '.copy-complete') -Value $buildHash -Encoding UTF8
         Assert-PortableTree $pendingBuild
-        Assert-PortableTree $debugBuild
-        if (Test-BuildInUse $debugBuild) { throw 'Debug em uso. Feche o aplicativo e execute o deploy novamente.' }
-        if (Test-Path -LiteralPath $debugBuild) {
-            Assert-PortableTree $previousBuild
-            Move-Item -LiteralPath $debugBuild -Destination $previousBuild
-        }
-        try { Move-Item -LiteralPath $pendingBuild -Destination $debugBuild }
-        catch {
-            if (Test-Path -LiteralPath $previousBuild) {
-                Assert-PortableTree $previousBuild
-                Assert-PortableTree $debugBuild
-                Move-Item -LiteralPath $previousBuild -Destination $debugBuild
-            }
-            throw
-        }
+        Move-Item -LiteralPath $pendingBuild -Destination $debugBuild
     }
 
     # Existing SquiTVDebug DPAPI data stays in its original folder; no account files are copied.
     $debugExecutable = Join-Path $debugBuild 'SquiTVDebug.exe'
-    New-Item -ItemType Directory -Path $shortcutDirectory -Force | Out-Null
-    $pendingShortcut = Join-Path $shortcutDirectory ('debug-' + [Guid]::NewGuid().ToString('N') + '.lnk')
+    $launcher = Join-Path $portableHome 'SquiTVDebugLauncher.exe'
+    if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
+        $compiler = Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+        $source = Join-Path $PSScriptRoot 'windows-debug-launcher.cs'
+        $temporaryLauncher = Join-Path $portableHome ('launcher-' + [Guid]::NewGuid().ToString('N') + '.exe')
+        try {
+            & $compiler /nologo /target:winexe /reference:System.Windows.Forms.dll "/win32icon:$brandIcon" "/out:$temporaryLauncher" $source
+            if ($LASTEXITCODE -ne 0) { throw 'Falha ao gerar o inicializador fixo da debug.' }
+            Move-Item -LiteralPath $temporaryLauncher -Destination $launcher
+        } finally {
+            if (Test-Path -LiteralPath $temporaryLauncher) { Remove-Item -LiteralPath $temporaryLauncher }
+        }
+    }
+
+    $resolvedLauncher = Get-PhysicalFilePath $launcher
+    $activeBuild = Join-Path $portableHome 'active-build.txt'
+    $pendingActivation = Join-Path $portableHome ('active-' + [Guid]::NewGuid().ToString('N') + '.tmp')
     try {
-        $shortcut = $shell.CreateShortcut($pendingShortcut)
-        $shortcut.TargetPath = $debugExecutable
-        $shortcut.WorkingDirectory = $debugBuild
-        $shortcut.IconLocation = "$debugExecutable,0"
-        $shortcut.Description = 'Squi TV Debug - versao portatil de desenvolvimento'
-        $shortcut.Save()
-        # The desktop host may redirect LOCALAPPDATA. WScript resolves TargetPath when saving,
-        # but leaves IconLocation verbatim. Use the resolved location for the icon as well.
-        $shortcut = $shell.CreateShortcut($pendingShortcut)
-        $resolvedExecutable = Get-PhysicalFilePath $debugExecutable
-        $shortcut.TargetPath = $resolvedExecutable
-        $shortcut.WorkingDirectory = Split-Path -Parent $resolvedExecutable
-        $actualPortableHome = Split-Path -Parent (Split-Path -Parent $resolvedExecutable)
-        $actualLocalData = Split-Path -Parent $actualPortableHome
-        $iconDirectory = Join-Path $actualLocalData 'SquiTVBrand\icons'
-        New-Item -ItemType Directory -Path $iconDirectory -Force | Out-Null
-        $iconHash = (Get-FileHash -LiteralPath $brandIcon -Algorithm SHA256).Hash.ToLowerInvariant()
-        $shortcutIcon = Join-Path $iconDirectory ($iconHash + '.ico')
-        if (-not (Test-Path -LiteralPath $shortcutIcon)) { Copy-Item -LiteralPath $brandIcon -Destination $shortcutIcon }
-        $shortcutIcon = Get-PhysicalFilePath $shortcutIcon
-        $shortcut.IconLocation = "$shortcutIcon,0"
-        $shortcut.Save()
-        Move-Item -LiteralPath $pendingShortcut -Destination $shortcutFile -Force
+        [IO.File]::WriteAllText($pendingActivation, $buildHash.Substring(0, 16))
+        if (Test-Path -LiteralPath $activeBuild) {
+            [IO.File]::Replace($pendingActivation, $activeBuild, [System.Management.Automation.Language.NullString]::Value)
+        }
+        else { Move-Item -LiteralPath $pendingActivation -Destination $activeBuild }
     } finally {
-        if (Test-Path -LiteralPath $pendingShortcut) { Remove-Item -LiteralPath $pendingShortcut }
+        if (Test-Path -LiteralPath $pendingActivation) { Remove-Item -LiteralPath $pendingActivation }
+    }
+
+    $shortcutIcon = "$resolvedLauncher,0"
+    $existing = if (Test-Path -LiteralPath $shortcutFile) { $shell.CreateShortcut($shortcutFile) }
+    if (-not $existing -or $existing.TargetPath -ne $resolvedLauncher) {
+        New-Item -ItemType Directory -Path $shortcutDirectory -Force | Out-Null
+        $pendingShortcut = Join-Path $shortcutDirectory ('debug-' + [Guid]::NewGuid().ToString('N') + '.lnk')
+        try {
+            $shortcut = $shell.CreateShortcut($pendingShortcut)
+            $shortcut.TargetPath = $resolvedLauncher
+            $shortcut.WorkingDirectory = $portableHome
+            $shortcut.IconLocation = $shortcutIcon
+            $shortcut.Description = 'Squi TV Debug - versao portatil de desenvolvimento'
+            $shortcut.Save()
+            Move-Item -LiteralPath $pendingShortcut -Destination $shortcutFile -Force
+        } finally {
+            if (Test-Path -LiteralPath $pendingShortcut) { Remove-Item -LiteralPath $pendingShortcut }
+        }
     }
     Set-Content -LiteralPath (Join-Path $portableHome 'current-build.txt') -Value $debugBuild -Encoding UTF8
 
     # Migrate only recognized generated copies, never app data or an active old build.
     $removedBuilds = 0
     $retainedBuilds = 0
-    if (Test-Path -LiteralPath $previousBuild) { Remove-PortableTree $previousBuild }
+    foreach ($legacyName in @('current', 'previous')) {
+        $legacy = Join-Path $portableHome $legacyName
+        Assert-PortableTree $legacy
+        if (Get-CompletedBuildHash $legacy) {
+            try { Remove-PortableTree $legacy; $removedBuilds++ }
+            catch { $retainedBuilds++ }
+        }
+    }
     if (Test-Path -LiteralPath $buildsHome) {
         Assert-PortableTree $buildsHome
         foreach ($oldBuild in Get-ChildItem -LiteralPath $buildsHome -Directory -Force) {
+            if ($oldBuild.FullName -eq $debugBuild) { continue }
+            Assert-PortableTree $oldBuild.FullName
             $oldHash = Get-CompletedBuildHash $oldBuild.FullName
             if ($oldBuild.Name -notmatch '^[a-f0-9]{16}(-[a-f0-9]{6})?$' -or -not $oldHash -or
                 -not $oldBuild.Name.StartsWith($oldHash.Substring(0, 16)) -or (Test-BuildInUse $oldBuild.FullName)) {
@@ -283,6 +284,5 @@ try {
     Write-Output "Icone do atalho: $shortcutIcon"
     Write-Output 'Dados preservados em %LOCALAPPDATA%\SquiTVDebug. Nenhum processo foi encerrado ou iniciado.'
 } finally {
-    if ($instanceGuard) { $instanceGuard.Dispose() }
     $deployLock.Dispose()
 }

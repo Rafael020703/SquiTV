@@ -6,7 +6,12 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
 @Serializable
-data class ServerCredentials(val baseUrl: String, val username: String, val password: String) {
+data class ServerCredentials(
+    val baseUrl: String,
+    val username: String,
+    val password: String,
+    @kotlinx.serialization.Transient val localIdentityBaseUrl: String? = null,
+) {
     override fun toString() = "ServerCredentials([redacted])"
 }
 

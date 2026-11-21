@@ -38,12 +38,12 @@ fun CatalogPreparationIndicator(
     if (PreparationProgress.isComplete(state.totalItems, state.processedItems, state.failedItems, state.error != null)) return
 
     val text = when {
-        state.error != null -> "Preparação interrompida"
-        state.serverManaged -> "Catálogo no servidor · ${PreparationProgress.percent(state.totalItems, state.processedItems)}%"
-        state.isRunning -> "${stringResource(R.string.catalog_preparing_title)} · ${PreparationProgress.percent(state.totalItems, state.processedItems)}%"
+        state.error != null -> stringResource(R.string.catalog_prep_interrupted)
+        state.serverManaged -> stringResource(R.string.catalog_prep_server_progress, PreparationProgress.percent(state.totalItems, state.processedItems))
+        state.isRunning -> stringResource(R.string.catalog_prep_progress, PreparationProgress.percent(state.totalItems, state.processedItems))
         state.isPaused -> stringResource(R.string.catalog_prep_paused)
-        state.waitingForRetry -> "Preparação · aguardando nova tentativa"
-        else -> "${stringResource(R.string.catalog_preparing_title)} · ${PreparationProgress.percent(state.totalItems, state.processedItems)}%"
+        state.waitingForRetry -> stringResource(R.string.catalog_prep_retry_wait)
+        else -> stringResource(R.string.catalog_prep_progress, PreparationProgress.percent(state.totalItems, state.processedItems))
     }
 
     Surface(
@@ -103,7 +103,7 @@ fun CatalogPreparationDialog(
                     color = tokens.colors.textPrimary
                 )
                 Text(
-                    text = if (state.serverManaged) "Preparação no servidor" else stringResource(R.string.catalog_preparing_detail),
+                    text = if (state.serverManaged) stringResource(R.string.catalog_prep_server_detail) else stringResource(R.string.catalog_preparing_detail),
                     style = tokens.typography.caption,
                     color = tokens.colors.primary
                 )
@@ -114,9 +114,7 @@ fun CatalogPreparationDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState())
             ) {
-                rsv.squitv.core.ui.components.common.PreparationProgressSummary(
-                    state.totalItems, state.processedItems, state.estimatedRemainingMs, state.isPaused,
-                    state.failedItems, tokens.colors.primary, tokens.colors.textSecondary)
+                LocalizedPreparationProgress(state, tokens.colors.primary, tokens.colors.textSecondary)
                 state.error?.let { Text(it, color = tokens.colors.error, style = tokens.typography.caption) }
                 if (state.isPaused) {
                     Surface(
@@ -136,45 +134,45 @@ fun CatalogPreparationDialog(
 
                 if (!state.currentItemName.isNullOrBlank()) {
                     Text(
-                        text = if (state.inFlight > 1) "Consultando ${state.inFlight} conteúdos por vez · ${state.currentItemName}"
-                            else "Consultando: ${state.currentItemName}",
+                        text = if (state.inFlight > 1) stringResource(R.string.catalog_prep_batch_items, state.inFlight, state.currentItemName.orEmpty())
+                            else stringResource(R.string.catalog_prep_current_item, state.currentItemName.orEmpty()),
                         style = tokens.typography.caption,
                         fontWeight = FontWeight.Bold,
                         color = tokens.colors.primary
                     )
                 } else if (state.isCooldown) {
                     Text(
-                        text = if (state.isThrottled) "Ritmo reduzido temporariamente após falhas" else "Aguardando intervalo entre lotes",
+                        text = if (state.isThrottled) stringResource(R.string.catalog_prep_throttled) else stringResource(R.string.catalog_prep_cooldown),
                         style = tokens.typography.caption,
                         color = tokens.colors.textSecondary
                     )
                 } else if (state.waitingForRetry) {
-                    Text("Aguardando itens elegíveis para nova tentativa", style = tokens.typography.caption, color = tokens.colors.textSecondary)
+                    Text(stringResource(R.string.catalog_prep_waiting_items), style = tokens.typography.caption, color = tokens.colors.textSecondary)
                 }
 
                 if (!state.serverManaged) Text(
-                    text = "Prioridade atual: ${if (state.priorityType == "SERIES") "Séries" else "Filmes"}",
+                    text = stringResource(R.string.catalog_prep_priority, stringResource(if (state.priorityType == "SERIES") R.string.catalog_prep_priority_series else R.string.catalog_prep_priority_movies)),
                     style = tokens.typography.body,
                     fontWeight = FontWeight.Bold,
                     color = tokens.colors.textPrimary
                 )
 
                 Text(
-                    text = "Filmes: ${state.vodProcessed} / ${state.vodTotal} (com gênero: ${state.vodWithGenre})",
+                    text = stringResource(R.string.catalog_prep_movies_count, state.vodProcessed, state.vodTotal, state.vodWithGenre),
                     style = tokens.typography.body,
                     color = tokens.colors.textPrimary
                 )
 
                 Text(
-                    text = "Séries: ${state.seriesProcessed} / ${state.seriesTotal} (com gênero: ${state.seriesWithGenre})",
+                    text = stringResource(R.string.catalog_prep_series_count, state.seriesProcessed, state.seriesTotal, state.seriesWithGenre),
                     style = tokens.typography.body,
                     color = tokens.colors.textPrimary
                 )
-                if (!state.serverManaged) Text("Sem gênero informado pelo servidor: ${state.noDataItems}", style = tokens.typography.caption, color = tokens.colors.textSecondary)
+                if (!state.serverManaged) Text(stringResource(R.string.catalog_prep_without_genre, state.noDataItems), style = tokens.typography.caption, color = tokens.colors.textSecondary)
 
                 if (state.failedItems > 0) {
                     Text(
-                        text = "Falhas temporárias: ${state.failedItems}",
+                        text = stringResource(R.string.catalog_prep_failures, state.failedItems),
                         style = tokens.typography.body,
                         color = tokens.colors.error
                     )
@@ -183,7 +181,7 @@ fun CatalogPreparationDialog(
                 Spacer(Modifier.height(8.dp))
 
                 if (!state.serverManaged) Text(
-                    text = "VELOCIDADE DE PREPARAÇÃO",
+                    text = stringResource(R.string.catalog_prep_speed),
                     style = tokens.typography.caption,
                     fontWeight = FontWeight.Black,
                     color = tokens.colors.primary
@@ -194,17 +192,17 @@ fun CatalogPreparationDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     AppButton(
-                        text = "Lento",
+                        text = stringResource(R.string.catalog_prep_slow),
                         onClick = { onSpeedChange(rsv.squitv.domain.model.PreparationSpeed.SLOW) },
                         enabled = state.speed != rsv.squitv.domain.model.PreparationSpeed.SLOW
                     )
                     AppButton(
-                        text = "Normal",
+                        text = stringResource(R.string.catalog_prep_normal),
                         onClick = { onSpeedChange(rsv.squitv.domain.model.PreparationSpeed.NORMAL) },
                         enabled = state.speed != rsv.squitv.domain.model.PreparationSpeed.NORMAL
                     )
                     AppButton(
-                        text = "Rápido",
+                        text = stringResource(R.string.catalog_prep_fast),
                         onClick = { onSpeedChange(rsv.squitv.domain.model.PreparationSpeed.FAST) },
                         enabled = state.speed != rsv.squitv.domain.model.PreparationSpeed.FAST
                     )
@@ -335,5 +333,27 @@ fun CategoryChoiceDialog(
         },
         containerColor = tokens.colors.surface,
         shape = tokens.shapes.medium
+    )
+}
+
+
+@Composable
+internal fun LocalizedPreparationProgress(state: CatalogPreparationState, primary: Color, secondary: Color) {
+    rsv.squitv.core.ui.components.common.PreparationProgressSummary(
+        state.totalItems, state.processedItems, state.estimatedRemainingMs, state.isPaused,
+        state.failedItems, primary, secondary,
+        summaryText = stringResource(R.string.catalog_prep_summary,
+            PreparationProgress.percent(state.totalItems, state.processedItems), state.processedItems, state.totalItems),
+        estimateText = when {
+            PreparationProgress.isComplete(state.totalItems, state.processedItems, state.failedItems, state.error != null) ->
+                stringResource(R.string.catalog_prep_complete)
+            state.error != null -> stringResource(R.string.catalog_prep_interrupted)
+            state.isPaused -> stringResource(R.string.catalog_prep_estimate_paused)
+            state.failedItems > 0 -> stringResource(R.string.catalog_prep_estimate_failures)
+            state.estimatedRemainingMs != null -> stringResource(R.string.catalog_prep_estimate,
+                if (state.estimatedRemainingMs < 60_000) stringResource(R.string.catalog_prep_under_minute)
+                else PreparationProgress.duration(state.estimatedRemainingMs))
+            else -> stringResource(R.string.catalog_prep_calculating)
+        },
     )
 }

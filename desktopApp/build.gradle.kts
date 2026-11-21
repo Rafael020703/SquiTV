@@ -13,11 +13,26 @@ val isDebug = variant == "debug"
 val installerMode = providers.gradleProperty("desktopInstaller").orElse(if (isDebug) "offline" else "online").get()
 require(installerMode in setOf("online", "offline")) { "desktopInstaller must be online or offline" }
 val onlineInstaller = installerMode == "online"
-val desktopVersion = "1.29.0"
+val desktopVersion = "1.30.0"
 val appName = if (isDebug) "Squi TV Debug" else "Squi TV"
 val dataFolder = if (isDebug) "SquiTVDebug" else "SquiTV"
 layout.buildDirectory.set(layout.projectDirectory.dir("build/$variant"))
 kotlin { jvmToolchain(21) }
+
+if (isDebug && providers.environmentVariable("OS").orNull == "Windows_NT" &&
+    !providers.environmentVariable("CI").isPresent) {
+    val deployPortableDebug = tasks.register<Exec>("deployPortableDebug") {
+        group = "distribution"
+        description = "Updates the local Start menu shortcut to the packaged Windows debug build."
+        dependsOn("createDistributable")
+        environment.remove("PSModulePath")
+        commandLine("powershell.exe", "-NoProfile", "-File",
+            rootProject.file("tools/deploy-windows-debug.ps1").absolutePath)
+    }
+    tasks.matching { it.name == "createDistributable" }.configureEach {
+        finalizedBy(deployPortableDebug)
+    }
+}
 
 // Full library for compilation; only referenced, unmodified vectors enter the installer.
 // Keep core icons/builders as their original runtime dependency.

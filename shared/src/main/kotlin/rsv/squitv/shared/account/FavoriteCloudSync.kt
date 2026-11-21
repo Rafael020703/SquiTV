@@ -53,6 +53,7 @@ data class CloudCategories(
     val order: List<String>,
     val hidden: List<String>,
     val revision: Long = 0,
+    val observedAt: Long = 0,
 )
 
 @Serializable
@@ -75,6 +76,8 @@ data class CloudProgress(
 data class CloudProgressJournal(
     val pending: List<CloudProgress> = emptyList(),
     val downloaded: List<CloudProgress> = emptyList(),
+    val snapshot: String? = null,
+    val snapshotRefreshedAt: Long = 0,
 )
 
 @Serializable
@@ -139,11 +142,14 @@ object FavoriteCloudSession {
 
     internal suspend fun mergeProgress(
         local: FavoriteLocalStore, sent: List<CloudProgress>, downloaded: List<CloudProgress>,
+        snapshot: String?,
+        snapshotRefreshedAt: Long,
     ) = progressLock.withLock {
         val journal = local.progressJournal()
         val acknowledged = sent.associate { it.key to it.observedAt }
         local.saveProgressJournal(CloudProgressJournal(
-            journal.pending.filter { (acknowledged[it.key] ?: 0) < it.observedAt }, downloaded,
+            journal.pending.filter { (acknowledged[it.key] ?: 0) < it.observedAt },
+            downloaded, snapshot, snapshotRefreshedAt,
         ))
         progressRevision.value += 1
     }
@@ -192,6 +198,7 @@ class FavoriteCloudClient internal constructor(
     @Serializable private data class ProgressBatch(val items: List<CloudProgress>)
     @Serializable private data class ProgressPage(
         val items: List<CloudProgress>, val next: Long, val hasMore: Boolean, val supportsDeletion: Boolean = false,
+        val snapshot: String? = null, val unchanged: Boolean = false,
     )
     @Serializable private data class Categories(val items: List<CloudCategories>)
     @Serializable private data class Profiles(val profiles: List<CloudProfile>)
@@ -336,7 +343,8 @@ class FavoriteCloudClient internal constructor(
         val checkpoint = requireBinding(profile, local)
         val revisions = categories(profile.id).associate { it.kind to it.revision }
         val items = local.categorySnapshot().map { it.copy(revision = revisions[it.kind] ?: 0) }
-        local.saveCheckpoint(checkpoint.copy(categoryBaseline = writeCategories(profile.id, items)))
+        local.saveCheckpoint(checkpoint.copy(categoryBaseline = writeCategories(profile.id,
+            items.map { it.copy(observedAt = System.currentTimeMillis()) })))
     }
 
     suspend fun receiveCategories(profile: CloudProfile, local: FavoriteLocalStore) = mutex.withLock {
@@ -365,7 +373,12 @@ class FavoriteCloudClient internal constructor(
             val remoteChanged = other != null && (previous == null || !sameCategories(other, previous))
             when {
                 other != null && sameCategories(row, other) -> baseline[row.kind] = other
-                localChanged && remoteChanged -> conflicts++
+                localChanged && remoteChanged -> when {
+                    row.observedAt !in 1..System.currentTimeMillis() || other.observedAt <= 0 ||
+                        row.observedAt == other.observedAt -> conflicts++
+                    row.observedAt > other.observedAt -> send += row.copy(revision = other.revision)
+                    else -> receive += other
+                }
                 localChanged -> send += row.copy(revision = other?.revision ?: 0)
                 remoteChanged -> receive += other
             }
@@ -412,21 +425,58 @@ class FavoriteCloudClient internal constructor(
         for (batch in sent.chunked(20)) {
             call("progress", checkpoint.profile, body = json.encodeToJsonElement(ProgressBatch(batch)))
         }
-        val rows = mutableListOf<CloudProgress>()
-        var after = 0L
-        repeat(125) {
-            val page = progressPage(checkpoint.profile, after)
-            rows += page.items
+        val journal = local.progressJournal()
+        val now = System.currentTimeMillis()
+        val knownSnapshot = journal.snapshot.takeIf {
+            now - journal.snapshotRefreshedAt in 0 until 3_600_000L
+        }
+        val cursor = journal.downloaded.maxOfOrNull(CloudProgress::revision) ?: 0
+        val delta = knownSnapshot?.let {
+            readProgress(checkpoint.profile, cursor, it, journal.downloaded)
+        }
+        val (merged, snapshot) = delta ?: checkNotNull(readProgress(checkpoint.profile, 0, "initial", emptyList()))
+        if (pending.isNotEmpty() || merged != journal.downloaded) {
+            val deferredDeletes = if (supportsDeletion) emptyList() else pending.filter { it.deleted }
+            val visible = if (deferredDeletes.isEmpty()) merged else (merged + deferredDeletes)
+                .groupBy { it.key }.values.map { versions -> versions.maxBy { it.observedAt } }
+            local.applyProgress(checkpoint.boundAt, visible)
+        }
+        val refreshedAt = if (delta == null && snapshot != null) now else journal.snapshotRefreshedAt
+        if (sent.isNotEmpty() || merged != journal.downloaded || snapshot != journal.snapshot ||
+            refreshedAt != journal.snapshotRefreshedAt) {
+            FavoriteCloudSession.mergeProgress(local, sent, merged, snapshot, refreshedAt)
+        }
+        return merged.count { !it.deleted }
+    }
+
+    private suspend fun readProgress(
+        profile: String,
+        cursor: Long,
+        expected: String,
+        cached: List<CloudProgress>,
+    ): Pair<List<CloudProgress>, String?>? {
+        val rows = cached.associateBy(CloudProgress::key).toMutableMap()
+        var after = cursor
+        var snapshot: String? = null
+        repeat(125) { index ->
+            val page = progressPage(profile, after, if (index == 0) expected else null)
+            if (index == 0) {
+                snapshot = page.snapshot
+                if (expected != "initial" && snapshot == null) return null
+            }
+            if (page.unchanged) {
+                if (index != 0 || snapshot != expected || expected == "initial" ||
+                    page.hasMore || page.items.isNotEmpty())
+                    throw IOException("O servidor retornou uma referência de progresso inválida.")
+                return cached to snapshot
+            }
+            page.items.forEach { rows[it.key] = it }
             if (!page.hasMore) {
-                val merged = rows.associateBy(CloudProgress::key).values.toList()
-                if (pending.isNotEmpty() || merged != local.progressJournal().downloaded) {
-                    val deferredDeletes = if (supportsDeletion) emptyList() else pending.filter { it.deleted }
-                    val visible = if (deferredDeletes.isEmpty()) merged else (merged + deferredDeletes)
-                        .groupBy { it.key }.values.map { versions -> versions.maxBy { it.observedAt } }
-                    local.applyProgress(checkpoint.boundAt, visible)
-                    FavoriteCloudSession.mergeProgress(local, sent, merged)
-                }
-                return merged.count { !it.deleted }
+                val result = rows.values.sortedBy(CloudProgress::revision)
+                val matches = snapshot != null && progressFingerprint(result) == snapshot
+                // A late commit, deletion or server rollback can invalidate the cursor.
+                if (expected != "initial" && !matches) return null
+                return result to snapshot.takeIf { matches }
             }
             if (page.next <= after) throw IOException("O servidor retornou uma revisão inválida.")
             after = page.next
@@ -434,8 +484,15 @@ class FavoriteCloudClient internal constructor(
         throw IOException("A lista de progresso excede o limite de sincronização.")
     }
 
-    private suspend fun progressPage(profile: String, after: Long): ProgressPage =
-        json.decodeFromString(call("progress", profile, after).toString())
+    private fun progressFingerprint(rows: List<CloudProgress>): String {
+        val revisions = rows.joinToString(",") { it.revision.toString() }
+        return java.security.MessageDigest.getInstance("MD5").digest(revisions.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+    }
+
+    private suspend fun progressPage(profile: String, after: Long, snapshot: String? = null): ProgressPage =
+        json.decodeFromString(call("progress", profile, after,
+            query = snapshot?.let { listOf("snapshot" to it) }.orEmpty()).toString())
 
     private suspend fun requireBinding(profile: CloudProfile, local: FavoriteLocalStore): FavoriteCheckpoint {
         val checkpoint = local.checkpoint()

@@ -4,212 +4,77 @@
     <string name="download_channel_description">Notificações de download de conteúdo</string>
 
     <!-- General -->
-    <string name="app_name_caps">SQUI TV</string>
-    <string name="home_label">Início</string>
     <string name="epg_label">Guia TV</string>
-    <string name="back_content_desc">Voltar</string>
-    <string name="refresh_label">Atualizar</string>
     <string name="search_label">Pesquisar</string>
     <string name="cancel_button">CANCELAR</string>
-    <string name="unknown">Desconhecido</string>
-    <string name="not_available">N/D</string>
-    <string name="favorite_button">FAVORITAR</string>
-    <string name="unfavorite_button">REMOVER FAVORITO</string>
 
     <!-- Login Screen -->
-    <string name="app_subtitle">A sua experiência premium de IPTV</string>
-    <string name="login_welcome">Acesse sua conta para começar o show.</string>
     <string name="login_welcome_back">BEM-VINDO DE VOLTA!</string>
-    <string name="login_subtitle_instruction">Faça seu login para continuar assistindo.</string>
     <string name="institutional_title">TV AO VIVO</string>
     <string name="institutional_desc">Canais, filmes, séries e muito mais.\nTudo em um só lugar.</string>
-    <string name="login_title">Login</string>
     <string name="username_label">Usuário</string>
     <string name="password_label">Senha</string>
-    <string name="login_button">ENTRAR</string>
     <string name="login_iptv_button">Entrar com IPTV</string>
     <string name="login_iptv_alternative">Use a Conta Squi TV ou seu acesso IPTV.</string>
-    <string name="server_label">Servidor</string>
-    <string name="auto_server_label">Auto</string>
-    <string name="error_fill_all_fields">Preencha todos os campos</string>
-    <string name="msg_finding_server">Buscando melhor servidor&#8230;</string>
     <string name="msg_connecting">Conectando&#8230;</string>
-    <string name="error_invalid_credentials">Credenciais inválidas</string>
-    <string name="error_connection_prefix">Erro de conexão: %s</string>
 
     <!-- Dashboard & Content -->
-    <string name="dashboard_subtitle">Experiência IPTV Premium</string>
     <string name="downloads_label">Downloads</string>
     <string name="account_label">Conta</string>
     <string name="logout_label">Sair</string>
     <string name="live_tv_title">TV AO VIVO</string>
     <string name="live_tv_desc">Canais em tempo real</string>
-    <string name="live_tv_subtitle">Canais ao vivo</string>
     <string name="movies_title">FILMES</string>
     <string name="movies_desc">Lançamentos e clássicos</string>
-    <string name="movies_subtitle">Filmes e VOD</string>
     <string name="series_title">SÉRIES</string>
     <string name="series_desc">Temporadas completas</string>
-    <string name="series_subtitle">Séries de TV</string>
     <string name="epg_subtitle">Programação</string>
-    <string name="no_info_label">Sem informação</string>
-    <string name="no_title_label">Sem título</string>
     <string name="history_label">Histórico</string>
     <string name="favorites_label">Favoritos</string>
-    <string name="multi_label">Multi</string>
     <string name="refreshing_label">Atualizando&#8230;</string>
-    <string name="more_info_button">MAIS INFO</string>
     <string name="live_badge">AO VIVO</string>
     <string name="director_label">Direção</string>
     <string name="genre_label">Gênero</string>
     <string name="cast_label">Elenco</string>
-    <string name="synopsis_label">Sinopse</string>
-    <string name="duration_label">Duração</string>
-    <string name="close_button">FECHAR</string>
-    <string name="watch_button">ASSISTIR</string>
-    <string name="menu_content_desc">Menu</string>
-    <string name="favorite_content_desc">Favorito</string>
-    <string name="view_trailer_button">VER TRAILER</string>
     <string name="special_season_label">Especiais</string>
-    <string name="row_fav_channels">Canais Favoritos</string>
-    <string name="row_fav_movies">Filmes Favoritos</string>
-    <string name="row_fav_series">Séries Favoritas</string>
     <string name="row_continue_watching">Continuar Assistindo</string>
     <string name="remove_from_continue_watching">Remover de Continuar assistindo</string>
-    <string name="row_recommended">Recomendados para Você</string>
-    <string name="row_featured_channels">Canais em Destaque</string>
-    <string name="permissions_label">Permissões</string>
-    <string name="permissions_desc">Gerencie o que o app pode acessar</string>
-    <string name="app_lock_label">Bloquear App ao Iniciar</string>
-    <string name="app_lock_desc">Exigir PIN toda vez que o app for aberto</string>
-    <string name="cache_label">Cache de Imagens</string>
-    <string name="storage_label">Armazenamento Total</string>
-    <string name="go_to_now_label">Ir para Agora</string>
     <string name="all_categories_label">Todas as Categorias</string>
-    <string name="resume_at_format">Continuar em %s</string>
-    <string name="watched_label">Assistido</string>
-    <string name="row_top_rated">Melhor Avaliados</string>
-    <string name="row_popular_movies">Filmes Populares</string>
-    <string name="row_popular_series">Séries Populares</string>
-    <string name="category_unknown">Desconhecido</string>
     <string name="local_filmography">FILMOGRAFIA LOCAL</string>
     <string name="no_content_for_actor">Nenhum conteúdo encontrado para este ator no catálogo local.</string>
 
     <!-- Content Screens -->
-    <string name="rating_prefix">Avaliação: %s</string>
     <string name="no_description">Nenhuma descrição disponível.</string>
-    <string name="download_content_desc">Download</string>
     <string name="watch_now_button">ASSISTIR AGORA</string>
     <string name="live_tv_nav_title">TV ao Vivo</string>
     <string name="movies_nav_title">Filmes</string>
     <string name="series_nav_title">Séries</string>
-    <string name="all_content_title">Todo o Conteúdo</string>
-    <string name="epg_prefix">EPG: %s</string>
-    <string name="similar_content">CONTEÚDOS SEMELHANTES</string>
     <string name="similar_series">SÉRIES SEMELHANTES</string>
 
     <!-- Player Screen -->
-    <string name="resume_dialog_title">Retomar Reprodução?</string>
-    <string name="resume_dialog_text">Deseja continuar de onde parou?</string>
-    <string name="resume_button">RETOMAR</string>
-    <string name="start_over_button">RECOMEÇAR</string>
-    <string name="go_back_button">Voltar</string>
-    <string name="next_episode_label">Próximo Episódio</string>
     <string name="channels_label">Canais</string>
-    <string name="speed_label">Velocidade</string>
-    <string name="audio_sub_label">Áudio/Legendas</string>
-    <string name="playback_speed_title">Velocidade de Reprodução</string>
-    <string name="audio_sub_title">Áudio e Legendas</string>
-    <string name="no_media_options">Nenhuma opção disponível para esta transmissão</string>
-    <string name="video_quality_section">Qualidade de Vídeo</string>
-    <string name="audio_section">Áudio</string>
-    <string name="subtitles_section">Legendas</string>
-    <string name="auto_label">Automático</string>
-    <string name="live_channels_title">Canais ao Vivo</string>
-    <string name="close_content_desc">Fechar</string>
-    <string name="current_program">PROGRAMA ATUAL</string>
-    <string name="recent_channels">CANAIS RECENTES</string>
-    <string name="next_program_prefix">A seguir: %s</string>
-    <string name="subtitle_style">Estilo de Legenda</string>
-    <string name="sleep_timer_label">Sleep Timer</string>
-    <string name="sleep_timer_off_desc">Desligando em %d minutos</string>
-    <string name="subtitle_small">Pequena</string>
-    <string name="subtitle_medium">Média</string>
-    <string name="subtitle_large">Grande</string>
 
     <!-- Downloads Screen -->
-    <string name="downloads_title">Downloads</string>
-    <string name="no_downloads_msg">Nenhum download ainda</string>
-    <string name="series_episode_label">Episódio de Série</string>
-    <string name="movie_label">Filme</string>
-    <string name="delete_content_desc">Excluir</string>
-    <string name="status_completed">Concluído</string>
-    <string name="status_failed">Erro</string>
-    <string name="status_pending">Pendente</string>
-    <string name="download_season_button">BAIXAR TEMPORADA</string>
 
     <!-- Search Screen -->
-    <string name="search_title">Pesquisar</string>
     <string name="search_placeholder">Canais, filmes, séries&#8230;</string>
-    <string name="clear_content_desc">Limpar</string>
     <string name="filter_all">Tudo</string>
     <string name="filter_live">Ao Vivo</string>
     <string name="filter_movies">Filmes</string>
     <string name="filter_series">Séries</string>
     <string name="no_results_found">Nenhum resultado encontrado</string>
-    <string name="episode_label">EPISÓDIO</string>
     <string name="season_prefix">Temporada %d</string>
 
     <!-- Account Screen -->
-    <string name="account_title">Minha Conta</string>
-    <string name="account_info_section">Informações da Conta</string>
-    <string name="connection_details_section">Detalhes da Conexão</string>
-    <string name="info_username">Usuário</string>
-    <string name="info_status">Status</string>
-    <string name="status_format">Status: %s</string>
-    <string name="status_active">Ativo</string>
-    <string name="unlimited_expiry">Ilimitado</string>
-    <string name="info_expiration">Expiração</string>
-    <string name="info_ip_address">Endereço IP</string>
-    <string name="info_device_id">ID do Dispositivo</string>
-    <string name="active_connections_label">Conexões Ativas</string>
-    <string name="max_connections_label">Máximo de Conexões</string>
-    <string name="trial_account_label">Conta de Teste (Trial)</string>
-    <string name="refresh_account_button">ATUALIZAR DADOS DA CONTA</string>
-    <string name="expiry_warning_msg">Sua conta expira em breve! Clique para atualizar.</string>
 
     <!-- Settings Screen -->
-    <string name="settings_title">Configurações</string>
-    <string name="add_account_label">Adicionar Nova Conta</string>
-    <string name="add_account_desc">Conecte-se a outro servidor IPTV.</string>
-    <string name="sync_settings_section">Sincronização</string>
-    <string name="never_sync">Nunca</string>
-    <string name="info_last_sync">Última Sincronização</string>
-    <string name="sync_interval_label">Intervalo de Sincronização (Horas)</string>
-    <string name="sync_interval_desc">Defina a frequência de atualização do catálogo.</string>
     <string name="force_sync_button">SINCRONIZAÇÃO TOTAL</string>
     <string name="account_sync_now">Sincronizar agora</string>
     <string name="metadata_credits">Créditos</string>
-    <string name="app_settings_section">Aplicativo</string>
     <string name="language_label">Idioma</string>
-    <string name="language_desc">Escolha o idioma da interface.</string>
-    <string name="lang_pt">Português</string>
-    <string name="lang_en">English</string>
-    <string name="lang_es">Español</string>
     <string name="ui_zoom_label">Zoom da Interface</string>
-    <string name="ui_zoom_desc">Ajuste o tamanho dos textos e ícones em todo o app.</string>
-    <string name="download_wifi_only_label">Download apenas no Wi-Fi</string>
-    <string name="download_wifi_only_desc">Economiza dados móveis baixando apenas em redes Wi-Fi.</string>
     <string name="clear_cache_label">Limpar Cache de Imagens</string>
-    <string name="clear_cache_desc">Limpa miniaturas e capas para liberar espaço.</string>
-    <string name="clear_cache_button">LIMPAR</string>
-    <string name="app_version_label">Versão do Aplicativo</string>
-    <string name="go_to_account_label">Detalhes da Conta</string>
-    <string name="player_settings_section">Player</string>
     <string name="auto_play_label">Auto-reprodução de Episódios</string>
-    <string name="auto_play_desc">Inicia o próximo episódio automaticamente.</string>
-    <string name="background_playback_label">Reprodução em Segundo Plano</string>
-    <string name="background_playback_desc">Permite continuar ouvindo o áudio ao minimizar o aplicativo.</string>
     <string name="background_and_pip_label">Segundo plano e PiP</string>
     <string name="background_audio_label">Áudio em segundo plano</string>
     <string name="background_audio_desc">Continua reproduzindo o áudio ao minimizar o aplicativo.</string>
@@ -217,33 +82,10 @@
     <string name="pip_auto_minimize_desc">Continua reproduzindo o vídeo em uma janela flutuante nos dispositivos compatíveis.</string>
     <string name="pip_unsupported_dialog_msg">A janela flutuante (PiP) não está disponível neste dispositivo.</string>
     <string name="reconnecting_stream">Reconectando transmissão&#8230;</string>
-    <string name="default_resize_label">Proporção Padrão</string>
-    <string name="resize_fit">Ajustar</string>
-    <string name="resize_fill">Preencher</string>
-    <string name="resize_zoom">Zoom</string>
-    <string name="history_section">Histórico</string>
-    <string name="clear_search_history_label">Limpar Histórico de Busca</string>
-    <string name="clear_search_desc">Remove todos os termos pesquisados.</string>
-    <string name="clear_watch_progress_label">Limpar Progresso de Vídeo</string>
-    <string name="clear_watch_desc">Reseta o tempo de reprodução de todos os vídeos.</string>
     <string name="reset_database_label">Redefinir Base de Dados</string>
-    <string name="reset_database_desc">Apaga todos os dados e refaz a sincronização.</string>
-    <string name="speed_download_format">Download: %s</string>
-    <string name="failure_label">Falha</string>
-    <string name="test_now_button">TESTAR AGORA</string>
-    <string name="catalog_stats_section">Estatísticas do Catálogo</string>
-    <string name="save_button">SALVAR</string>
-    <string name="reset_db_confirm_title">Redefinir Banco de Dados?</string>
-    <string name="reset_db_confirm_msg">Isso apagará todos os dados locais e fará uma nova sincronização com o servidor. Seus favoritos e histórico serão mantidos.</string>
-    <string name="reset_button">REDEFINIR</string>
-    <string name="reminder_dialog_title">Definir Lembrete</string>
-    <string name="reminder_dialog_msg">Deseja ser notificado quando \'%s\' começar?</string>
-    <string name="yes_button">Sim</string>
-    <string name="no_button">Não</string>
     <string name="reminder_notification_msg">O programa está começando agora em %s</string>
 
     <!-- Series Detail Screen -->
-    <string name="no_episode_description">Nenhuma descrição disponível para este episódio.</string>
 
     <!-- Sync Screen -->
     <string name="sync_title">SINCRONIZANDO</string>
@@ -252,9 +94,7 @@
     <string name="sync_live">TV ao Vivo</string>
     <string name="sync_movies">Filmes</string>
     <string name="sync_series">Séries</string>
-    <string name="connection_error_title">Erro de Conexão</string>
     <string name="retry_sync_button">REPETIR SINCRONIZAÇÃO</string>
-    <string name="continue_anyway_button">Continuar assim mesmo</string>
     <string name="status_pending_sync">Pendente</string>
     <string name="status_fetching">Buscando&#8230;</string>
     <string name="status_success">Sucesso</string>
@@ -262,21 +102,12 @@
     <string name="status_done_format">Concluído (%d)</string>
     <string name="status_error_format">Erro: %s</string>
 
-    <string name="bandwidth_format">Velocidade: %.2f Mbps</string>
-    <string name="next_episode_countdown_prefix">Próximo episódio em&#8230;</string>
-    <string name="play_now_button">REPRODUZIR AGORA</string>
-    <string name="speed_format">%gx</string>
-    <string name="speed_mbps_format">%.1f Mbps</string>
-    <string name="calculating_label">Calculando&#8230;</string>
-    <string name="next_label">PRÓXIMO</string>
 
     <!-- Exit Confirmation -->
     <string name="exit_confirm_title">Sair do Aplicativo</string>
     <string name="exit_confirm_msg">Deseja realmente fechar o Squi TV?</string>
     <string name="exit_button">SAIR</string>
     <string name="stay_button">FICAR</string>
-    <string name="now_program_format">Agora: %1$s - %2$s</string>
-    <string name="duration_format">%sm</string>
     <string name="reminder_prefix">Lembrete: %s</string>
     <string name="tv_shortcut_red">Favorito</string>
     <string name="tv_shortcut_green">Proporção</string>
@@ -285,44 +116,19 @@
 
     <!-- Update Alert -->
     <string name="update_available_title">Nova atualização disponível</string>
-    <string name="later_button">DEPOIS</string>
 
     <!-- Dashboard Extra -->
     <string name="sync_live_tv_label">Sincronizando TV&#8230;</string>
-    <string name="sync_movies_label">Sincronizando Filmes&#8230;</string>
-    <string name="sync_series_label">Sincronizando Séries&#8230;</string>
 
-    <string name="logged_in_as">Logado como</string>
-    <string name="expiration_label">Expiração</string>
-    <string name="multi_view_label">Multi-Telas</string>
-    <string name="radio_label">Rádio</string>
-    <string name="profiles_label">Perfis</string>
     <string name="on_air_now">No Ar Agora</string>
     <string name="no_epg_available">O EPG não está disponível para este canal.</string>
-    <string name="no_additional_info">Sem informações adicionais.</string>
     <string name="epg_not_found">Programação não disponível para este canal.</string>
     <string name="recently_added_label">Recém Adicionados</string>
-    <string name="smart_downloads_label">Smart Downloads</string>
 
-    <string name="audio_label">Áudio</string>
-    <string name="subtitles_label">Legendas</string>
-    <string name="video_label">Vídeo</string>
-    <string name="system_label">Sistema</string>
-    <string name="no_options_label">Sem opções</string>
-    <string name="languages_section">Idiomas</string>
-    <string name="available_subtitles">Legendas Disponíveis</string>
-    <string name="font_size_label">Tamanho da Fonte</string>
-    <string name="sleep_timer_title">Temporizador (Sleep)</string>
-    <string name="off_label">Desl.</string>
     <string name="tv_catalog_label">CATÁLOGO TV</string>
-    <string name="switching_channel">TROCANDO CANAL...</string>
-    <string name="restore_backup_label">IMPORTAR CONFIGURAÇÕES</string>
-    <string name="starting_playback">Iniciando Reprodução...</string>
+    <string name="starting_playback">Iniciando reprodução…</string>
 
     <string name="settings_nav_title">CONFIGURAÇÕES</string>
-    <string name="settings_nav_subtitle">Gerencie sua experiência premium</string>
-    <string name="account_nav_title">MINHA CONTA</string>
-    <string name="account_nav_subtitle">Gerencie seus perfis e conexões</string>
     <string name="downloads_nav_title">DOWNLOADS</string>
     <string name="downloads_nav_subtitle">Sua biblioteca offline</string>
     <string name="multiview_nav_title">MULTI-VIEW</string>
@@ -330,27 +136,15 @@
     <string name="search_empty_title">O QUE VAMOS ASSISTIR?</string>
     <string name="search_empty_subtitle">Digite o nome de um filme, série ou canal para começar.</string>
     <string name="actor_explore_msg">Explore todos os filmes e séries que contam com a participação de %s.</string>
-    <string name="technical_info_title">INFORMAÇÕES TÉCNICAS</string>
     <string name="next_episode_in_title">PRÓXIMO EPISÓDIO EM</string>
     <string name="seconds_label">%d SEGUNDOS</string>
-    <string name="select_category_label">SELECIONE UMA CATEGORIA</string>
-    <string name="premium_account_exp_format">CONTA PREMIUM • EXPIRA EM %s</string>
 
     <!-- Session & Sync Status -->
     <string name="offline_mode_banner">MODO OFFLINE — EXIBINDO CONTEÚDO SALVO</string>
-    <string name="never_synced">Nunca sincronizado</string>
-    <string name="synced_now">Sincronizado agora</string>
-    <string name="synced_minutes_ago">Sincronizado há %d minutos</string>
-    <string name="synced_hours_ago">Sincronizado há %d horas</string>
-    <string name="last_sync_at">Última sincronização: %s</string>
-    <string name="auth_invalid_error">Falha na autenticação IPTV. Verifique suas credenciais.</string>
-    <string name="auth_expired_error">Sua conta IPTV expirou. Entre em contato com seu provedor.</string>
-    <string name="server_offline_error">O servidor IPTV está indisponível. Usando dados locais.</string>
     <string name="stream_playback_error">Não foi possível reproduzir este conteúdo. O servidor pode estar indisponível ou o stream foi removido.</string>
 
     <!-- DNS Tester -->
     <string name="dns_tester_title">Testador de DNS</string>
-    <string name="dns_tester_desc">Verifique a disponibilidade dos DNS utilizados pelo aplicativo.</string>
     <string name="dns_tester_subtitle">Verifique quais servidores DNS estão disponíveis e teste o DNS atualmente utilizado pelo aplicativo.</string>
     <string name="retest_button">TESTAR NOVAMENTE</string>
     <string name="dns_status_all_ok_title">DNS funcionando</string>
@@ -372,13 +166,6 @@
     <string name="switch_dns_title">Selecionar DNS</string>
     <string name="confirm_switch_dns_title">Usar este DNS?</string>
     <string name="use_dns_button">USAR DNS</string>
-    <string name="dns_changing_status">Alterando DNS&#8230;</string>
-    <string name="dns_changed_success">DNS alterado com sucesso</string>
-    <string name="syncing_list_status">Sincronizando lista&#8230;</string>
-    <string name="sync_completed_success">Sincronização concluída</string>
-    <string name="sync_completed_desc">DNS alterado e lista atualizada com sucesso.</string>
-    <string name="sync_failed_title">DNS alterado</string>
-    <string name="sync_failed_desc">Não foi possível sincronizar a lista.</string>
     <string name="status_available">Disponível</string>
     <string name="status_unavailable">Indisponível</string>
     <string name="status_testing">Testando&#8230;</string>
@@ -390,18 +177,17 @@
     <string name="confirm_switch_instruction">O aplicativo passará a utilizar o seguinte servidor DNS para conectar e sincronizar os dados:</string>
     <string name="confirm_switch_notice">Após a confirmação, o catálogo será re-sincronizado automaticamente.</string>
     <string name="awaiting_test_result">Aguardando conclusão do teste de resposta&#8230;</string>
-    <string name="rollback_notice">Falha na conexão no novo DNS. A alteração foi desfeita por segurança.</string>
 
     <!-- App Updates -->
     <string name="app_updates_title">Atualizações do App</string>
-    <string name="checking_updates">Verificando atualizações...</string>
+    <string name="checking_updates">Verificando atualizações…</string>
     <string name="up_to_date_title">Você está atualizado</string>
     <string name="up_to_date_desc">Sua versão instalada é a mais recente disponível.</string>
     <string name="current_version_label">Versão instalada:</string>
     <string name="available_version_label">Versão disponível:</string>
     <string name="changelog_title">Novidades desta versão:</string>
     <string name="no_changelog">Novidades desta versão não informadas.</string>
-    <string name="downloading_update">Baixando atualização...</string>
+    <string name="downloading_update">Baixando atualização…</string>
     <string name="download_complete_title">Atualização pronta para instalação</string>
     <string name="integrity_failed_desc">O arquivo baixado não passou no teste de segurança SHA-256 e foi removido.</string>
     <string name="permission_required_title">Permissão necessária</string>
@@ -410,9 +196,6 @@
     <string name="update_notification_msg">Squi TV %s está disponível.</string>
     <string name="empty_favorites_movies">Você ainda não tem filmes favoritos.</string>
     <string name="empty_favorites_series">Você ainda não tem séries favoritas.</string>
-    <string name="empty_favorites_live">Você ainda não tem canais favoritos.</string>
-    <string name="autofill_google_button">USAR SENHA SALVA NO GOOGLE</string>
-    <string name="credential_filled_msg">Credenciais preenchidas do Google</string>
     <string name="lang_auto">Automático (Sistema)</string>
     <string name="lang_portuguese">Português</string>
     <string name="lang_english">English</string>
@@ -421,15 +204,12 @@
     <string name="debug_snapshot_button">Snapshot</string>
     <string name="debug_clear_button">Limpar</string>
     <string name="debug_export_button">Exportar Logs</string>
-    <string name="debug_search_placeholder">Pesquisar evento...</string>
+    <string name="debug_search_placeholder">Pesquisar evento…</string>
     <string name="export_chooser_title">Exportar Logs Debug</string>
     <string name="export_error_toast">Erro ao exportar: %s</string>
     <string name="nav_customization_label">Personalizar Abas/Seções</string>
     <string name="pip_label">Janela flutuante (PiP)</string>
-    <string name="pip_auto_label">Abrir janela ao minimizar</string>
-    <string name="pip_auto_desc">Continua o vídeo em uma janela flutuante ao sair do aplicativo. O áudio em segundo plano tem uma configuração separada.</string>
     <string name="pip_unavailable">Não foi possível abrir a janela flutuante. Verifique a permissão de PiP nas configurações do Android.</string>
-    <string name="pip_unsupported">A janela flutuante para reprodução de vídeo não está disponível neste dispositivo. Para continuar ouvindo ao minimizar, use Reprodução em Segundo Plano.</string>
     <string name="catalog_sync_title">Sincronização do catálogo</string>
     <string name="sync_epg">Guia de programação</string>
     <string name="sync_skipped">Não executado ou já atualizado</string>
@@ -505,7 +285,7 @@
     <string name="local_sync_received_partial">Itens recebidos. Dados de contas ou perfis não reconhecidos foram ignorados.</string>
     <string name="local_sync_sent">Envio concluído. O aparelho receptor confirmou a aplicação dos itens.</string>
     <string name="local_sync_sent_partial">Envio concluído. O receptor ignorou dados de contas ou perfis não reconhecidos.</string>
-    <string name="settings_backup_options_summary">%1$d de %2$d itens selecionados</string>
+    <string name="settings_backup_options_summary">Itens selecionados: %1$d de %2$d</string>
     <string name="settings_backup_customize">Escolher itens</string>
     <string name="settings_backup_hide_options">Recolher itens</string>
     <string name="settings_backup_local_section">Entre aparelhos</string>
@@ -530,7 +310,6 @@
     <string name="local_sync_update_required">Atualize o Squi TV nos dois aparelhos para usar esta sincronização.</string>
 
     <!-- Update experience -->
-    <string name="updater_invalid_release">A versão publicada não pôde ser identificada.</string>
     <string name="updater_check_failed">Não foi possível consultar o GitHub. Confira a conexão e tente novamente.</string>
     <string name="updater_save_failed">Não foi possível salvar a atualização. Confira o espaço disponível.</string>
     <string name="updater_download_failed">Não foi possível baixar a atualização. Tente novamente.</string>
@@ -589,12 +368,6 @@
     <string name="channel_quality_uhd">4K</string>
     <string name="channel_selected">Selecionada</string>
     <string name="channel_quality_hint">Seleciona um endereço do provedor. Automático prioriza a maior resolução identificada; não mede a conexão.</string>
-    <string name="channel_version">Versão do canal</string>
-    <string name="channel_version_hint">Versões disponíveis somente nesta lista. A escolha vale para esta reprodução e não altera a qualidade preferida.</string>
-    <string name="channel_version_unknown">Resolução não informada</string>
-    <string name="video_track">Faixa de vídeo</string>
-    <string name="video_track_hint">Padrão do stream. A adaptação depende das faixas fornecidas pelo provedor.</string>
-    <string name="video_track_default">Padrão do stream</string>
     <string name="upcoming_program">A seguir: %1$s • %2$s</string>
     <string name="settings_backup_no_supported_items">Este backup contém apenas configurações aposentadas. Nenhum dado foi alterado.</string>
     <string name="local_login_title">Login pela rede local</string>
@@ -614,7 +387,6 @@
 
     <!-- Catalog Categories & Preparation -->
     <string name="catalog_categories_title">Categorias do catálogo</string>
-    <string name="catalog_categories_desc">Escolha como organizar filmes e séries e acompanhe a preparação.</string>
     <string name="movie_category_mode_label">Categorias de filmes</string>
     <string name="series_category_mode_label">Categorias de séries</string>
     <string name="category_mode_provider">Categorias do servidor (padrão)</string>
@@ -625,10 +397,9 @@
     <string name="catalog_preparing_title">Preparando catálogo</string>
     <string name="catalog_preparing_detail">Consultando informações dos títulos</string>
     <string name="catalog_prep_paused">Preparação pausada</string>
-    <string name="catalog_prep_paused_playback">Pausado durante reprodução</string>
+    <string name="catalog_prep_paused_playback">Pausada durante a reprodução</string>
     <string name="catalog_prep_paused_network">Aguardando rede</string>
-    <string name="catalog_prep_paused_user">Pausado pelo usuário</string>
-    <string name="catalog_prep_completed">Catálogo preparado</string>
+    <string name="catalog_prep_paused_user">Pausada pelo usuário</string>
     <string name="catalog_prep_pause_action">Pausar</string>
     <string name="catalog_prep_resume_action">Retomar</string>
     <string name="catalog_prep_retry_action">Tentar novamente</string>
@@ -639,4 +410,66 @@
     <string name="remove_continue_watching_failed">Não foi possível remover de Continuar assistindo.</string>
     <string name="search_in_category">Buscar nesta categoria</string>
     <string name="app_dns_settings">DNS do aplicativo</string>
+    <string name="catalog_prep_interrupted">Preparação interrompida</string>
+    <string name="catalog_prep_server_progress">Catálogo no servidor · %1$d%%</string>
+    <string name="catalog_prep_progress">Preparando catálogo · %1$d%%</string>
+    <string name="catalog_prep_retry_wait">Aguardando nova tentativa</string>
+    <string name="catalog_prep_server_detail">Preparação no servidor</string>
+    <string name="catalog_prep_batch_items">Consultando %1$d títulos por vez · %2$s</string>
+    <string name="catalog_prep_current_item">Consultando %1$s</string>
+    <string name="catalog_prep_throttled">Ritmo reduzido temporariamente após falhas</string>
+    <string name="catalog_prep_cooldown">Aguardando intervalo entre lotes</string>
+    <string name="catalog_prep_waiting_items">Aguardando títulos disponíveis para nova tentativa</string>
+    <string name="catalog_prep_priority">Prioridade atual: %1$s</string>
+    <string name="catalog_prep_movies_count">Filmes: %1$d de %2$d · Com gênero: %3$d</string>
+    <string name="catalog_prep_series_count">Séries: %1$d de %2$d · Com gênero: %3$d</string>
+    <string name="catalog_prep_without_genre">Sem gênero informado: %1$d</string>
+    <string name="catalog_prep_failures">Falhas temporárias: %1$d</string>
+    <string name="catalog_prep_speed">Velocidade de preparação</string>
+    <string name="catalog_prep_slow">Lenta</string>
+    <string name="catalog_prep_normal">Normal</string>
+    <string name="catalog_prep_fast">Rápida</string>
+    <string name="catalog_prep_priority_movies">Filmes</string>
+    <string name="catalog_prep_priority_series">Séries</string>
+    <string name="account_login_sign_in">Entrar com Conta Squi TV</string>
+    <string name="account_login_generating">Gerando código…</string>
+    <string name="account_login_confirm_code">Abra o endereço em um navegador e confirme o código.</string>
+    <string name="account_login_auth_expired">A autorização expirou ou foi recusada. Feche e tente novamente.</string>
+    <string name="account_login_connect_failure">Falha ao conectar à Conta Squi TV.</string>
+    <string name="account_login_account">Conta Squi TV</string>
+    <string name="account_login_phone_code">Abra o endereço no celular e informe o código.</string>
+    <string name="account_login_open_browser">Abrir navegador</string>
+    <string name="account_login_close">Fechar</string>
+    <string name="account_login_sign_in_failure">Falha ao entrar na Conta Squi TV.</string>
+    <string name="account_login_portal_hint">Use o usuário e a senha que você cadastrou no portal Squi TV.</string>
+    <string name="account_login_username">Usuário da Conta Squi TV</string>
+    <string name="account_login_password">Senha da Conta Squi TV</string>
+    <string name="account_login_hide_password">Ocultar senha</string>
+    <string name="account_login_show_password">Mostrar senha</string>
+    <string name="account_login_sign_in_code">Entrar com código</string>
+    <string name="account_login_signing_in">Entrando…</string>
+    <string name="account_login_enter">Entrar</string>
+    <string name="account_login_cancel">Cancelar</string>
+    <string name="account_login_choose_link">Escolher vínculo IPTV</string>
+    <string name="account_login_link_failure">Não foi possível abrir o vínculo.</string>
+    <string name="account_login_link">Vínculo %1$d · %2$s</string>
+    <string name="account_login_loading_link">Carregando vínculo…</string>
+    <string name="account_login_sign_in_again">Entrar novamente</string>
+    <string name="account_login_invalid_credentials">Usuário ou senha da Conta Squi TV inválidos.</string>
+    <string name="account_login_too_many_attempts">Muitas tentativas. Aguarde e tente novamente.</string>
+    <string name="account_login_unavailable">O login da Conta Squi TV está temporariamente indisponível.</string>
+    <string name="account_login_no_iptv_link">Vincule sua conta IPTV no portal Squi TV antes de entrar.</string>
+    <string name="account_login_link_expired">A seleção do vínculo expirou. Entre novamente.</string>
+    <string name="catalog_prep_summary">%1$d%% · %2$d de %3$d preparados</string>
+    <string name="catalog_prep_complete">Preparação concluída</string>
+    <string name="catalog_prep_estimate_paused">Estimativa suspensa durante a pausa</string>
+    <string name="catalog_prep_estimate_failures">Estimativa indisponível enquanto houver falhas</string>
+    <string name="catalog_prep_estimate">Tempo restante estimado: %1$s</string>
+    <string name="catalog_prep_under_minute">menos de 1 min</string>
+    <string name="catalog_prep_calculating">Calculando o tempo restante…</string>
+    <string name="login_cancel_connection">Cancelar conexão</string>
+    <string name="account_display_name_portal">Altere o nome de exibição desta conta no portal Squi TV.</string>
+    <string name="account_display_name_example">Exemplo: Rafael</string>
+    <string name="account_display_name_save">Salvar nome</string>
+    <string name="active_profile_label">Perfil: %1$s</string>
 </resources>

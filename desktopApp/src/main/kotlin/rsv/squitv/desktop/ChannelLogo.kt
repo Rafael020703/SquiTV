@@ -38,27 +38,26 @@ internal class ChannelLogos(private val maximumSide: Int = 128, private val maxi
         .readTimeout(5, TimeUnit.SECONDS).callTimeout(8, TimeUnit.SECONDS)
         .followRedirects(false).followSslRedirects(false).build().also(rsv.squitv.shared.network.AppDns::register)
     private val slots = Semaphore(4)
-    private data class CachedImage(val bitmap: ImageBitmap?, val created: Long = System.nanoTime()) {
-        val bytes: Long = bitmap?.let { it.width.toLong() * it.height * 4 } ?: 0L
+    private data class CachedImage(val bitmap: ImageBitmap) {
+        val bytes: Long = bitmap.width.toLong() * bitmap.height * 4
     }
     private val cache = LinkedHashMap<String, CachedImage>(64, .75f, true)
+    private val failed = LinkedHashMap<String, Long>(32, .75f, true)
     private var cacheBytes = 0L
     private val closed = AtomicBoolean(false)
     private class PendingImage(val mutex: Mutex = Mutex(), var users: Int = 0)
     private val pending = mutableMapOf<String, PendingImage>()
 
-    private fun cached(address: String): CachedImage? = synchronized(cache) {
-        val entry = cache[address] ?: return@synchronized null
-        if (entry.bitmap == null && System.nanoTime() - entry.created > TimeUnit.SECONDS.toNanos(30)) {
-            cache.remove(address)
-            null
-        } else entry
-    }
-
     private fun cache(address: String, bitmap: ImageBitmap?) = synchronized(cache) {
         if (closed.get()) return@synchronized
-        if (bitmap == null && cache[address]?.bitmap != null) return@synchronized
+        if (bitmap == null) {
+            failed[address] = System.nanoTime()
+            while (failed.size > 64) failed.remove(failed.keys.first())
+            return@synchronized
+        }
         val entry = CachedImage(bitmap)
+        if (entry.bytes > maximumCacheBytes) return@synchronized
+        failed.remove(address)
         cache.remove(address)?.let { cacheBytes -= it.bytes }
         cache[address] = entry
         cacheBytes += entry.bytes
@@ -72,7 +71,7 @@ internal class ChannelLogos(private val maximumSide: Int = 128, private val maxi
     suspend fun load(rawAddress: String?): ImageBitmap? {
         if (closed.get()) return null
         val address = ContentImages.resolve(rawAddress, baseUrl) ?: return null
-        cached(address)?.let { return it.bitmap }
+        synchronized(cache) { cache[address]?.let { return it.bitmap } }
         val request = synchronized(pending) {
             pending.getOrPut(address) { PendingImage() }.also { it.users++ }
         }
@@ -89,7 +88,13 @@ internal class ChannelLogos(private val maximumSide: Int = 128, private val maxi
 
     private suspend fun loadImage(address: String): ImageBitmap? = slots.withPermit {
         if (closed.get()) return@withPermit null
-        cached(address)?.let { return@withPermit it.bitmap }
+        synchronized(cache) {
+            cache[address]?.let { return@withPermit it.bitmap }
+            failed[address]?.let {
+                if (System.nanoTime() - it < TimeUnit.SECONDS.toNanos(30)) return@withPermit null
+                failed.remove(address)
+            }
+        }
         val bytes = withTimeoutOrNull(12_000L) {
             var url = runCatching { Request.Builder().url(address).build().url }.getOrNull() ?: return@withTimeoutOrNull null
             val visited = mutableSetOf<HttpUrl>()
@@ -122,7 +127,7 @@ internal class ChannelLogos(private val maximumSide: Int = 128, private val maxi
             standard ?: runCatching { decodePortable(bytes) }.getOrNull()
         }
         cache(address, bitmap)
-        bitmap ?: cached(address)?.bitmap
+        bitmap
     }
 
     private data class ImageResponse(val bytes: ByteArray? = null, val redirect: HttpUrl? = null)
@@ -191,7 +196,7 @@ internal class ChannelLogos(private val maximumSide: Int = 128, private val maxi
         if (!closed.compareAndSet(false, true)) return
         client.dispatcher.cancelAll(); client.dispatcher.executorService.shutdown()
         client.connectionPool.evictAll()
-        synchronized(cache) { cache.clear(); cacheBytes = 0 }
+        synchronized(cache) { cache.clear(); failed.clear(); cacheBytes = 0 }
     }
 }
 

@@ -153,7 +153,7 @@ class MainActivity : AppCompatActivity() {
                     if (binding != null) {
                         val (active, profile) = binding
                         val local = userRepository.favoriteCloudStore(active.localAccount, profile, "", active.client.scopeId)
-                        active.client.maintainAssociatedData(local)
+                        active.client.maintainAssociatedData(local, syncCategories = true)
                     }
                 }
             }

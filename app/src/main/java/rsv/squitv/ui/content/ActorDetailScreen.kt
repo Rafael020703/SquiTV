@@ -180,7 +180,7 @@ fun ActorDetailScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showSortMenu = false }) {
-                    Text("FECHAR", color = tokens.colors.primary, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.close), color = tokens.colors.primary, fontWeight = FontWeight.Bold)
                 }
             },
             containerColor = tokens.colors.backgroundSecondary,

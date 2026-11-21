@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import rsv.squitv.R
+import rsv.squitv.core.ui.components.AccountLoginText
 import rsv.squitv.core.ui.components.AccountPilotEntry
 import rsv.squitv.shared.account.AccountPilot
 import rsv.squitv.core.ui.components.buttons.AppButton
@@ -369,7 +370,7 @@ private fun CompactLoginLayout(
 
                     if (onLinkedLogin != null) {
                         Spacer(Modifier.height(8.dp))
-                        AccountPilotEntry(!isLoading, onLinkedLogin)
+                        LocalizedAccountPilotEntry(!isLoading, onLinkedLogin)
                     }
 
                     // SAVED ACCOUNTS SELECTOR
@@ -494,7 +495,7 @@ private fun CompactLoginLayout(
                     )
 
                     if (isLoading && onCancelLogin != null) {
-                        TextButton(onClick = onCancelLogin) { Text("Cancelar conexão") }
+                        TextButton(onClick = onCancelLogin) { Text(stringResource(R.string.login_cancel_connection)) }
                     }
                     if (onOpenLocalLogin != null) {
                         Spacer(modifier = Modifier.height(10.dp))
@@ -748,7 +749,7 @@ private fun ExpandedLoginLayout(
 
                     // FIELDS WITH CYAN GLOW
                     if (onLinkedLogin != null) {
-                        AccountPilotEntry(!isLoading, onLinkedLogin)
+                        LocalizedAccountPilotEntry(!isLoading, onLinkedLogin)
                     }
                     AppTextField(
                         value = username,
@@ -836,7 +837,7 @@ private fun ExpandedLoginLayout(
                     )
 
                     if (isLoading && onCancelLogin != null) {
-                        TextButton(onClick = onCancelLogin) { Text("Cancelar conexão") }
+                        TextButton(onClick = onCancelLogin) { Text(stringResource(R.string.login_cancel_connection)) }
                     }
                     if (onOpenAppDns != null) {
                         Spacer(Modifier.height(8.dp))
@@ -935,4 +936,46 @@ private fun SavedAccountChip(
             }
         }
     }
+}
+
+
+@Composable
+private fun LocalizedAccountPilotEntry(
+    enabled: Boolean,
+    onLinkedLogin: (rsv.squitv.shared.account.AccountPilot.LinkedLogin) -> Unit,
+) {
+    val resources = androidx.compose.ui.platform.LocalResources.current
+    AccountPilotEntry(enabled, copy = { text ->
+        resources.getString(when (text) {
+            AccountLoginText.SIGN_IN -> R.string.account_login_sign_in
+            AccountLoginText.GENERATING -> R.string.account_login_generating
+            AccountLoginText.CONFIRM_CODE -> R.string.account_login_confirm_code
+            AccountLoginText.AUTH_EXPIRED -> R.string.account_login_auth_expired
+            AccountLoginText.CONNECT_FAILURE -> R.string.account_login_connect_failure
+            AccountLoginText.ACCOUNT -> R.string.account_login_account
+            AccountLoginText.PHONE_CODE -> R.string.account_login_phone_code
+            AccountLoginText.OPEN_BROWSER -> R.string.account_login_open_browser
+            AccountLoginText.CLOSE -> R.string.account_login_close
+            AccountLoginText.SIGN_IN_FAILURE -> R.string.account_login_sign_in_failure
+            AccountLoginText.PORTAL_HINT -> R.string.account_login_portal_hint
+            AccountLoginText.USERNAME -> R.string.account_login_username
+            AccountLoginText.PASSWORD -> R.string.account_login_password
+            AccountLoginText.HIDE_PASSWORD -> R.string.account_login_hide_password
+            AccountLoginText.SHOW_PASSWORD -> R.string.account_login_show_password
+            AccountLoginText.SIGN_IN_CODE -> R.string.account_login_sign_in_code
+            AccountLoginText.SIGNING_IN -> R.string.account_login_signing_in
+            AccountLoginText.ENTER -> R.string.account_login_enter
+            AccountLoginText.CANCEL -> R.string.account_login_cancel
+            AccountLoginText.CHOOSE_LINK -> R.string.account_login_choose_link
+            AccountLoginText.LINK_FAILURE -> R.string.account_login_link_failure
+            AccountLoginText.LINK -> R.string.account_login_link
+            AccountLoginText.LOADING_LINK -> R.string.account_login_loading_link
+            AccountLoginText.SIGN_IN_AGAIN -> R.string.account_login_sign_in_again
+            AccountLoginText.INVALID_CREDENTIALS -> R.string.account_login_invalid_credentials
+            AccountLoginText.TOO_MANY_ATTEMPTS -> R.string.account_login_too_many_attempts
+            AccountLoginText.UNAVAILABLE -> R.string.account_login_unavailable
+            AccountLoginText.NO_IPTV_LINK -> R.string.account_login_no_iptv_link
+            AccountLoginText.LINK_EXPIRED -> R.string.account_login_link_expired
+        })
+    }, onLinkedLogin = onLinkedLogin)
 }

@@ -65,7 +65,7 @@ fun PlayerTimeline(positionLabel: String, seeking: Boolean, primary: Color, text
             Text(positionLabel, color = if (seeking) primary else text, style = labelStyle, fontWeight = FontWeight.Bold)
             if (seeking) Surface(color = primary.copy(alpha = .2f), shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(1.dp, primary)) {
-                Text("BUSCANDO...", Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                Text("Buscando…", Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                     style = captionStyle, fontWeight = FontWeight.Black, color = primary)
             }
         }

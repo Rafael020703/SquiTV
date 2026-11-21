@@ -32,7 +32,8 @@ object AppDns : Dns {
     private var save: (String) -> Unit = { error("DNS settings unavailable") }
     @Volatile private var measuredAt = 0L
     private data class Cached(val addresses: List<InetAddress>, val until: Long)
-    private val cache = linkedMapOf<String, Cached>()
+    private val cache = LinkedHashMap<String, Cached>(128, 0.75f, true)
+    private var cacheGeneration = 0L
     private val pools = WeakHashMap<ConnectionPool, Unit>()
 
     fun register(client: OkHttpClient) {
@@ -52,8 +53,11 @@ object AppDns : Dns {
         save = persist
         val parsed = AppDnsMode.entries.firstOrNull { it.name == mode }
             ?: if (mode == null) AppDnsMode.AUTO else AppDnsMode.SYSTEM
-        mutable.update { it.copy(mode = parsed, error = error) }
-        synchronized(cache) { cache.clear() }
+        synchronized(cache) {
+            mutable.update { it.copy(mode = parsed, error = error) }
+            cache.clear()
+            cacheGeneration++
+        }
     }
 
     private fun resolver(provider: AppDnsMode): DnsOverHttps {
@@ -72,8 +76,11 @@ object AppDns : Dns {
             // A completed disk write must also become the active choice if the screen closes.
             withContext(NonCancellable + Dispatchers.IO) {
                 save(mode.name)
-                synchronized(cache) { cache.clear() }
-                mutable.update { it.copy(mode = mode) }
+                synchronized(cache) {
+                    mutable.update { it.copy(mode = mode) }
+                    cache.clear()
+                    cacheGeneration++
+                }
                 discardIdleConnections()
             }
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -111,7 +118,7 @@ object AppDns : Dns {
 
     override fun lookup(hostname: String): List<InetAddress> {
         val host = hostname.lowercase().removeSuffix(".")
-        val mode = mutable.value.mode
+        val (mode, generation) = synchronized(cache) { mutable.value.mode to cacheGeneration }
         // Private/local names stay in the local resolver; public DNS must not receive them.
         if (mode == AppDnsMode.SYSTEM || !host.contains('.') || host.endsWith(".local") || host.endsWith(".lan") ||
             host.endsWith(".home.arpa") || host.endsWith(".internal") || host.endsWith(".localhost") ||
@@ -121,7 +128,14 @@ object AppDns : Dns {
             scope.launch { measure() }
         }
         val key = "${mode.name}/$host"
-        synchronized(cache) { cache[key]?.takeIf { it.until > System.nanoTime() }?.let { return it.addresses } }
+        synchronized(cache) {
+            if (cacheGeneration == generation) {
+                cache[key]?.let {
+                    if (it.until > System.nanoTime()) return it.addresses
+                    cache.remove(key)
+                }
+            }
+        }
         val first = if (mode == AppDnsMode.AUTO) mutable.value.fastest ?: AppDnsMode.CLOUDFLARE else mode
         val choices = if (mode == AppDnsMode.AUTO) listOf(first,
             if (first == AppDnsMode.GOOGLE) AppDnsMode.CLOUDFLARE else AppDnsMode.GOOGLE) else listOf(first)
@@ -130,8 +144,10 @@ object AppDns : Dns {
                 val result = resolvers.getValue(provider).lookup(host)
                 if (result.isEmpty()) continue
                 synchronized(cache) {
-                    cache[key] = Cached(result, System.nanoTime() + TimeUnit.SECONDS.toNanos(60))
-                    while (cache.size > 128) cache.remove(cache.keys.first())
+                    if (cacheGeneration == generation) {
+                        cache[key] = Cached(result, System.nanoTime() + TimeUnit.SECONDS.toNanos(60))
+                        while (cache.size > 128) cache.remove(cache.keys.first())
+                    }
                 }
                 return result
             } catch (_: UnknownHostException) { /* Auto tries the other public provider; no negative cache. */ }

@@ -10,14 +10,15 @@ import rsv.squitv.shared.catalog.PreparationProgress
 
 @Composable
 fun PreparationProgressSummary(total: Int, done: Int, remainingMs: Long?, paused: Boolean,
-    failures: Int, primary: Color, secondary: Color, modifier: Modifier = Modifier) {
+    failures: Int, primary: Color, secondary: Color, modifier: Modifier = Modifier,
+    summaryText: String? = null, estimateText: String? = null) {
     val percent = PreparationProgress.percent(total, done)
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("$percent% · $done/$total preparados", style = MaterialTheme.typography.labelMedium, color = primary)
+        Text(summaryText ?: "$percent% · $done/$total preparados", style = MaterialTheme.typography.labelMedium, color = primary)
         LinearProgressIndicator(progress = { if (total > 0) done.toFloat().div(total).coerceIn(0f, 1f) else 0f },
             modifier = Modifier.fillMaxWidth(), color = primary)
-        Text(when {
-            total > 0 && done >= total -> "Preparação concluída"
+        Text(estimateText ?: when {
+            total > 0 && done >= total && failures == 0 -> "Preparação concluída"
             paused -> "Estimativa suspensa durante a pausa"
             failures > 0 -> "Estimativa indisponível enquanto há falhas pendentes"
             remainingMs != null -> "Tempo restante estimado: ~ ${PreparationProgress.duration(remainingMs)}"

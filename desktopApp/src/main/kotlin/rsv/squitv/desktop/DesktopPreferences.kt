@@ -29,6 +29,7 @@ internal data class DesktopPreferences(val schema: Int = 1, val autoPlayEpisodes
     val displayNamesByAccount: Map<String, String> = emptyMap(),
     val browseMemory: rsv.squitv.shared.catalog.CatalogBrowseMemory = rsv.squitv.shared.catalog.CatalogBrowseMemory(),
     val preferredAudioLanguage: String? = null, val preferredSubtitleLanguage: String? = null,
+    val categoryEditTimes: Map<String, Long> = emptyMap(),
     val selectedProfileScopes: Map<String, String> = emptyMap())
 
 /** Variant-local preferences only. Credentials remain exclusively in the existing DPAPI store. */
@@ -115,7 +116,7 @@ internal class DesktopPreferencesStore(private val directory: Path, private val 
     }
 
     fun update(transform: (DesktopPreferences) -> DesktopPreferences) {
-        scope.launch { updateAndAwait(transform) }
+        scope.launch { updateAndAwait(transform = transform) }
     }
 
     internal fun favoriteCloudStore(
@@ -154,6 +155,7 @@ internal class DesktopPreferencesStore(private val directory: Path, private val 
             rsv.squitv.shared.account.CloudCategories(
                 kind, catalogKind?.let { value.catalogMode(account, it).name.lowercase() } ?: "provider",
                 value.categoryOrder(account, catalogKind), value.hiddenCategories(account, catalogKind).sorted(),
+                observedAt = value.categoryEditTimes[categoryEditKey(account, catalogKind)] ?: 0,
             )
         }
 
@@ -212,12 +214,13 @@ internal class DesktopPreferencesStore(private val directory: Path, private val 
                 cloudRows: List<rsv.squitv.shared.account.CloudCategories>,
             ): Boolean {
                 var matched = false
-                val persisted = updateAndAwait { current ->
+                val persisted = updateAndAwait(trackCategoryEdits = false) { current ->
                     if (categorySnapshot(current) != expected) return@updateAndAwait current
                     matched = true
                     cloudRows.fold(current) { value, row ->
                         val kind = categoryKind(row.kind)
-                        val updated = value.withCategoryOrder(account, kind, row.order)
+                        val updated = value.copy(categoryEditTimes = value.categoryEditTimes - categoryEditKey(account, kind))
+                            .withCategoryOrder(account, kind, row.order)
                             .withHiddenCategories(account, kind, row.hidden.toSet())
                         if (kind == null) updated else updated.withCatalogMode(
                             account, kind, rsv.squitv.domain.model.CategoryMode.fromString(row.mode),
@@ -257,11 +260,13 @@ internal class DesktopPreferencesStore(private val directory: Path, private val 
         }
     }
 
-    suspend fun updateAndAwait(transform: (DesktopPreferences) -> DesktopPreferences): Boolean =
+    suspend fun updateAndAwait(trackCategoryEdits: Boolean = true, transform: (DesktopPreferences) -> DesktopPreferences): Boolean =
         mutex.withLock {
             if (!ready.value || !writable) return@withLock false
             try {
-                val next = transform(mutable.value)
+                val current = mutable.value
+                val updated = transform(current)
+                val next = if (trackCategoryEdits) updated.trackCategoryEditsFrom(current) else updated
                 validateDesktopPreferences(next)
                 if (next == mutable.value) return@withLock true
                 withContext(Dispatchers.IO) {
@@ -367,6 +372,28 @@ internal fun DesktopPreferences.toggleLiveFavorite(account: String, streamId: In
 internal fun rsv.squitv.shared.xtream.LiveChannel.isFavorite(savedIds: Set<Int>): Boolean =
     rsv.squitv.domain.model.LiveChannelFavorites.isFavorite(savedIds, id, versions.map { it.id })
 
+private fun categoryEditKey(account: String, kind: CatalogKind?): String =
+    "$account/${kind?.name ?: "LIVE"}"
+
+private fun DesktopPreferences.trackCategoryEditsFrom(previous: DesktopPreferences): DesktopPreferences {
+    if (liveCategoryOrderByAccount === previous.liveCategoryOrderByAccount &&
+        hiddenLiveCategoriesByAccount === previous.hiddenLiveCategoriesByAccount &&
+        catalogCategoryOrderByScope === previous.catalogCategoryOrderByScope &&
+        hiddenCatalogCategoriesByScope === previous.hiddenCatalogCategoriesByScope &&
+        catalogModesByScope === previous.catalogModesByScope) return this
+    fun values(prefs: DesktopPreferences): List<Map<String, Any>> = listOf(
+        prefs.liveCategoryOrderByAccount.mapKeys { categoryEditKey(it.key, null) },
+        prefs.hiddenLiveCategoriesByAccount.mapKeys { categoryEditKey(it.key, null) },
+        prefs.catalogCategoryOrderByScope, prefs.hiddenCatalogCategoriesByScope, prefs.catalogModesByScope,
+    )
+    val changed = values(previous).zip(values(this)).flatMap { (old, next) ->
+        (old.keys + next.keys).filter { old[it] != next[it] }
+    }.toSet()
+    if (changed.isEmpty()) return this
+    val now = System.currentTimeMillis()
+    return copy(categoryEditTimes = categoryEditTimes + changed.associateWith { now })
+}
+
 internal fun DesktopPreferences.categoryOrder(account: String, kind: CatalogKind?): List<String> =
     if (kind == null) liveCategoryOrderByAccount[account].orEmpty()
     else catalogCategoryOrderByScope["$account/${kind.name}"].orEmpty()
@@ -393,7 +420,7 @@ internal fun DesktopPreferences.withHiddenCategories(account: String, kind: Cata
 
 /** Stable scope without storing account names or credentials in preference keys. */
 internal fun liveCategoryScope(account: rsv.squitv.shared.xtream.ServerCredentials?): String? = account?.let {
-    val address = it.baseUrl.trimEnd('/')
+    val address = (it.localIdentityBaseUrl ?: it.baseUrl).trimEnd('/')
     val identity = "${address.length}:$address${it.username.length}:${it.username}"
     java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8)))
 }

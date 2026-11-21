@@ -145,7 +145,7 @@ fun SortMenuDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("FECHAR", color = tokens.colors.textSecondary, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.close), color = tokens.colors.textSecondary, fontWeight = FontWeight.Bold)
             }
         },
         containerColor = tokens.colors.backgroundSecondary,

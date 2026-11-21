@@ -311,7 +311,7 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showResetDialog = false }) {
-                    Text("CANCELAR", color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.cancel), color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -507,30 +507,29 @@ fun SettingsScreen(
                             Spacer(Modifier.height(16.dp))
 
                             Text(stringResource(R.string.catalog_preparing_title).uppercase(), color = tokens.colors.primary, style = tokens.typography.label, fontWeight = FontWeight.Black)
-                            rsv.squitv.core.ui.components.common.PreparationProgressSummary(
-                                prepState.totalItems, prepState.processedItems, prepState.estimatedRemainingMs, prepState.isPaused,
-                                prepState.failedItems, tokens.colors.primary, tokens.colors.textSecondary)
+                            rsv.squitv.ui.content.components.LocalizedPreparationProgress(
+                                prepState, tokens.colors.primary, tokens.colors.textSecondary)
                             prepState.error?.let { Text(it, color = tokens.colors.error, style = tokens.typography.caption) }
-                            Text("Prioridade atual: ${if (prepState.priorityType == "SERIES") "Séries" else "Filmes"}", style = tokens.typography.body, color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold)
-                            Text("Filmes: ${prepState.vodProcessed} / ${prepState.vodTotal} (com gênero: ${prepState.vodWithGenre})", style = tokens.typography.caption, color = tokens.colors.textSecondary)
-                            Text("Séries: ${prepState.seriesProcessed} / ${prepState.seriesTotal} (com gênero: ${prepState.seriesWithGenre})", style = tokens.typography.caption, color = tokens.colors.textSecondary)
+                            Text(stringResource(R.string.catalog_prep_priority, stringResource(if (prepState.priorityType == "SERIES") R.string.catalog_prep_priority_series else R.string.catalog_prep_priority_movies)), style = tokens.typography.body, color = tokens.colors.textPrimary, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.catalog_prep_movies_count, prepState.vodProcessed, prepState.vodTotal, prepState.vodWithGenre), style = tokens.typography.caption, color = tokens.colors.textSecondary)
+                            Text(stringResource(R.string.catalog_prep_series_count, prepState.seriesProcessed, prepState.seriesTotal, prepState.seriesWithGenre), style = tokens.typography.caption, color = tokens.colors.textSecondary)
 
                             Spacer(Modifier.height(8.dp))
 
-                            Text("VELOCIDADE DE PREPARAÇÃO", style = tokens.typography.caption, fontWeight = FontWeight.Black, color = tokens.colors.primary)
+                            Text(stringResource(R.string.catalog_prep_speed), style = tokens.typography.caption, fontWeight = FontWeight.Black, color = tokens.colors.primary)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
                                 AppButton(
-                                    text = "Lento",
+                                    text = stringResource(R.string.catalog_prep_slow),
                                     onClick = { mainViewModel.setPreparationSpeed(rsv.squitv.domain.model.PreparationSpeed.SLOW) },
                                     enabled = prepState.speed != rsv.squitv.domain.model.PreparationSpeed.SLOW
                                 )
                                 AppButton(
-                                    text = "Normal",
+                                    text = stringResource(R.string.catalog_prep_normal),
                                     onClick = { mainViewModel.setPreparationSpeed(rsv.squitv.domain.model.PreparationSpeed.NORMAL) },
                                     enabled = prepState.speed != rsv.squitv.domain.model.PreparationSpeed.NORMAL
                                 )
                                 AppButton(
-                                    text = "Rápido",
+                                    text = stringResource(R.string.catalog_prep_fast),
                                     onClick = { mainViewModel.setPreparationSpeed(rsv.squitv.domain.model.PreparationSpeed.FAST) },
                                     enabled = prepState.speed != rsv.squitv.domain.model.PreparationSpeed.FAST
                                 )
@@ -553,7 +552,7 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { detailCategory = null }) {
-                    Text("CONCLUÍDO", color = tokens.colors.primary, fontWeight = FontWeight.Black)
+                    Text(stringResource(R.string.close), color = tokens.colors.primary, fontWeight = FontWeight.Black)
                 }
             }
         )

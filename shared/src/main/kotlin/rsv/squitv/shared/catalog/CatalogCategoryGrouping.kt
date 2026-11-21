@@ -21,20 +21,31 @@ object CatalogCategoryGrouping {
         if (items.isEmpty()) return emptyList()
         val all = CatalogCategoryEntry(ALL, allLabel, items)
         val known = providerCategories.map { it.first }.toSet()
+        val byProvider = mutableMapOf<String, MutableList<T>>()
+        val unclassified = mutableListOf<T>()
+        fun addToProvider(item: T) {
+            val id = categoryId(item)
+            val knownId = id != null && id in known
+            if (knownId) byProvider.getOrPut(id) { mutableListOf() }.add(item)
+            if (!knownId || id.isNullOrBlank()) unclassified.add(item)
+        }
         if (mode == CategoryMode.PROVIDER) {
-            val grouped = items.groupBy(categoryId)
+            items.forEach(::addToProvider)
             val providers = providerCategories.mapNotNull { (id, name) ->
-                grouped[id]?.takeIf { it.isNotEmpty() }?.let { CatalogCategoryEntry(id, name, it) }
+                byProvider[id]?.let { CatalogCategoryEntry(id, name, it) }
             }
-            val unknown = items.filter { categoryId(it).isNullOrBlank() || categoryId(it) !in known }
-            return listOf(all) + providers + if (unknown.isEmpty()) emptyList()
-                else listOf(CatalogCategoryEntry(UNCLASSIFIED, unclassifiedLabel, unknown))
+            return listOf(all) + providers + if (unclassified.isEmpty()) emptyList()
+                else listOf(CatalogCategoryEntry(UNCLASSIFIED, unclassifiedLabel, unclassified))
         }
         val byGenre = linkedMapOf<String, MutableList<T>>()
-        val unknown = mutableListOf<T>()
+        val genreCache = HashMap<String, List<String>>()
         items.forEach { item ->
-            val genres = GenreUtils.extractNormalizedGenres(genre(item))
-            if (genres.isEmpty()) unknown.add(item)
+            val rawGenre = genre(item)
+            val genres = if (rawGenre.isNullOrBlank()) emptyList() else genreCache[rawGenre]
+                ?: GenreUtils.extractNormalizedGenres(rawGenre).also {
+                    if (genreCache.size < 256) genreCache[rawGenre] = it
+                }
+            if (genres.isEmpty()) addToProvider(item)
             else genres.forEach { byGenre.getOrPut(it) { mutableListOf() }.add(item) }
         }
         val collator = Collator.getInstance(locale).apply { strength = Collator.PRIMARY }
@@ -42,11 +53,9 @@ object CatalogCategoryGrouping {
             collator.compare(a.name, b.name).takeIf { it != 0 } ?: a.id.compareTo(b.id)
         }
         val genres = byGenre.map { (name, values) -> CatalogCategoryEntry(GENRE_PREFIX + name, name, values.toList()) }.sortedWith(order)
-        val unknownByCategory = unknown.groupBy(categoryId)
         val fallback = providerCategories.mapNotNull { (id, name) ->
-            unknownByCategory[id]?.takeIf { it.isNotEmpty() }?.let { CatalogCategoryEntry("FALLBACK:$id", name, it) }
+            byProvider[id]?.let { CatalogCategoryEntry("FALLBACK:$id", name, it) }
         }.sortedWith(order)
-        val unclassified = unknown.filter { categoryId(it).isNullOrBlank() || categoryId(it) !in known }
         return buildList {
             add(all)
             if (genres.isNotEmpty()) { add(CatalogCategoryEntry(HEADER_GENRES, genresHeaderLabel, emptyList(), true)); addAll(genres) }

@@ -132,6 +132,7 @@ class SettingsRepository @Inject constructor(
         val LOCAL_PROFILES = stringPreferencesKey("local_profiles_v1")
         val PROFILE_PICTURE = stringPreferencesKey("profile_picture")
         val HIDDEN_SECTIONS = stringSetPreferencesKey("hidden_sections")
+        val CATEGORY_EDIT_TIMES = stringPreferencesKey("category_edit_times_v1")
         val CATEGORY_ORDER_MAP = stringPreferencesKey("category_order_map")
         val HIDDEN_CATEGORIES_MAP = stringPreferencesKey("hidden_categories_map")
         val MOVIE_CATEGORY_MODE_MAP = stringPreferencesKey("movie_category_mode_map")
@@ -182,6 +183,7 @@ class SettingsRepository @Inject constructor(
         val ignoredVersion: String? = null,
         val displayNamesMap: Map<String, String> = emptyMap(),
         val hiddenSections: Set<String> = emptySet(),
+        val categoryEditTimes: Map<String, Long> = emptyMap(),
         val categoryOrderMap: Map<String, List<String>> = emptyMap(),
         val hiddenCategoriesMap: Map<String, Set<String>> = emptyMap(),
         val movieCategoryModeMap: Map<String, String> = emptyMap(),
@@ -382,6 +384,7 @@ class SettingsRepository @Inject constructor(
             usesPortalIdentity = preferences[PreferencesKeys.PORTAL_SYNC_SESSION] != null ||
                 !preferences[PreferencesKeys.PORTAL_DISPLAY_NAME].isNullOrBlank(),
             hiddenSections = hiddenSections,
+            categoryEditTimes = readCategoryEditTimes(preferences),
             categoryOrderMap = categoryOrderMap,
             hiddenCategoriesMap = hiddenCategoriesMap,
             movieCategoryModeMap = movieCategoryModeMap,
@@ -424,6 +427,7 @@ class SettingsRepository @Inject constructor(
             }
             rsv.squitv.shared.account.CloudCategories(
                 kind, mode, settings.categoryOrderMap[key].orEmpty(), settings.hiddenCategoriesMap[key].orEmpty().sorted(),
+                observedAt = settings.categoryEditTimes[key] ?: 0,
             )
         }
 
@@ -456,6 +460,12 @@ class SettingsRepository @Inject constructor(
             }
             prefs[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(order)
             prefs[PreferencesKeys.HIDDEN_CATEGORIES_MAP] = Json.encodeToString(hidden)
+            val times = readCategoryEditTimes(prefs).toMutableMap()
+            for (row in rows) {
+                val type = if (row.kind == "movie") "vod" else row.kind
+                times.remove(SettingsBackupCodec.categoryKey(accountKey, profileId, type))
+            }
+            prefs[PreferencesKeys.CATEGORY_EDIT_TIMES] = Json.encodeToString(times)
             applied = true
         }
         return applied
@@ -955,7 +965,7 @@ class SettingsRepository @Inject constructor(
     }
 
     suspend fun updateCategoryOrder(accountKey: String, contentType: String, order: List<String>) {
-        context.dataStore.edit { preferences ->
+        editCategorySettings { preferences ->
             val map = readOrderMap(preferences)
             val key = SettingsBackupCodec.categoryKey(accountKey, preferences[PreferencesKeys.ACTIVE_PROFILE_ID] ?: "default", contentType)
             map[key] = order
@@ -964,7 +974,7 @@ class SettingsRepository @Inject constructor(
     }
 
     suspend fun updateHiddenCategories(accountKey: String, contentType: String, hiddenSet: Set<String>) {
-        context.dataStore.edit { preferences ->
+        editCategorySettings { preferences ->
             val map = readHiddenMap(preferences)
             val key = SettingsBackupCodec.categoryKey(accountKey, preferences[PreferencesKeys.ACTIVE_PROFILE_ID] ?: "default", contentType)
             map[key] = hiddenSet
@@ -973,7 +983,7 @@ class SettingsRepository @Inject constructor(
     }
 
     suspend fun resetCategoryCustomization(accountKey: String, contentType: String) {
-        context.dataStore.edit { preferences ->
+        editCategorySettings { preferences ->
             val orderMap = readOrderMap(preferences)
             val hiddenMap = readHiddenMap(preferences)
 
@@ -983,6 +993,35 @@ class SettingsRepository @Inject constructor(
 
             preferences[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(orderMap)
             preferences[PreferencesKeys.HIDDEN_CATEGORIES_MAP] = Json.encodeToString(hiddenMap)
+        }
+    }
+
+    private fun readCategoryEditTimes(preferences: Preferences): Map<String, Long> =
+        preferences[PreferencesKeys.CATEGORY_EDIT_TIMES]?.let { Json.decodeFromString(it) } ?: emptyMap()
+
+    private suspend fun editCategorySettings(change: (MutablePreferences) -> Unit) {
+        fun categoryValues(prefs: Preferences): List<Map<String, Any>> {
+            fun modes(key: Preferences.Key<String>, type: String): Map<String, String> =
+                prefs[key]?.let { runCatching { Json.decodeFromString<Map<String, String>>(it) }.getOrNull() }
+                    .orEmpty().mapKeys { (scope, _) ->
+                        SettingsBackupCodec.categoryKey(scope.substringBeforeLast('_'), scope.substringAfterLast('_'), type)
+                    }
+            return listOf(readOrderMap(prefs), readHiddenMap(prefs),
+                modes(PreferencesKeys.MOVIE_CATEGORY_MODE_MAP, "vod"),
+                modes(PreferencesKeys.SERIES_CATEGORY_MODE_MAP, "series"))
+        }
+        context.dataStore.edit { prefs ->
+            val before = categoryValues(prefs)
+            change(prefs)
+            val after = categoryValues(prefs)
+            val changed = before.zip(after).flatMap { (old, next) ->
+                (old.keys + next.keys).filter { old[it] != next[it] }
+            }.toSet()
+            if (changed.isNotEmpty()) {
+                val now = System.currentTimeMillis()
+                prefs[PreferencesKeys.CATEGORY_EDIT_TIMES] =
+                    Json.encodeToString(readCategoryEditTimes(prefs) + changed.associateWith { now })
+            }
         }
     }
 
@@ -1008,7 +1047,7 @@ class SettingsRepository @Inject constructor(
     suspend fun importSettingsBackup(backup: SettingsBackup): Int {
         SettingsBackupCodec.validate(backup)
         var matched = 0
-        context.dataStore.edit { preferences ->
+        editCategorySettings { preferences ->
             val current = readSettings(preferences)
             val configured = SettingsBackupCodec.configuredCategoryScopes(current, backup.profiles.orEmpty().map { it.id })
             val orders = readOrderMap(preferences)
@@ -1059,17 +1098,17 @@ class SettingsRepository @Inject constructor(
 
     suspend fun moveCategory(accountKey: String, contentType: String, categoryId: String,
         availableIds: List<String>, offset: Int = 0, position: Int? = null) {
-        context.dataStore.edit { preferences ->
+        editCategorySettings { preferences ->
             val orders = readOrderMap(preferences)
             val key = SettingsBackupCodec.categoryKey(accountKey, preferences[PreferencesKeys.ACTIVE_PROFILE_ID] ?: "default", contentType)
             orders[key] = rsv.squitv.shared.catalog.CategoryCustomization.move(
-                orders[key].orEmpty(), availableIds, categoryId, offset, position) ?: return@edit
+                orders[key].orEmpty(), availableIds, categoryId, offset, position) ?: return@editCategorySettings
             preferences[PreferencesKeys.CATEGORY_ORDER_MAP] = Json.encodeToString(orders)
         }
     }
 
     suspend fun toggleHiddenCategory(accountKey: String, contentType: String, categoryId: String) {
-        context.dataStore.edit { preferences ->
+        editCategorySettings { preferences ->
             val hidden = readHiddenMap(preferences)
             val key = SettingsBackupCodec.categoryKey(accountKey, preferences[PreferencesKeys.ACTIVE_PROFILE_ID] ?: "default", contentType)
             val values = hidden[key].orEmpty().toMutableSet()
@@ -1139,7 +1178,7 @@ class SettingsRepository @Inject constructor(
 
     suspend fun updateMovieCategoryMode(accountKey: String, profileId: String, mode: rsv.squitv.domain.model.CategoryMode) {
         val key = "${accountKey}_$profileId"
-        context.dataStore.edit { prefs ->
+        editCategorySettings { prefs ->
             val currentModes = try {
                 prefs[PreferencesKeys.MOVIE_CATEGORY_MODE_MAP]?.let { Json.decodeFromString<Map<String, String>>(it) } ?: emptyMap()
             } catch (_: Exception) { emptyMap() }
@@ -1154,7 +1193,7 @@ class SettingsRepository @Inject constructor(
 
     suspend fun updateSeriesCategoryMode(accountKey: String, profileId: String, mode: rsv.squitv.domain.model.CategoryMode) {
         val key = "${accountKey}_$profileId"
-        context.dataStore.edit { prefs ->
+        editCategorySettings { prefs ->
             val currentModes = try {
                 prefs[PreferencesKeys.SERIES_CATEGORY_MODE_MAP]?.let { Json.decodeFromString<Map<String, String>>(it) } ?: emptyMap()
             } catch (_: Exception) { emptyMap() }
